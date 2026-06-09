@@ -262,7 +262,7 @@ dependencies {
 
 tasks.register<Jar>("androidSourcesJar") {
     archiveClassifier.set("sources")
-    from(android.sourceSets.getByName("main").java.srcDirs) // Full Sources (FIX D)
+    from(android.sourceSets.getByName("main").java.directories) // Full Sources (FIX D)
 }
 
 tasks.register<Copy>("copyJar") {
