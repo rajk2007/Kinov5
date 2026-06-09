@@ -1,11 +1,11 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. Material3 -->
     <style name="AppTheme" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:windowBackground">@color/kino_black</item>
+        <item name="android:windowBackground">#080808</item>
         <item name="android:colorEdgeEffect">?attr/textColor</item>
 
-        <item name="android:navigationBarColor">@color/kino_black</item>
-        <item name="android:statusBarColor">@color/kino_black</item>
+        <item name="android:navigationBarColor">#080808</item>
+        <item name="android:statusBarColor">#080808</item>
 
         <item name="android:windowTranslucentStatus">true</item>
         <item name="android:windowTranslucentNavigation">false</item>
@@ -53,11 +53,11 @@
         <item name="colorPrimary">#E50914</item>
         <item name="colorPrimaryDark">#080808</item>
         <item name="colorAccent">#7B2FBE</item>
-        <item name="textColor">@color/textColor</item>
-        <item name="colorOnPrimary">@color/whiteText</item>
-        <item name="grayTextColor">@color/grayTextColor</item>
-        <item name="primaryGrayBackground">@color/primaryGrayBackground</item>
-        <item name="primaryBlackBackground">@color/primaryBlackBackground</item>
+        <item name="textColor">#F5F5F5</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="grayTextColor">#8A8A8A</item>
+        <item name="primaryGrayBackground">#080808</item>
+        <item name="primaryBlackBackground">#080808</item>
         <item name="iconGrayBackground">@color/iconGrayBackground</item>
         <item name="boxItemBackground">@color/boxItemBackground</item>
         <item name="iconColor">@color/iconColor</item>
