@@ -55,7 +55,7 @@
                 android:id="@+id/player_settings"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:background="@transparent"
+                android:background="@color/transparent"
                 android:src="@drawable/ic_baseline_settings_24"
                 app:tint="#FFFFFF" />
         </LinearLayout>
@@ -75,7 +75,7 @@
                 android:id="@+id/rewind_10"
                 android:layout_width="56dp"
                 android:layout_height="56dp"
-                android:background="@transparent"
+                android:background="@color/transparent"
                 android:src="@drawable/ic_baseline_replay_10_24"
                 app:tint="#FFFFFF" />
 
@@ -93,7 +93,7 @@
                 android:id="@+id/forward_10"
                 android:layout_width="56dp"
                 android:layout_height="56dp"
-                android:background="@transparent"
+                android:background="@color/transparent"
                 android:src="@drawable/ic_baseline_forward_10_24"
                 app:tint="#FFFFFF" />
         </LinearLayout>
@@ -151,7 +151,7 @@
                     android:id="@+id/subtitle_selector"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:background="@transparent"
+                    android:background="@color/transparent"
                     android:src="@drawable/ic_baseline_closed_caption_24"
                     app:tint="#FFFFFF" />
 
@@ -160,7 +160,7 @@
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginStart="16dp"
-                    android:background="@transparent"
+                    android:background="@color/transparent"
                     android:src="@drawable/ic_baseline_audiotrack_24"
                     app:tint="#FFFFFF" />
 
@@ -169,7 +169,7 @@
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginStart="16dp"
-                    android:background="@transparent"
+                    android:background="@color/transparent"
                     android:src="@drawable/ic_baseline_hd_24"
                     app:tint="#FFFFFF" />
 
@@ -182,7 +182,7 @@
                     android:id="@+id/speed_selector"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:background="@transparent"
+                    android:background="@color/transparent"
                     android:src="@drawable/ic_baseline_speed_24"
                     app:tint="#FFFFFF" />
 
@@ -191,7 +191,7 @@
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginStart="16dp"
-                    android:background="@transparent"
+                    android:background="@color/transparent"
                     android:src="@drawable/ic_baseline_picture_in_picture_24"
                     app:tint="#FFFFFF" />
 
@@ -200,7 +200,7 @@
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginStart="16dp"
-                    android:background="@transparent"
+                    android:background="@color/transparent"
                     android:src="@drawable/ic_baseline_lock_open_24"
                     app:tint="#FFFFFF" />
             </LinearLayout>
