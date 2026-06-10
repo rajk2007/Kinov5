@@ -112,14 +112,8 @@
 
         <activity
             android:name="com.rajk2007.kino.ui.SplashActivity"
-            android:exported="true"
-            android:theme="@style/Theme.CloudStream.NoActionBar">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:theme="@style/Theme.CloudStream.NoActionBar" />
 
         <activity
             android:name="com.rajk2007.kino.ui.RepoInstallerActivity"
@@ -134,11 +128,14 @@
             android:theme="@style/Theme.CloudStream.NoActionBar"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
-
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-
                 <data android:scheme="cloudstream" />
             </intent-filter>
         </activity>
