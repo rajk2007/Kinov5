@@ -150,14 +150,6 @@
             android:theme="@style/Theme.CloudStream.NoActionBar" />
 
         <activity
-            android:name=".ui.player.TestPlayer"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
-            android:exported="false"
-            android:launchMode="singleTask"
-            android:resizeableActivity="true"
-            android:supportsPictureInPicture="true" />
-
-        <activity
             android:name=".ui.account.AccountSelectActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
             android:exported="true"
@@ -171,21 +163,7 @@
             android:exported="false"
             android:theme="@style/Theme.CloudStream.NoActionBar" />
 
-        <activity
-            android:name=".ui.MetadataActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
-            android:exported="true"
-            android:theme="@style/Theme.CloudStream.NoActionBar">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="github.com"
-                    android:pathPrefix="/recloudstream/cloudstream/blob/master/metadata/"
-                    android:scheme="https" />
-            </intent-filter>
-        </activity>
+
 
         <activity
             android:name=".ui.SubtitlesFragment"
