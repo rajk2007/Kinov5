@@ -10,9 +10,9 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.R
-import com.lagradost.cloudstream3.plugins.Repository
 import com.lagradost.cloudstream3.plugins.RepositoryManager
 import com.lagradost.cloudstream3.ui.settings.extensions.PluginsViewModel
+import com.lagradost.cloudstream3.ui.settings.extensions.RepositoryData
 import com.lagradost.cloudstream3.utils.DataStore.setKey
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -57,14 +57,14 @@ class RepoInstallerActivity : AppCompatActivity() {
                 val checkmark = row.findViewById<View>(R.id.checkmark)
 
                 // 1. Add repo
-                RepositoryManager.addRepository(Repository(repo.first, repo.second))
+                // Use RepositoryData instead of Repository as RepositoryManager.addRepository expects RepositoryData
+                RepositoryManager.addRepository(RepositoryData(repo.first, repo.second))
                 
                 // 2. Animate progress (simulated as actual download is background)
                 progressBar.isVisible = true
                 progressBar.animate().scaleX(1f).setDuration(1500).start()
                 
                 // 3. Trigger actual download
-                // Using safe call or try-catch as PluginsViewModel might not be easily accessible or have different signature
                 try {
                     PluginsViewModel.downloadAll(this@RepoInstallerActivity, repo.second, null)
                 } catch (e: Exception) {
