@@ -96,7 +96,6 @@
     <color name="unwatchedColor">#40FFFFFF</color>
     <color name="dividerColor">#1FFFFFFF</color>
     <color name="errorColor">#CF6679</color>
-    <color name="color_primary_transparent">#33E50914</color>
     <color name="black_button_ripple">#33FFFFFF</color>
     <color name="video_button_ripple">#33FFFFFF</color>
     <color name="white_transparent_toggle">#33FFFFFF</color>
