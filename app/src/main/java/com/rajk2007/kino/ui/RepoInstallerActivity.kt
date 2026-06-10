@@ -3,6 +3,7 @@ package com.rajk2007.kino.ui
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import com.lagradost.cloudstream3.MainActivity
 
 class RepoInstallerActivity : Activity() {
 
@@ -28,19 +29,9 @@ class RepoInstallerActivity : Activity() {
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
-            launchMainActivity()
-        }
-    }
-
-    private fun launchMainActivity() {
-        try {
-            val mainActivityClass = Class.forName("com.lagradost.cloudstream3.MainActivity")
-            val intent = Intent(this, mainActivityClass)
+            val intent = Intent(this, MainActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             startActivity(intent)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
             finish()
         }
     }

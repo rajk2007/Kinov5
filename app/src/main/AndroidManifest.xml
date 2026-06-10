@@ -111,7 +111,7 @@
         </receiver>
 
         <activity
-            android:name="com.rajk2007.kino.ui.RepoInstallerActivity"
+            android:name="com.rajk2007.kino.ui.SplashActivity"
             android:exported="true"
             android:theme="@style/Theme.CloudStream.NoActionBar">
             <intent-filter>
@@ -120,6 +120,11 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name="com.rajk2007.kino.ui.RepoInstallerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CloudStream.NoActionBar" />
 
         <activity
             android:name=".MainActivity"
