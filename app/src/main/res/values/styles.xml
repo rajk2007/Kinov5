@@ -1127,6 +1127,4 @@
     </style>
     <style name="Theme.CloudStream" parent="AppTheme" />
     <style name="Theme.CloudStream.NoActionBar" parent="AppTheme" />
-    <style name="Theme.CloudStream" parent="AppTheme" />
-    <style name="Theme.CloudStream.NoActionBar" parent="AppTheme" />
 </resources>
