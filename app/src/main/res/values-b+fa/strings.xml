@@ -89,7 +89,7 @@
     <string name="filler" formatted="true">فیلتر</string>
     <string name="duration_format" formatted="true">%d دقیقه</string>
     <string name="app_name">Kino</string>
-    <string name="play_with_app_name">پخش با CloudStream</string>
+    <string name="play_with_app_name">پخش با Kino</string>
     <string name="title_home">خانه</string>
     <string name="title_search">جست‌وجو</string>
     <string name="title_settings">تنظیمات</string>

@@ -25,7 +25,7 @@
     <string name="filler" formatted="true">Episodi especial</string>
     <string name="duration_format" formatted="true">%d min</string>
     <string name="app_name">Kino</string>
-    <string name="play_with_app_name">Reprodueix amb CloudStream</string>
+    <string name="play_with_app_name">Reprodueix amb Kino</string>
     <string name="title_home">Inici</string>
     <string name="title_search">Cercar</string>
     <string name="title_downloads">Descàrregues</string>

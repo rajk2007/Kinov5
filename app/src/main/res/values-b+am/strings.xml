@@ -36,7 +36,7 @@
     <string name="title_search">መፈለጊያ</string>
     <string name="loading">በመጫን ላይ…</string>
     <string name="app_name">Kino</string>
-    <string name="play_with_app_name">በCloudStream አጫውት</string>
+    <string name="play_with_app_name">በKino አጫውት</string>
     <string name="action_remove_from_bookmarks">ያስወግዱ</string>
     <string name="error_bookmarks_text">ዕልባቶች</string>
     <string name="download_started">ማውረድ ተጀምሯል</string>

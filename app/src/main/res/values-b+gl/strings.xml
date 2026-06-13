@@ -98,7 +98,7 @@
     <string name="show_log_cat">Amosar Logcat 🐈</string>
     <string name="test_log">Rexistro</string>
     <string name="picture_in_picture_des">Continúa a reprodución nun reproductor miniatura enriba doutras aplicacións</string>
-    <string name="play_with_app_name">Reproducir con CloudStream</string>
+    <string name="play_with_app_name">Reproducir con Kino</string>
     <string name="title_search">Procurar</string>
     <string name="preview_background_img_des">Vista previa do fondo</string>
     <string name="player_speed_text_format" formatted="true">Velocidade (%.2fx)</string>
