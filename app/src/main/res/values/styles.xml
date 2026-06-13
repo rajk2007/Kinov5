@@ -1125,6 +1125,6 @@
         <item name="android:layout_height">@dimen/download_header_progress_size</item>
         <item name="android:background">@color/playIconBackground</item>
     </style>
-    <style name="Theme.CloudStream" parent="AppTheme" />
-    <style name="Theme.CloudStream.NoActionBar" parent="AppTheme" />
+    <style name="Theme.Kino" parent="AppTheme" />
+    <style name="Theme.Kino.NoActionBar" parent="AppTheme" />
 </resources>
