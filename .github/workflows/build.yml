@@ -21,7 +21,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+        run: ./gradlew clean assembleDebug --stacktrace 2>&1 | tee build.log
         
       - name: Verify APK was created
         run: |
