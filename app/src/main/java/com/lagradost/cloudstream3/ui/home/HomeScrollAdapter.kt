@@ -65,13 +65,6 @@ class HomeScrollAdapter(
                     maxLines = 2
                 }
                 binding.homeScrollPreviewTitle.text = item.name.html()
-
-                bindLogo(
-                    url = item.logoUrl,
-                    headers = item.posterHeaders,
-                    titleView = binding.homeScrollPreviewTitle,
-                    logoView = binding.homePreviewLogo
-                )
             }
 
             is HomeScrollViewTvBinding -> {
