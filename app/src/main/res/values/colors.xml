@@ -82,7 +82,7 @@
     <color name="SilentBlueGrayBackground">#0F0F0F</color>
     <color name="SilentBlueItemBackground">#0F0F0F</color>
     <color name="SilentBlueTextColor">#F5F5F5</color>
-    <color name="SilentBlueGrayTextColor shallow">#9ba0a4</color>
+    <color name="SilentBlueGrayTextColor_shallow">#9ba0a4</color>
     <color name="SilentBlueIconColor">#F5F5F5</color>
 
     <color name="colorPrimaryBlue">#E50914</color>

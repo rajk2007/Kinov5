@@ -21,19 +21,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew clean assembleDebug --stacktrace 2>&1 | tee build.log
-        
-      - name: Verify APK was created
-        run: |
-          APK_PATH=$(find . -name "*.apk" -type f | head -1)
-          if [ -z "$APK_PATH" ]; then
-            echo "BUILD FAILED: No APK was generated"
-            cat build.log | grep -E "error:|FAILED|Exception" | head -20
-            exit 1
-          else
-            echo "SUCCESS: APK found at $APK_PATH"
-            ls -la "$APK_PATH"
-          fi
+        run: ./gradlew clean assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -41,10 +29,3 @@ jobs:
           name: Kino-APK
           path: |
             **/build/outputs/apk/**/*.apk
-
-      - name: Upload build log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-log
-          path: build.log
