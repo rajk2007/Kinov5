@@ -1,129 +1,117 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#3d50fa</color>
+    <!-- KINO Premium Theme Colors -->
+    <color name="colorPrimary">#E50914</color>
     <color name="colorPrimarySecond">@color/colorPrimary</color>
-    <color name="colorSearch">#303135</color> <!--#3444D1 @color/itemBackground-->
-    <color name="colorOngoing">#F53B66</color> <!--FF8181-->
-    <color name="colorPrimaryDark">#3700B3</color>
-    <color name="colorAccent">#3b65f5</color> <!-- 818fff-->
+    <color name="colorSearch">#0F0F0F</color>
+    <color name="colorOngoing">#E50914</color>
+    <color name="colorPrimaryDark">#000000</color>
+    <color name="colorAccent">#E50914</color>
 
-    <color name="primaryGrayBackground">#2B2C30</color> <!--0f0f10 0E0E10 303135 2B2C30-->
-    <color name="primaryBlackBackground">#111111</color> <!--1C1C20 191a1f 19181E 202125 1C1C20-->
-    <color name="iconGrayBackground">#1C1C20</color> <!--141419 202125-->
-    <color name="boxItemBackground">#161616</color> <!-- 17171B 1B1B20-->
+    <color name="primaryGrayBackground">#0F0F0F</color>
+    <color name="primaryBlackBackground">#080808</color>
+    <color name="iconGrayBackground">#0F0F0F</color>
+    <color name="boxItemBackground">#0F0F0F</color>
 
-    <color name="textColor">#e9eaee</color> <!--FFF-->
-    <color name="grayTextColor">#9ba0a4</color> <!-- 5e5f62-->
-    <color name="grayShimmer">#DCDCDC</color> <!-- 5e5f62-->
+    <color name="textColor">#F5F5F5</color>
+    <color name="grayTextColor">#9ba0a4</color>
+    <color name="grayShimmer">#141414</color>
 
-    <color name="searchColorTransparent">#1AFFFFFF</color> <!--DADADA-->
+    <color name="searchColorTransparent">#1AFFFFFF</color>
     <color name="transparent">#00000000</color>
 
-    <color name="white">#FFF</color>
-    <color name="black">#000</color>
+    <color name="white">#F5F5F5</color>
+    <color name="black">#080808</color>
     <color name="gray_200">#EEEEEE</color>
     <color name="gray_400">#BDBDBD</color>
 
-    <color name="whiteText">#FFF</color>
-    <color name="blackText">#000</color>
+    <color name="whiteText">#F5F5F5</color>
+    <color name="blackText">#080808</color>
 
     <color name="progressBackgroundColor">#1AFFFFFF</color>
 
-    <color name="dubColorText">#121950</color> <!--3b65f5 f18c82 8294F1-->
-    <color name="amoledModeLight">#121213</color>
+    <color name="dubColorText">#F5F5F5</color>
+    <color name="amoledModeLight">#080808</color>
 
-    <color name="dubColorBg">#3B65F5</color>
-    <color name="subColorText">#571711</color> <!--F53B66 FA3D79-->
-    <color name="subColorBg">#F53B66</color>
-    <color name="typeColorText">#BEC8FF</color>
-    <color name="typeColorBg">#3700B3</color>
+    <color name="dubColorBg">#E50914</color>
+    <color name="subColorText">#F5F5F5</color>
+    <color name="subColorBg">#E50914</color>
+    <color name="typeColorText">#F5F5F5</color>
+    <color name="typeColorBg">#E50914</color>
 
-    <!--
-    <color name="ratingColor">#4C3115</color>
-    <color name="ratingColorBg">#FFA662</color>
-    -->
-
-    <color name="adultColor">#FF6F63</color> <!-- same as sub color -->
+    <color name="adultColor">#E50914</color>
 
     <color name="video_ripple">#80FFFFFF</color>
     <color name="video_button_ripple">#32FFFFFF</color>
 
     <color name="black_overlay">#66000000</color>
-    <color name="darkBarTransparent">#C0121212</color>
-    <color name="skipOpTransparent">#4D121212</color>
-    <color name="darkBar">#121212</color>
-    <color name="videoProgress">#66B5B5B5</color> <!--66B5B5B5-->
-    <!--<color name="videoCache">#663D50FA</color>--> <!--66B5B5B5-->
+    <color name="darkBarTransparent">#C0080808</color>
+    <color name="skipOpTransparent">#4D080808</color>
+    <color name="darkBar">#080808</color>
+    <color name="videoProgress">#E50914</color>
 
-    <color name="iconColor">#9ba0a6</color>
+    <color name="iconColor">#F5F5F5</color>
 
-    <!-- <color name="usedStorageColor">?attr/white</color>#fff-->
-    <!-- <color name="freeStorageColor">?attr/grayTextColor</color> #676767-->
+    <!-- Legacy / Theme Colors - Overridden for KINO -->
+    <color name="lightPrimaryGrayBackground">#0F0F0F</color>
+    <color name="lightBitDarkerGrayBackground">#080808</color>
+    <color name="lightGrayBackground">#0F0F0F</color>
+    <color name="lightItemBackground">#0F0F0F</color>
+    <color name="lightTextColor">#F5F5F5</color>
+    <color name="lightGrayTextColor">#9ba0a4</color>
+    <color name="lightIconColor">#F5F5F5</color>
 
-    <!--Light Mode -->
-    <color name="lightPrimaryGrayBackground">#f1f1f1</color>
-    <color name="lightBitDarkerGrayBackground">#fff</color>
-    <color name="lightGrayBackground">#eeeeee</color>
-    <color name="lightItemBackground">#eeeeee</color>
-    <color name="lightTextColor">#202125</color>
-    <color name="lightGrayTextColor">#5f6267</color>
-    <color name="lightIconColor">#5f6267</color>
+    <color name="DraculaPrimaryGrayBackground">#0F0F0F</color>
+    <color name="DraculaBitDarkerGrayBackground">#080808</color>
+    <color name="DraculaGrayBackground">#0F0F0F</color>
+    <color name="DraculaItemBackground">#0F0F0F</color>
+    <color name="DraculaTextColor">#F5F5F5</color>
+    <color name="DraculaGrayTextColor">#9ba0a4</color>
+    <color name="DraculaIconColor">#F5F5F5</color>
 
-    <!--Dracula Theme-->
-    <color name="DraculaPrimaryGrayBackground">#414450</color>
-    <color name="DraculaBitDarkerGrayBackground">#282a36</color>
-    <color name="DraculaGrayBackground">#44475A</color>
-    <color name="DraculaItemBackground">#373844</color>
-    <color name="DraculaTextColor">#F8F8F2</color>
-    <color name="DraculaGrayTextColor">#6272A4</color>
-    <color name="DraculaIconColor">#6272A4</color>
+    <color name="LavenderPrimaryGrayBackground">#0F0F0F</color>
+    <color name="LavenderBitDarkerGrayBackground">#080808</color>
+    <color name="LavenderGrayBackground">#0F0F0F</color>
+    <color name="LavenderItemBackground">#0F0F0F</color>
+    <color name="LavenderTextColor">#F5F5F5</color>
+    <color name="LavenderGrayTextColor">#9ba0a4</color>
+    <color name="LavenderIconColor">#F5F5F5</color>
 
-    <!-- Lavender Dreams Theme -->
-    <color name="LavenderPrimaryGrayBackground">#f7eefc</color>
-    <color name="LavenderBitDarkerGrayBackground">#fdf0fb</color>
-    <color name="LavenderGrayBackground">#b794f6</color>
-    <color name="LavenderItemBackground">#f8f5ff</color>
-    <color name="LavenderTextColor">#2d1b47</color>
-    <color name="LavenderGrayTextColor">#9ab3ff</color>
-    <color name="LavenderIconColor">#7c3aed</color>
+    <color name="SilentBluePrimaryGrayBackground">#0F0F0F</color>
+    <color name="SilentBlueBitDarkerGrayBackground">#080808</color>
+    <color name="SilentBlueGrayBackground">#0F0F0F</color>
+    <color name="SilentBlueItemBackground">#0F0F0F</color>
+    <color name="SilentBlueTextColor">#F5F5F5</color>
+    <color name="SilentBlueGrayTextColor">#9ba0a4</color>
+    <color name="SilentBlueIconColor">#F5F5F5</color>
 
-    <!--Silent Blue Theme-->
-    <color name="SilentBluePrimaryGrayBackground">#282f49</color>
-    <color name="SilentBlueBitDarkerGrayBackground">#151a30</color>
-    <color name="SilentBlueGrayBackground">#3A446A</color>
-    <color name="SilentBlueItemBackground">#3A446A</color>
-    <color name="SilentBlueTextColor">#E0E1F3</color>
-    <color name="SilentBlueGrayTextColor">#7B83B0</color>
-    <color name="SilentBlueIconColor">#7B83B0</color>
+    <color name="colorPrimaryBlue">#E50914</color>
+    <color name="colorPrimaryRed">#E50914</color>
+    <color name="colorPrimaryPurple">#E50914</color>
+    <color name="colorPrimaryGreen">#E50914</color>
+    <color name="colorPrimaryGreenApple">#E50914</color>
+    <color name="colorPrimaryBanana">#E50914</color>
+    <color name="colorPrimaryParty">#E50914</color>
+    <color name="colorPrimaryPink">#E50914</color>
 
-    <!--Other Colors -->
-    <color name="colorPrimaryBlue">#5664B7</color>
-    <color name="colorPrimaryRed">#D50000</color>
-    <color name="colorPrimaryPurple">#6200EA</color> <!-- Burple-->
-    <color name="colorPrimaryGreen">#00BFA5</color>
-    <color name="colorPrimaryGreenApple">#48E484</color>
-    <color name="colorPrimaryBanana">#E4D448</color>
-    <color name="colorPrimaryParty">#ea596e</color>
-    <color name="colorPrimaryPink">#ff1493</color>
-
-    <color name="colorPrimaryCarnationPink">#BD5DA5</color>
-    <color name="colorPrimaryDarkGreen">#004500</color>
-    <color name="colorPrimaryMaroon">#451010</color>
-    <color name="colorPrimaryNavyBlue">#000080</color>
-    <color name="colorPrimaryGrey">#515151</color>
-    <color name="colorPrimaryWhite">#FFFFFF</color>
-    <color name="colorPrimaryBrown">#622C00</color>
-    <color name="colorPrimaryOrange">#CE8500</color>
-    <color name="colorPrimaryDandelionYellow">#F5BB00</color>
-    <color name="colorPrimaryCoolBlue">#408cac</color>
-    <color name="colorPrimaryLavender">#6F55AF</color>
+    <color name="colorPrimaryCarnationPink">#E50914</color>
+    <color name="colorPrimaryDarkGreen">#E50914</color>
+    <color name="colorPrimaryMaroon">#E50914</color>
+    <color name="colorPrimaryNavyBlue">#E50914</color>
+    <color name="colorPrimaryGrey">#E50914</color>
+    <color name="colorPrimaryWhite">#E50914</color>
+    <color name="colorPrimaryBrown">#E50914</color>
+    <color name="colorPrimaryOrange">#E50914</color>
+    <color name="colorPrimaryDandelionYellow">#E50914</color>
+    <color name="colorPrimaryCoolBlue">#E50914</color>
+    <color name="colorPrimaryLavender">#E50914</color>
 
     <color name="colorTestPass">#48E484</color>
-    <color name="colorTestFail">#ea596e</color>
+    <color name="colorTestFail">#E50914</color>
     <color name="colorTestWarning">#FF9800</color>
     <color name="playIconBackground">#B3000000</color>
     <color name="kinoRed">#E50914</color>
     <color name="kinoBlack">#080808</color>
     <color name="kinoPurple">#7B2FBE</color>
-    <color name="ic_launcher_background">#0D1223</color>
+    <color name="ic_launcher_background">#080808</color>
 </resources>
