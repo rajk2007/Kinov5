@@ -4,10 +4,10 @@
         <item name="android:windowBackground">@color/primaryBlackBackground</item>
         <item name="android:colorEdgeEffect">?attr/textColor</item>
 
-        <item name="android:navigationBarColor">?attr/primaryBlackBackground</item>
-        <item name="android:statusBarColor">?attr/iconGrayBackground</item>
+        <item name="android:navigationBarColor">@color/primaryBlackBackground</item>
+        <item name="android:statusBarColor">@color/primaryBlackBackground</item>
 
-        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowTranslucentNavigation">false</item>
 
         <item name="android:scrollbarThumbVertical">@null</item>

@@ -35,12 +35,24 @@
             android:paddingHorizontal="0dp">
 
 
-            <androidx.appcompat.widget.SearchView
-                android:id="@+id/home_search"
+            <TextView
+                android:id="@+id/home_kino_logo"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginEnd="8dp"
                 android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:text="KINO"
+                android:textColor="@color/kinoRed"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                tools:ignore="RtlSymmetry" />
+
+            <androidx.appcompat.widget.SearchView
+                android:id="@+id/home_search"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginEnd="8dp"
                 android:editTextColor="@color/white"
                 android:gravity="center_vertical"
                 android:iconifiedByDefault="true"
@@ -52,8 +64,7 @@
                 app:iconifiedByDefault="true"
                 app:queryBackground="@color/transparent"
                 app:queryHint="@string/search_hint"
-                app:searchIcon="@drawable/search_icon"
-                tools:ignore="RtlSymmetry" />
+                app:searchIcon="@drawable/search_icon" />
 
             <LinearLayout
                 android:id="@+id/home_head_profile_padding"
