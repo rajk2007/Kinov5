@@ -16,6 +16,8 @@ import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.appcompat.app.AlertDialog
 import androidx.core.net.toUri
 import androidx.core.view.isGone
@@ -631,6 +633,31 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
 
     @SuppressLint("SetTextI18n")
     override fun onBindingCreated(binding: FragmentHomeBinding) {
+        if (isLayout(PHONE)) {
+            val composeView = ComposeView(requireContext()).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+                setContent {
+                    KinoHomeScreen(homeViewModel)
+                }
+            }
+            binding.homeRoot.addView(composeView)
+            
+            // Hide default UI elements for Phone
+            binding.homeMasterRecycler.isVisible = false
+            binding.homeApiFab.isVisible = false
+            binding.homeRandom.isVisible = false
+            binding.homeChangeApi.isVisible = false
+            binding.homeLoading.isVisible = false
+            
+            // Initialize data loading even if we use Compose UI
+            homeViewModel.reloadStored()
+            if (homeViewModel.apiName.value == null) {
+                val apiName = context?.getApiProviderLangSettings()?.firstOrNull() ?: noneApi.name
+                homeViewModel.loadAndCancel(apiName)
+            }
+            return
+        }
+
         context?.let { HomeChildItemAdapter.updatePosterSize(it) }
         (activity as? ComponentActivity)?.attachBackPressedCallback("HomeFragment_BackPress") {
             handleTvBackPress(this)
