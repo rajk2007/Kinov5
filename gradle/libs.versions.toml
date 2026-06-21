@@ -3,7 +3,7 @@
 [versions]
 activityKtx = "1.13.0"
 composeBom = "2025.02.00"
-composeCompiler = "1.5.15"
+composeCompiler = "2.3.20"
 androidGradlePlugin = "9.1.1"
 animeDb = "1.0.2"
 annotation = "1.10.0"
