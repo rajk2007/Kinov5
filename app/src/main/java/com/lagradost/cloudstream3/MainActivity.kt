@@ -1183,6 +1183,9 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         insecureApp.initClient(this, ignoreSSL = true)
 
         val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
+        settingsManager.edit().putBoolean("completable_enabled", true).apply()
+        settingsManager.edit().putBoolean("first_launch", false).apply()
+        settingsManager.edit().putBoolean("has_done_setup", true).apply()
 
         setLastError(this)
 
