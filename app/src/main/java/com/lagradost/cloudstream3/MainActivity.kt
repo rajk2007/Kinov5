@@ -46,6 +46,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavOptions
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
+import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSnapHelper
 import androidx.recyclerview.widget.RecyclerView
@@ -297,124 +298,706 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         for (api in AccountManager.allApis) {
                             if (api.isValidRedirectUrl(str)) {
                                 ioSafe {
-                                    api.handleRedirect(str)
+                                    Log.i(TAG, "handleAppIntent $str")
+                                    try {
+                                        val isSuccessful = api.login(str)
+                                        if (isSuccessful) {
+                                            Log.i(TAG, "authenticated ${api.name}")
+                                        } else {
+                                            Log.i(TAG, "failed to authenticate ${api.name}")
+                                        }
+                                        showToast(
+                                            if (isSuccessful) {
+                                                txt(R.string.authenticated_user, api.name)
+                                            } else {
+                                                txt(R.string.authenticated_user_fail, api.name)
+                                            }
+                                        )
+                                    } catch (t: Throwable) {
+                                        logError(t)
+                                        showToast(
+                                            txt(R.string.authenticated_user_fail, api.name)
+                                        )
+                                    }
                                 }
                                 return true
                             }
                         }
-                    } else if (str.contains(APP_STRING_PLAYER)) {
-                        val realUrl = str.substringAfter(APP_STRING_PLAYER)
-                        println("Player url: $realUrl")
-                        GeneratorPlayer.addPlayIntent(this, realUrl, extraArgs)
-                        return true
-                    } else if (str.contains(APP_STRING_SEARCH)) {
-                        val query = str.substringAfter(APP_STRING_SEARCH)
-                        println("Search query: $query")
-                        nextSearchQuery = URLDecoder.decode(query, "UTF-8")
-                        navigate(R.id.navigation_search)
-                        return true
-                    } else if (str.contains(APP_STRING_SHARE)) {
-                        val realUrl = str.substringAfter(APP_STRING_SHARE)
-                        println("Share url: $realUrl")
-                        loadResult(realUrl)
-                        return true
-                    } else if (str.contains(APP_STRING_REPO)) {
-                        val realUrl = str.substringAfter(APP_STRING_REPO)
-                        println("Repository url: $realUrl")
-                        loadRepository(realUrl)
-                        return true
-                    } else if (str.contains(APP_STRING_RESUME_WATCHING)) {
-                        val realUrl = str.substringAfter(APP_STRING_RESUME_WATCHING)
-                        println("Resume watching url: $realUrl")
-                        loadResult(realUrl, START_ACTION_RESUME_LATEST)
-                        return true
-                    }
-
-                    if (!isWebview) {
-                        for (api in apis) {
-                            if (str.startsWith(api.mainUrl)) {
-                                loadResult(str, api.name)
-                                return true
+                        // This specific intent is used for the gradle deployWithAdb
+                        // https://github.com/recloudstream/gradle/blob/master/src/main/kotlin/com/lagradost/cloudstream3/gradle/tasks/DeployWithAdbTask.kt#L46
+                        if (str == "$APP_STRING:") {
+                            ioSafe {
+                                PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_hotReloadAllLocalPlugins(
+                                    activity
+                                )
                             }
                         }
+                    } else if (safeURI(str)?.scheme == APP_STRING_REPO) {
+                        val url = str.replaceFirst(APP_STRING_REPO, "https")
+                        loadRepository(url)
+                        return true
+                    } else if (safeURI(str)?.scheme == APP_STRING_SEARCH) {
+                        val query = str.substringAfter("$APP_STRING_SEARCH://")
+                        nextSearchQuery =
+                            try {
+                                URLDecoder.decode(query, "UTF-8")
+                            } catch (t: Throwable) {
+                                logError(t)
+                                query
+                            }
+                        // Use both navigation views to support both layouts.
+                        // It might be better to use the QuickSearch.
+                        activity?.findViewById<BottomNavigationView>(R.id.nav_view)?.selectedItemId =
+                            R.id.navigation_search
+                        activity?.findViewById<NavigationRailView>(R.id.nav_rail_view)?.selectedItemId =
+                            R.id.navigation_search
+                    } else if (safeURI(str)?.scheme == APP_STRING_PLAYER) {
+                        val uri = str.toUri()
+                        val name = uri.getQueryParameter("name")
+                        val url = URLDecoder.decode(uri.authority, "UTF-8")
 
-                        if (str.contains(DOWNLOAD_NAVIGATE_TO)) {
-                            navigate(R.id.navigation_downloads)
+                        navigate(
+                            R.id.global_to_navigation_player,
+                            GeneratorPlayer.newInstance(
+                                LinkGenerator(
+                                    listOf(BasicLink(url, name)),
+                                    extract = true,
+                                    id = url.hashCode()
+                                ), 0
+                            )
+                        )
+                    } else if (safeURI(str)?.scheme == APP_STRING_RESUME_WATCHING) {
+                        val id =
+                            str.substringAfter("$APP_STRING_RESUME_WATCHING://").toIntOrNull()
+                                ?: return false
+                        ioSafe {
+                            val resumeWatchingCard =
+                                HomeViewModel.getResumeWatching()?.firstOrNull { it.id == id }
+                                    ?: return@ioSafe
+                            activity.loadSearchResult(
+                                resumeWatchingCard,
+                                START_ACTION_RESUME_LATEST
+                            )
+                        }
+                    } else if (str.startsWith(APP_STRING_SHARE)) {
+                        try {
+                            val data = str.substringAfter("$APP_STRING_SHARE:")
+                            val parts = data.split("?", limit = 2)
+                            loadResult(
+                                String(base64DecodeArray(parts[1]), Charsets.UTF_8),
+                                String(base64DecodeArray(parts[0]), Charsets.UTF_8),
+                                ""
+                            )
                             return true
+                        } catch (e: Exception) {
+                            showToast("Invalid Uri", Toast.LENGTH_SHORT)
+                            return false
+                        }
+                    } else if (!isWebview) {
+                        if (str.startsWith(DOWNLOAD_NAVIGATE_TO)) {
+                            this.navigate(R.id.navigation_downloads)
+                            return true
+                        } else {
+                            val apiName = extraArgs?.getString(API_NAME_EXTRA_KEY)
+                                ?.takeIf { it.isNotBlank() }
+                            // if provided, try to match the api name instead of the api url
+                            // this is in order to also support providers that use JSON dataUrls
+                            // for example
+                            if (apiName != null) {
+                                loadResult(str, apiName, "")
+                                return true
+                            }
+
+                            val matchedApi = apis.filter { str.startsWith(it.mainUrl) }.firstOrNull()
+                            if (matchedApi != null) {
+                                loadResult(str, matchedApi.name, "")
+                                return true
+                            }
                         }
                     }
                 }
                 return false
             }
 
-        private var lastFocus = WeakReference<View>(null)
 
         fun centerView(view: View?) {
-            if (view == null || view.parent == null) return
-            val parent = view.parent
-            if (parent is RecyclerView) {
-                val layoutManager = parent.layoutManager
-                if (layoutManager is LinearListLayout && layoutManager.orientation == LinearLayoutManager.HORIZONTAL) {
-                    val dx =
-                        LinearSnapHelper().calculateDistanceToFinalSnap(layoutManager, view)?.get(0)
-                    if (dx != null && dx != 0) {
-                        parent.smoothScrollBy(dx, 0)
+            if (view == null) return
+            try {
+                Log.v(TAG, "centerView: $view")
+                val r = Rect(0, 0, 0, 0)
+                view.getDrawingRect(r)
+                val x = r.centerX()
+                val y = r.centerY()
+                val dx = r.width() / 2 //screenWidth / 2
+                val dy = screenHeight / 2
+                val r2 = Rect(x - dx, y - dy, x + dx, y + dy)
+                view.requestRectangleOnScreen(r2, false)
+                // TvFocus.current =TvFocus.current.copy(y=y.toFloat())
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+
+    var lastPopup: SearchResponse? = null
+    var lastPopupJob: Job? = null
+    fun loadPopup(result: SearchResponse, load: Boolean = true) {
+        lastPopup = result
+        val syncName = syncViewModel.syncName(result.apiName)
+
+        // based on apiName we decide on if it is a local list or not, this is because
+        // we want to show a bit of extra UI to sync apis
+        if (result is SyncAPI.LibraryItem && syncName != null) {
+            isLocalList = false
+            syncViewModel.setSync(syncName, result.syncId)
+            syncViewModel.updateMetaAndUser()
+        } else {
+            isLocalList = true
+            syncViewModel.clear()
+        }
+
+        lastPopupJob?.cancel()
+        lastPopupJob = if (load) {
+            viewModel.load(
+                this, result.url, result.apiName, false, if (getApiDubstatusSettings()
+                        .contains(DubStatus.Dubbed)
+                ) DubStatus.Dubbed else DubStatus.Subbed, null
+            )
+        } else {
+            viewModel.loadSmall(result)
+        }
+    }
+
+    override fun onColorSelected(dialogId: Int, color: Int) {
+        onColorSelectedEvent.invoke(Pair(dialogId, color))
+    }
+
+    override fun onDialogDismissed(dialogId: Int) {
+        onDialogDismissedEvent.invoke(dialogId)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateLocale() // android fucks me by chaining lang when rotating the phone
+        updateTheme(this) // Update if system theme
+
+        val navHostFragment =
+            supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+        navHostFragment.navController.currentDestination?.let { updateNavBar(it) }
+    }
+
+    private fun updateNavBar(destination: NavDestination) {
+        this.hideKeyboard()
+
+        // Fucks up anime info layout since that has its own layout
+        binding?.castMiniControllerHolder?.isVisible =
+            !listOf(
+                R.id.navigation_results_phone,
+                R.id.navigation_results_tv,
+                R.id.navigation_player
+            ).contains(destination.id)
+
+        val isNavVisible = listOf(
+            R.id.navigation_home,
+            R.id.navigation_search,
+            R.id.navigation_library,
+            R.id.navigation_downloads,
+            R.id.navigation_settings,
+            R.id.navigation_download_child,
+            R.id.navigation_download_queue,
+            R.id.navigation_subtitles,
+            R.id.navigation_chrome_subtitles,
+            R.id.navigation_settings_player,
+            R.id.navigation_settings_updates,
+            R.id.navigation_settings_ui,
+            R.id.navigation_settings_account,
+            R.id.navigation_settings_providers,
+            R.id.navigation_settings_general,
+            R.id.navigation_settings_extensions,
+            R.id.navigation_settings_plugins,
+            R.id.navigation_test_providers,
+        ).contains(destination.id)
+
+
+        /*val dontPush = listOf(
+            R.id.navigation_home,
+            R.id.navigation_search,
+            R.id.navigation_results_phone,
+            R.id.navigation_results_tv,
+            R.id.navigation_player,
+            R.id.navigation_quick_search,
+        ).contains(destination.id)
+
+        binding?.navHostFragment?.apply {
+            val params = layoutParams as ConstraintLayout.LayoutParams
+            val push =
+                if (!dontPush && isLayout(TV or EMULATOR)) resources.getDimensionPixelSize(R.dimen.navbar_width) else 0
+
+            if (!this.isLtr()) {
+                params.setMargins(
+                    params.leftMargin,
+                    params.topMargin,
+                    push,
+                    params.bottomMargin
+                )
+            } else {
+                params.setMargins(
+                    push,
+                    params.topMargin,
+                    params.rightMargin,
+                    params.bottomMargin
+                )
+            }
+
+            layoutParams = params
+        }*/
+
+        binding?.apply {
+            navRailView.isVisible = isNavVisible && isLandscape()
+            navView.isVisible = isNavVisible && !isLandscape()
+            navHostFragment.apply {
+                val marginPx = resources.getDimensionPixelSize(R.dimen.nav_rail_view_width)
+                layoutParams =
+                    (navHostFragment.layoutParams as ViewGroup.MarginLayoutParams).apply {
+                        marginStart =
+                            if (isNavVisible && isLandscape() && isLayout(TV or EMULATOR)) marginPx else 0
+                    }
+            }
+
+            /**
+             * We need to make sure if we return to a sub-fragment,
+             * the correct navigation item is selected so that it does not
+             * highlight the wrong one in UI.
+             */
+            when (destination.id) {
+                in listOf(
+                    R.id.navigation_downloads,
+                    R.id.navigation_download_child,
+                    R.id.navigation_download_queue
+                ) -> {
+                    navRailView.menu.findItem(R.id.navigation_downloads).isChecked = true
+                    navView.menu.findItem(R.id.navigation_downloads).isChecked = true
+                }
+
+                in listOf(
+                    R.id.navigation_settings,
+                    R.id.navigation_subtitles,
+                    R.id.navigation_chrome_subtitles,
+                    R.id.navigation_settings_player,
+                    R.id.navigation_settings_updates,
+                    R.id.navigation_settings_ui,
+                    R.id.navigation_settings_account,
+                    R.id.navigation_settings_providers,
+                    R.id.navigation_settings_general,
+                    R.id.navigation_settings_extensions,
+                    R.id.navigation_settings_plugins,
+                    R.id.navigation_test_providers
+                ) -> {
+                    navRailView.menu.findItem(R.id.navigation_settings).isChecked = true
+                    navView.menu.findItem(R.id.navigation_settings).isChecked = true
+                }
+            }
+        }
+    }
+
+    //private var mCastSession: CastSession? = null
+    var mSessionManager: SessionManager? = null
+    private val mSessionManagerListener: SessionManagerListener<Session> by lazy { SessionManagerListenerImpl() }
+
+    private inner class SessionManagerListenerImpl : SessionManagerListener<Session> {
+        override fun onSessionStarting(session: Session) {
+        }
+
+        override fun onSessionStarted(session: Session, sessionId: String) {
+            invalidateOptionsMenu()
+        }
+
+        override fun onSessionStartFailed(session: Session, i: Int) {
+        }
+
+        override fun onSessionEnding(session: Session) {
+        }
+
+        override fun onSessionResumed(session: Session, wasSuspended: Boolean) {
+            invalidateOptionsMenu()
+        }
+
+        override fun onSessionResumeFailed(session: Session, i: Int) {
+        }
+
+        override fun onSessionSuspended(session: Session, i: Int) {
+        }
+
+        override fun onSessionEnded(session: Session, error: Int) {
+        }
+
+        override fun onSessionResuming(session: Session, s: String) {
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        afterPluginsLoadedEvent += ::onAllPluginsLoaded
+        setActivityInstance(this)
+        try {
+            if (isCastApiAvailable()) {
+                mSessionManager?.addSessionManagerListener(mSessionManagerListener)
+            }
+        } catch (e: Exception) {
+            logError(e)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+
+        // Start any delayed updates
+        if (ApkInstaller.delayedInstaller?.startInstallation() == true) {
+            Toast.makeText(this, R.string.update_started, Toast.LENGTH_LONG).show()
+        }
+        try {
+            if (isCastApiAvailable()) {
+                mSessionManager?.removeSessionManagerListener(mSessionManagerListener)
+                //mCastSession = null
+            }
+        } catch (e: Exception) {
+            logError(e)
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        CommonActivity.dispatchKeyEvent(this, event) ?: super.dispatchKeyEvent(event)
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean =
+        CommonActivity.onKeyDown(this, keyCode, event) ?: super.onKeyDown(keyCode, event)
+
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        onUserLeaveHint(this)
+    }
+
+    @SuppressLint("ApplySharedPref") // commit since the op needs to be synchronous
+    private fun showConfirmExitDialog(settingsManager: SharedPreferences) {
+        val confirmBeforeExit = settingsManager.getInt(getString(R.string.confirm_exit_key), -1)
+
+        if (confirmBeforeExit == 1 || (confirmBeforeExit == -1 && isLayout(PHONE))) {
+            // finish() causes a bug on some TVs where player
+            // may keep playing after closing the app.
+            if (isLayout(TV)) exitProcess(0) else finish()
+            return
+        }
+
+        val dialogView = layoutInflater.inflate(R.layout.confirm_exit_dialog, null)
+        val dontShowAgainCheck: CheckBox = dialogView.findViewById(R.id.checkboxDontShowAgain)
+        val builder: AlertDialog.Builder = AlertDialog.Builder(this)
+        builder.setView(dialogView)
+            .setTitle(R.string.confirm_exit_dialog)
+            .setNegativeButton(R.string.no) { _, _ -> /*NO-OP*/ }
+            .setPositiveButton(R.string.yes) { _, _ ->
+                if (dontShowAgainCheck.isChecked) {
+                    settingsManager.edit(commit = true) {
+                        putInt(getString(R.string.confirm_exit_key), 1)
+                    }
+                }
+                // finish() causes a bug on some TVs where player
+                // may keep playing after closing the app.
+                if (isLayout(TV)) exitProcess(0) else finish()
+            }
+
+        builder.show().setDefaultFocus()
+    }
+
+    override fun onDestroy() {
+        filesToDelete.forEach { path ->
+            val result = File(path).deleteRecursively()
+            if (result) {
+                Log.d(TAG, "Deleted temporary file: $path")
+            } else {
+                Log.d(TAG, "Failed to delete temporary file: $path")
+            }
+        }
+        filesToDelete = setOf()
+        val broadcastIntent = Intent()
+        broadcastIntent.action = "restart_service"
+        broadcastIntent.setClass(this, VideoDownloadRestartReceiver::class.java)
+        this.sendBroadcast(broadcastIntent)
+        afterPluginsLoadedEvent -= ::onAllPluginsLoaded
+        detachBackPressedCallback("MainActivityDefault")
+        super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        handleAppIntent(intent)
+        super.onNewIntent(intent)
+    }
+
+    private fun handleAppIntent(intent: Intent?) {
+        if (intent == null) return
+        val str = intent.dataString
+        loadCache()
+
+        handleAppIntentUrl(this, str, false, intent.extras)
+    }
+
+    private fun NavDestination.matchDestination(@IdRes destId: Int): Boolean =
+        hierarchy.any { it.id == destId }
+
+    private var lastNavTime = 0L
+    private fun onNavDestinationSelected(item: MenuItem, navController: NavController): Boolean {
+        val currentTime = System.currentTimeMillis()
+        // safeDebounce: Check if a previous tap happened within the last 400ms
+        if (currentTime - lastNavTime < 400) return false
+        lastNavTime = currentTime
+
+        val destinationId = item.itemId
+
+        // Check if we are already at the selected destination
+        if (navController.currentDestination?.id == destinationId) return false
+
+        // Make all nav buttons focus on this specific view when nextFocusRightId
+        val targetView = when (destinationId) {
+            // Please note that if R.id.navigation_home is readded, then it will only take affect when
+            // navigation to home for the second time as onNavDestinationSelected will not get called
+            // when first loading up the app
+
+            // R.id.navigation_home -> R.id.home_preview_change_api
+            R.id.navigation_search -> R.id.main_search
+            R.id.navigation_library -> R.id.main_search
+            R.id.navigation_downloads -> R.id.download_appbar
+            else -> null
+        }
+        if (targetView != null && isLayout(TV or EMULATOR)) {
+            val fromView = binding?.navRailView
+            if (fromView != null) {
+                fromView.nextFocusRightId = targetView
+
+                for (focusView in arrayOf(
+                    R.id.navigation_downloads,
+                    R.id.navigation_home,
+                    R.id.navigation_search,
+                    R.id.navigation_library,
+                    R.id.navigation_settings,
+                )) {
+                    fromView.findViewById<View?>(focusView)?.nextFocusRightId = targetView
+                }
+            }
+        }
+
+
+        val builder = NavOptions.Builder().setLaunchSingleTop(true).setRestoreState(true)
+            .setEnterAnim(R.anim.enter_anim)
+            .setExitAnim(R.anim.exit_anim)
+            .setPopEnterAnim(R.anim.pop_enter)
+            .setPopExitAnim(R.anim.pop_exit)
+        if (item.order and Menu.CATEGORY_SECONDARY == 0) {
+            builder.setPopUpTo(
+                navController.graph.findStartDestination().id,
+                inclusive = false,
+                saveState = true
+            )
+        }
+        return try {
+            navController.navigate(destinationId, null, builder.build())
+            navController.currentDestination?.matchDestination(destinationId) == true
+        } catch (e: IllegalArgumentException) {
+            Log.e("NavigationError", "Failed to navigate: ${e.message}")
+            false
+        }
+    }
+
+    private val pluginsLock = Mutex()
+    private fun onAllPluginsLoaded(success: Boolean = false) {
+        ioSafe {
+            pluginsLock.withLock {
+                allProviders.withLock {
+                    // Load cloned sites after plugins have been loaded since clones depend on plugins.
+                    try {
+                        getKey<Array<SettingsGeneral.CustomSite>>(USER_PROVIDER_API)?.let { list ->
+                            list.forEach { custom ->
+                                allProviders.firstOrNull { it.javaClass.simpleName == custom.parentJavaClass }
+                                    ?.let {
+                                        allProviders.add(
+                                            it.javaClass.getDeclaredConstructor().newInstance()
+                                                .apply {
+                                                    name = custom.name
+                                                    lang = custom.lang
+                                                    mainUrl = custom.url.trimEnd('/')
+                                                    canBeOverridden = false
+                                                })
+                                    }
+                            }
+                        }
+                        // it.hashCode() is not enough to make sure they are distinct
+                        apis =
+                            allProviders.distinctBy { it.lang + it.name + it.mainUrl + it.javaClass.name }
+                        APIHolder.apiMap = null
+                    } catch (e: Exception) {
+                        logError(e)
                     }
                 }
             }
         }
+    }
 
-        private var last: FocusTarget? = null
-        private var current: FocusTarget? = null
-        private var animator: ValueAnimator? = null
+    lateinit var viewModel: ResultViewModel2
+    lateinit var syncViewModel: SyncViewModel
+    private var libraryViewModel: LibraryViewModel? = null
+
+    /** kinda dirty, however it signals that we should use the watch status as sync or not*/
+    var isLocalList: Boolean = false
+    override fun onCreateView(name: String, context: Context, attrs: AttributeSet): View? {
+
+        viewModel = ViewModelProvider(this)[ResultViewModel2::class.java]
+        syncViewModel = ViewModelProvider(this)[SyncViewModel::class.java]
+
+        return super.onCreateView(name, context, attrs)
+    }
+
+    private fun hidePreviewPopupDialog() {
+        bottomPreviewPopup.dismissSafe(this)
+        lastPopupJob?.cancel()
+        lastPopupJob = null
+        bottomPreviewPopup = null
+        bottomPreviewBinding = null
+    }
+
+    private var bottomPreviewPopup: Dialog? = null
+    private var bottomPreviewBinding: BottomResultviewPreviewBinding? = null
+    private fun showPreviewPopupDialog(): BottomResultviewPreviewBinding {
+        val ret = (bottomPreviewBinding ?: run {
+
+            val builder: Dialog
+            val layout: Int
+
+            if (isLayout(PHONE)) {
+                builder =
+                    BottomSheetDialog(this)
+                layout = R.layout.bottom_resultview_preview
+            } else {
+                builder =
+                    Dialog(this, R.style.DialogHalfFullscreen)
+                layout = R.layout.bottom_resultview_preview_tv
+                // No way to do this in styles :(
+                builder.window?.setGravity(Gravity.CENTER_VERTICAL or Gravity.END)
+            }
+
+            val root = layoutInflater.inflate(layout, null, false)
+            val binding = BottomResultviewPreviewBinding.bind(root)
+
+            bottomPreviewBinding = binding
+            builder.setContentView(root)
+            builder.setOnDismissListener {
+                bottomPreviewPopup = null
+                bottomPreviewBinding = null
+                viewModel.clear()
+            }
+            builder.setCanceledOnTouchOutside(true)
+            builder.show()
+            bottomPreviewPopup = builder
+            binding
+        })
+
+        return ret
+    }
+
+    var binding: ActivityMainBinding? = null
+
+    object TvFocus {
+        data class FocusTarget(
+            val width: Int,
+            val height: Int,
+            val x: Float,
+            val y: Float,
+        ) {
+            companion object {
+                fun lerp(a: FocusTarget, b: FocusTarget, lerp: Float): FocusTarget {
+                    val ilerp = 1 - lerp
+                    return FocusTarget(
+                        width = (a.width * ilerp + b.width * lerp).toInt(),
+                        height = (a.height * ilerp + b.height * lerp).toInt(),
+                        x = a.x * ilerp + b.x * lerp,
+                        y = a.y * ilerp + b.y * lerp
+                    )
+                }
+            }
+        }
+
+        var last: FocusTarget = FocusTarget(0, 0, 0.0f, 0.0f)
+        var current: FocusTarget = FocusTarget(0, 0, 0.0f, 0.0f)
+
+        var focusOutline: WeakReference<View> = WeakReference(null)
+        var lastFocus: WeakReference<View> = WeakReference(null)
+        private val layoutListener: View.OnLayoutChangeListener =
+            View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                // shitty fix for layouts
+                lastFocus.get()?.apply {
+                    updateFocusView(
+                        this, same = true
+                    )
+                    postDelayed({
+                        updateFocusView(
+                            lastFocus.get(), same = false
+                        )
+                    }, 300)
+                }
+            }
+        private val attachListener: View.OnAttachStateChangeListener =
+            object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) {
+                    updateFocusView(v)
+                }
+
+                override fun onViewDetachedFromWindow(v: View) {
+                    // removes the focus view but not the listener as updateFocusView(null) will remove the listener
+                    focusOutline.get()?.isVisible = false
+                }
+            }
+        /*private val scrollListener = object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                super.onScrolled(recyclerView, dx, dy)
+                current = current.copy(x = current.x + dx, y = current.y + dy)
+                setTargetPosition(current)
+            }
+        }*/
 
         private fun setTargetPosition(target: FocusTarget) {
-            TvFocus.focusOutline.get()?.apply {
+            focusOutline.get()?.apply {
                 layoutParams = layoutParams?.apply {
                     width = target.width
                     height = target.height
                 }
+
                 translationX = target.x
                 translationY = target.y
+                bringToFront()
             }
         }
 
-        private const val LEFTMOST_MOVE_LIST = true
-        private const val NO_MOVE_LIST = false
+        private var animator: ValueAnimator? = null
+
+        /** if this is enabled it will keep the focus unmoving
+         *  during listview move */
+        private const val NO_MOVE_LIST: Boolean = false
+
+        /** If this is enabled then it will try to move the
+         * listview focus to the left instead of center */
+        private const val LEFTMOST_MOVE_LIST: Boolean = true
 
         private val reflectedScroll by lazy {
             try {
-                val method = RecyclerView::class.java.getDeclaredMethod(
-                    "smoothScrollBy",
-                    Int::class.java,
-                    Int::class.java,
-                    IntArray::class.java
-                )
-                method.isAccessible = true
-                method
+                RecyclerView::class.java.declaredMethods.firstOrNull {
+                    it.name == "scrollStep"
+                }?.also { it.isAccessible = true }
             } catch (t: Throwable) {
                 null
             }
         }
 
-        private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            updateFocusView(lastFocus.get(), same = true)
-        }
-
-        private val attachListener = object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(v: View) {
-                updateFocusView(lastFocus.get(), same = true)
-            }
-
-            override fun onViewDetachedFromWindow(v: View) {
-                updateFocusView(lastFocus.get(), same = true)
-            }
-        }
-
+        @MainThread
         fun updateFocusView(newFocus: View?, same: Boolean = false) {
-            val focusOutline = TvFocus.focusOutline.get() ?: return
+            val focusOutline = focusOutline.get() ?: return
             val lastView = lastFocus.get()
-
             val exactlyTheSame = lastView == newFocus && newFocus != null
             if (!exactlyTheSame) {
                 lastView?.removeOnLayoutChangeListener(layoutListener)
@@ -599,14 +1182,13 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         @OptIn(UnsafeSSL::class)
         insecureApp.initClient(this, ignoreSSL = true)
 
-        // Force skip setup by writing to DataStore
-        setKey(HAS_DONE_SETUP_KEY, true)
+        val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
 
         setLastError(this)
 
         val settingsForProvider = SettingsJson()
         settingsForProvider.enableAdult =
-            getKey(getString(R.string.enable_nsfw_on_providers_key), false) ?: false
+            settingsManager.getBoolean(getString(R.string.enable_nsfw_on_providers_key), false)
 
         MainAPI.settingsForProvider = settingsForProvider
 
@@ -615,6 +1197,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         setNavigationBarColorCompat(R.attr.primaryGrayBackground)
         updateLocale()
         super.onCreate(savedInstanceState)
+        setKey(HAS_DONE_SETUP_KEY, true)
         try {
             if (isCastApiAvailable()) {
                 CastContext.getSharedInstance(this) { it.run() }
@@ -715,14 +1298,16 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         }
 
         // overscan
-        val padding = (getKey<Int>(getString(R.string.overscan_key)) ?: 0).toPx
+        val padding = settingsManager.getInt(getString(R.string.overscan_key), 0).toPx
         binding?.homeRoot?.setPadding(padding, padding, padding, padding)
 
         changeStatusBarState(isLayout(EMULATOR))
 
         /** Biometric stuff for users without accounts **/
-        val noAccounts = (getKey(getString(R.string.skip_startup_account_select_key), false)
-            ?: false) || accounts.count() <= 1
+        val noAccounts = settingsManager.getBoolean(
+            getString(R.string.skip_startup_account_select_key),
+            false
+        ) || accounts.count() <= 1
 
         if (isLayout(PHONE) && isAuthEnabled(this) && noAccounts) {
             if (deviceHasPasswordPinLock(this)) {
@@ -769,7 +1354,10 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 }
 
                 ioSafe {
-                    if (getKey(getString(R.string.auto_update_plugins_key), true) ?: true
+                    if (settingsManager.getBoolean(
+                            getString(R.string.auto_update_plugins_key),
+                            true
+                        )
                     ) {
                         PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(
                             this@MainActivity
@@ -780,7 +1368,10 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
                     //Automatically download not existing plugins, using mode specified.
                     val autoDownloadPlugin = AutoDownloadMode.getEnum(
-                        getKey<Int>(getString(R.string.auto_download_plugins_key)) ?: 0
+                        settingsManager.getInt(
+                            getString(R.string.auto_download_plugins_key),
+                            0
+                        )
                     ) ?: AutoDownloadMode.Disable
                     if (autoDownloadPlugin != AutoDownloadMode.Disable) {
                         PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(
@@ -1073,7 +1664,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         val navHostFragment =
             supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController
-        navController.addOnDestinationChangedListener { _, navDestination, bundle ->
+
+        navController.addOnDestinationChangedListener { _: NavController, navDestination: NavDestination, bundle: Bundle? ->
             // Intercept search and add a query
             updateNavBar(navDestination)
             if (navDestination.matchDestination(R.id.navigation_search) && !nextSearchQuery.isNullOrBlank()) {
@@ -1084,7 +1676,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
             if (navDestination.matchDestination(R.id.navigation_home)) {
                 attachBackPressedCallback("MainActivity") {
-                    showConfirmExitDialog()
+                    showConfirmExitDialog(settingsManager)
                 }
             } else detachBackPressedCallback("MainActivity")
         }
@@ -1428,77 +2020,54 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 // If no plugins bring up extensions screen
             } else if (PluginManager.getPluginsOnline().isEmpty()
                 && PluginManager.getPluginsLocal().isEmpty()
+//                && PREBUILT_REPOSITORIES.isNotEmpty()
             ) {
-                if (isLayout(TV)) {
-                    navController.navigate(R.id.navigation_setup_welcome)
-                } else {
-                    navController.navigate(R.id.navigation_setup_extensions)
-                }
+                navController.navigate(
+                    R.id.navigation_setup_extensions,
+                    SetupFragmentExtensions.newInstance(false)
+                )
             }
-        } catch (t: Throwable) {
-            logError(t)
-        }
-    }
-
-    @SuppressLint("ApplySharedPref") // commit since the op needs to be synchronous
-    private fun showConfirmExitDialog() {
-        val confirmBeforeExit = getKey<Int>(getString(R.string.confirm_exit_key)) ?: -1
-
-        if (confirmBeforeExit == 1 || (confirmBeforeExit == -1 && isLayout(PHONE))) {
-            // finish() causes a bug on some TVs where player
-            // may keep playing after closing the app.
-            if (isLayout(TV)) exitProcess(0) else finish()
-            return
+        } catch (e: Exception) {
+            logError(e)
         }
 
-        val dialogView = layoutInflater.inflate(R.layout.confirm_exit_dialog, null)
-        val dontShowAgainCheck: CheckBox = dialogView.findViewById(R.id.checkboxDontShowAgain)
-        val builder: AlertDialog.Builder = AlertDialog.Builder(this)
-        builder.setView(dialogView)
-            .setTitle(R.string.confirm_exit_dialog)
-            .setNegativeButton(R.string.no) { _, _ -> /*NO-OP*/ }
-            .setPositiveButton(R.string.yes) { _, _ ->
-                if (dontShowAgainCheck.isChecked) {
-                    setKey(getString(R.string.confirm_exit_key), 1)
-                }
-                // finish() causes a bug on some TVs where player
-                // may keep playing after closing the app.
-                if (isLayout(TV)) exitProcess(0) else finish()
-            }
+//        Used to check current focus for TV
+//        main {
+//            while (true) {
+//                delay(5000)
+//                println("Current focus: $currentFocus")
+//                showToast(this, currentFocus.toString(), Toast.LENGTH_LONG)
+//            }
+//        }
 
-        builder.show().setDefaultFocus()
-    }
-
-    override fun onDestroy() {
-        filesToDelete.forEach { path ->
-            val result = File(path).deleteRecursively()
-            if (result) {
-                Log.d(TAG, "Deleted temporary file: $path")
-            } else {
-                Log.d(TAG, "Failed to delete temporary file: $path")
-            }
+        attachBackPressedCallback("MainActivityDefault") {
+            setNavigationBarColorCompat(R.attr.primaryGrayBackground)
+            updateLocale()
+            runDefault()
         }
-        filesToDelete = setOf()
-        super.onDestroy()
+
+        // Start the download queue
+        DownloadQueueManager.init(this)
     }
 
-    override fun onColorSelected(dialogId: Int, color: Int) {
-        onColorSelectedEvent(color)
-    }
-
-    override fun onDialogDismissed(dialogId: Int) {
-        onDialogDismissedEvent()
-    }
-
+    /** Biometric stuff **/
     override fun onAuthenticationSuccess() {
-        binding?.navHostFragment?.isVisible = true
-    }
-
-    override fun onAuthenticationFailure() {
-        exitProcess(0)
+        // make background (nav host fragment) visible again
+        binding?.navHostFragment?.isInvisible = false
     }
 
     override fun onAuthenticationError() {
-        exitProcess(0)
+        finish()
+    }
+
+    suspend fun checkGithubConnectivity(): Boolean {
+        return try {
+            app.get(
+                "https://raw.githubusercontent.com/recloudstream/.github/master/connectivitycheck",
+                timeout = 5
+            ).text.trim() == "ok"
+        } catch (t: Throwable) {
+            false
+        }
     }
 }
