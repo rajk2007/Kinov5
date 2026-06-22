@@ -637,7 +637,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
             val composeView = ComposeView(requireContext()).apply {
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
                 setContent {
-                    KinoHomeScreen(homeViewModel)
+                    KinoHomeScreen()
                 }
             }
             binding.homeRoot.addView(composeView)
