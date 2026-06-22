@@ -569,16 +569,17 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
         savedInstanceState: Bundle?
     ): View? {
         bottomSheetDialog?.ownShow()
-        val root = super.onCreateView(inflater, container, savedInstanceState)
         
-        val composeView = ComposeView(requireContext()).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                KinoHomeScreen()
+        return if (isLayout(PHONE)) {
+            ComposeView(requireContext()).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+                setContent {
+                    KinoHomeScreen()
+                }
             }
+        } else {
+            super.onCreateView(inflater, container, savedInstanceState)
         }
-
-        return composeView
     }
 
     override fun onDestroyView() {
@@ -643,27 +644,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
     @SuppressLint("SetTextI18n")
     override fun onBindingCreated(binding: FragmentHomeBinding) {
         if (isLayout(PHONE)) {
-            val composeView = ComposeView(requireContext()).apply {
-                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-                setContent {
-                    KinoHomeScreen()
-                }
-            }
-            binding.homeRoot.addView(composeView)
-            
-            // Hide default UI elements for Phone
-            binding.homeMasterRecycler.isVisible = false
-            binding.homeApiFab.isVisible = false
-            binding.homeRandom.isVisible = false
-            binding.homeChangeApi.isVisible = false
-            binding.homeLoading.isVisible = false
-            
-            // Initialize data loading even if we use Compose UI
-            homeViewModel.reloadStored()
-            if (homeViewModel.apiName.value == null) {
-                val apiName = context?.getApiProviderLangSettings()?.firstOrNull() ?: noneApi.name
-                homeViewModel.loadAndCancel(apiName)
-            }
+            // Compose UI is already handled in onCreateView(), skip XML setup for phone
             return
         }
 
