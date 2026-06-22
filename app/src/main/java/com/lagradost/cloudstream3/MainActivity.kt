@@ -501,10 +501,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
             R.id.navigation_home,
             R.id.navigation_search,
             R.id.navigation_library,
-            R.id.navigation_downloads,
-            R.id.navigation_settings,
-            R.id.navigation_download_child,
-            R.id.navigation_download_queue,
+            R.id.navigation_profile,
             R.id.navigation_subtitles,
             R.id.navigation_chrome_subtitles,
             R.id.navigation_settings_player,
@@ -571,16 +568,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
              */
             when (destination.id) {
                 in listOf(
-                    R.id.navigation_downloads,
-                    R.id.navigation_download_child,
-                    R.id.navigation_download_queue
-                ) -> {
-                    navRailView.menu.findItem(R.id.navigation_downloads).isChecked = true
-                    navView.menu.findItem(R.id.navigation_downloads).isChecked = true
-                }
-
-                in listOf(
-                    R.id.navigation_settings,
+                    R.id.navigation_profile,
                     R.id.navigation_subtitles,
                     R.id.navigation_chrome_subtitles,
                     R.id.navigation_settings_player,
@@ -593,8 +581,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                     R.id.navigation_settings_plugins,
                     R.id.navigation_test_providers
                 ) -> {
-                    navRailView.menu.findItem(R.id.navigation_settings).isChecked = true
-                    navView.menu.findItem(R.id.navigation_settings).isChecked = true
+                    navRailView.menu.findItem(R.id.navigation_profile).isChecked = true
+                    navView.menu.findItem(R.id.navigation_profile).isChecked = true
                 }
             }
         }
@@ -1783,14 +1771,13 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
             // The genius engineers at google did not actually 
             // write a nextFocus for the navrail
-            rail.findViewById<View?>(R.id.navigation_settings)?.nextFocusDownId =
+            rail.findViewById<View?>(R.id.navigation_profile)?.nextFocusDownId =
                 R.id.nav_footer_profile_card
             for (id in arrayOf(
                 R.id.navigation_home,
                 R.id.navigation_search,
                 R.id.navigation_library,
-                R.id.navigation_downloads,
-                R.id.navigation_settings
+                R.id.navigation_profile
             )) {
                 val view = rail.findViewById<View?>(id) ?: continue
                 prevId?.let { view.nextFocusUpId = it }
@@ -1862,12 +1849,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 return@setOnLongClickListener true
             }
 
-            view?.findViewById<View?>(R.id.navigation_downloads)?.setOnLongClickListener {
-                val recycler: RecyclerView? = binding?.root?.findViewById(R.id.download_list)
-                    ?: binding?.root?.findViewById(R.id.download_child_list)
-                recycler?.smoothScrollToPosition(0)
-                return@setOnLongClickListener recycler != null
-            }
+
         }
 
         loadCache()
@@ -1891,10 +1873,11 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         }*/
 
 
-        if (!checkWrite()) {
-            requestRW()
-            if (checkWrite()) return
-        }
+        // KINO: Bypass media permission request
+        // if (!checkWrite()) {
+        //     requestRW()
+        //     if (checkWrite()) return
+        // }
         //CastButtonFactory.setUpMediaRouteButton(this, media_route_button)
 
         // THIS IS CURRENTLY REMOVED BECAUSE HIGHER VERS OF ANDROID NEEDS A NOTIFICATION

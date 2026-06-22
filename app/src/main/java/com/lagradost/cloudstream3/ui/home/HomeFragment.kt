@@ -570,15 +570,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
     ): View? {
         bottomSheetDialog?.ownShow()
         
-        return if (isLayout(PHONE)) {
-            ComposeView(requireContext()).apply {
-                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-                setContent {
-                    KinoHomeScreen()
-                }
+        return ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                KinoHomeScreen()
             }
-        } else {
-            super.onCreateView(inflater, container, savedInstanceState)
         }
     }
 
