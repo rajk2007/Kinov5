@@ -569,7 +569,16 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
         savedInstanceState: Bundle?
     ): View? {
         bottomSheetDialog?.ownShow()
-        return super.onCreateView(inflater, container, savedInstanceState)
+        val root = super.onCreateView(inflater, container, savedInstanceState)
+        
+        val composeView = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                KinoHomeScreen()
+            }
+        }
+
+        return composeView
     }
 
     override fun onDestroyView() {
