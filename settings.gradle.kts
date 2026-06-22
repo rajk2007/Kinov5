@@ -10,10 +10,24 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
-        mavenCentral()
-        mavenLocal()
-        maven { url = uri("https://jitpack.io") }
+        google() {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.google\\..*")
+            }
+        }
+        mavenCentral() {
+            content {
+                includeGroupByRegex("(?!com\\.github\\.).*")
+            }
+        }
+        maven(url = "https://jitpack.io") {
+            content {
+                includeGroupByRegex("com\\.github\\..*")
+                includeGroupByRegex("io\\.github\\..*")
+            }
+        }
     }
 }
 

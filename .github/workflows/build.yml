@@ -2,6 +2,9 @@ name: Build Kino APK
 on:
   push:
     branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,39 +16,30 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      # CRITICAL: Clear potentially corrupted caches before build
+      - name: Clear corrupted Gradle caches
+        run: |
+          rm -rf ~/.gradle/wrapper/dists/*
+          rm -rf ~/.gradle/caches/modules-2/files-2.1/*
+          rm -rf ~/.gradle/caches/transforms-3/*
 
       - name: Grant permission
         run: chmod +x gradlew
 
       - name: Build Debug APK
         run: |
-          ./gradlew clean assembleStableDebug --stacktrace > build_output.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
-
-      - name: Print Only Errors and Warnings
-        if: always()
-        run: |
-          echo "=== COMPILATION ERRORS ==="
-          grep -E "^e:|error:|FAILED|What went wrong|Caused by:" build_output.txt || echo "No specific errors found in grep, check full log."
-          echo "=== END ERRORS ==="
-
-      - name: Fail job if build failed
-        if: env.BUILD_FAILED == 'true'
-        run: exit 1
+          ./gradlew clean assembleStableDebug --stacktrace --refresh-dependencies
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Kino-APK
-          path: |
-            **/build/outputs/apk/**/*.apk
-
-      - name: Upload build log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-log
-          path: build_output.txt
+          path: '**/build/outputs/apk/**/*.apk'
