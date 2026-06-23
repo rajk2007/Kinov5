@@ -109,7 +109,7 @@ import com.lagradost.cloudstream3.utils.WIDEVINE_DRM_UUID
 import com.lagradost.cloudstream3.utils.videoskip.VideoSkipStamp
 import kotlinx.coroutines.delay
 import okhttp3.Interceptor
-// import org.chromium.net.CronetEngine
+// Removed CronetEngine import
 import java.io.File
 import java.security.SecureRandom
 import java.util.UUID
@@ -230,7 +230,7 @@ class CS3IPlayer : IPlayer {
         if (isPlayerActive) {
             isPlayerActive = false
             activePlayers -= 1
-            // releaseCronetEngine()
+            // releaseCronetEngine() - Cronet disabled
         }
     }
 
@@ -665,7 +665,7 @@ class CS3IPlayer : IPlayer {
          * 2. Mem consumption/GC
          * 3. Disk usage, as we simply use the same folder
          * */
-        // private var cronetEngine: CronetEngine? = null
+        // private var cronetEngine: CronetEngine? = null - Cronet disabled
 
         /**
          * How many active sessions we have.
