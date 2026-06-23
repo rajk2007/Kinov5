@@ -17,11 +17,7 @@ dependencyResolutionManagement {
                 includeGroupByRegex("com\\.google\\..*")
             }
         }
-        mavenCentral() {
-            content {
-                includeGroupByRegex("(?!com\\.github\\.).*")
-            }
-        }
+        mavenCentral()
         maven(url = "https://jitpack.io") {
             content {
                 includeGroupByRegex("com\\.github\\..*")
