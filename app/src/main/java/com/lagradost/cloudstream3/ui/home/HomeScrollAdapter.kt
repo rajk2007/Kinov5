@@ -10,7 +10,7 @@ import com.lagradost.cloudstream3.databinding.HomeScrollViewTvBinding
 import com.lagradost.cloudstream3.ui.BaseDiffCallback
 import com.lagradost.cloudstream3.ui.NoStateAdapter
 import com.lagradost.cloudstream3.ui.ViewHolderState
-import com.lagradost.cloudstream3.ui.result.ResultFragment.bindLogo
+import com.lagradost.cloudstream3.ui.BaseAdapter.Companion.clearImage
 import com.lagradost.cloudstream3.ui.settings.Globals.EMULATOR
 import com.lagradost.cloudstream3.ui.settings.Globals.TV
 import com.lagradost.cloudstream3.ui.settings.Globals.isLayout
