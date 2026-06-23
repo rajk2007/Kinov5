@@ -395,7 +395,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         }
                     } else if (!isWebview) {
                         if (str.startsWith(DOWNLOAD_NAVIGATE_TO)) {
-                            this.navigate(R.id.navigation_downloads)
+                            // this.navigate(R.id.navigation_downloads)
                             return true
                         } else {
                             val apiName = extraArgs?.getString(API_NAME_EXTRA_KEY)
@@ -752,7 +752,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
             // R.id.navigation_home -> R.id.home_preview_change_api
             R.id.navigation_search -> R.id.main_search
             R.id.navigation_library -> R.id.main_search
-            R.id.navigation_downloads -> R.id.download_appbar
+// R.id.navigation_downloads -> R.id.download_appbar
             else -> null
         }
         if (targetView != null && isLayout(TV or EMULATOR)) {
@@ -761,11 +761,10 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 fromView.nextFocusRightId = targetView
 
                 for (focusView in arrayOf(
-                    R.id.navigation_downloads,
                     R.id.navigation_home,
                     R.id.navigation_search,
                     R.id.navigation_library,
-                    R.id.navigation_settings,
+                    R.id.navigation_profile,
                 )) {
                     fromView.findViewById<View?>(focusView)?.nextFocusRightId = targetView
                 }
@@ -1862,9 +1861,9 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 R.id.navigation_search -> {
                     navController.navigate(R.id.navigation_search, null, navOptions)
                 }
-                R.id.navigation_downloads -> {
+                /*R.id.navigation_downloads -> {
                     navController.navigate(R.id.navigation_downloads, null, navOptions)
-                }
+                }*/
                 R.id.navigation_settings -> {
                     navController.navigate(R.id.navigation_settings, null, navOptions)
                 }
