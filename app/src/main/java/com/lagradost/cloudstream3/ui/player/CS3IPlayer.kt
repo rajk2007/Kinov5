@@ -40,7 +40,6 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
-import androidx.media3.datasource.cronet.CronetDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -110,7 +109,7 @@ import com.lagradost.cloudstream3.utils.WIDEVINE_DRM_UUID
 import com.lagradost.cloudstream3.utils.videoskip.VideoSkipStamp
 import kotlinx.coroutines.delay
 import okhttp3.Interceptor
-import org.chromium.net.CronetEngine
+// import org.chromium.net.CronetEngine
 import java.io.File
 import java.security.SecureRandom
 import java.util.UUID
@@ -231,7 +230,7 @@ class CS3IPlayer : IPlayer {
         if (isPlayerActive) {
             isPlayerActive = false
             activePlayers -= 1
-            releaseCronetEngine()
+            // releaseCronetEngine()
         }
     }
 
@@ -666,7 +665,7 @@ class CS3IPlayer : IPlayer {
          * 2. Mem consumption/GC
          * 3. Disk usage, as we simply use the same folder
          * */
-        private var cronetEngine: CronetEngine? = null
+        // private var cronetEngine: CronetEngine? = null
 
         /**
          * How many active sessions we have.
@@ -682,36 +681,7 @@ class CS3IPlayer : IPlayer {
         private var cronetReleasedId = 0
 
         fun releaseCronetEngine() {
-            if (cronetEngine == null) return
-
-            // Delayed release, as we do not want to restart it when opening trailers ect
-            val id = ++cronetReleasedId
-            val posted = Handler(Looper.getMainLooper()).postDelayed({
-                // This might get dropped, but that should be very rare
-                // and should not affect it.
-                releaseCronetEngineInstantly(id)
-            }, 60_000) // 1min timeout before release
-
-            // If not posted, then run instantly
-            if (!posted) {
-                releaseCronetEngineInstantly(id)
-            }
-        }
-
-        private fun releaseCronetEngineInstantly(id: Int) {
-            // We should release if and only if this was the last call, and
-            // there is no active players
-            if (activePlayers == 0 && id == cronetReleasedId) {
-                try {
-                    cronetEngine?.shutdown()
-                } catch (t: Throwable) {
-                    logError(t)
-                } finally {
-                    Log.d(TAG, "CronetEngine shutdown")
-                    // Even if it fails to shutdown, the GC should take care of it
-                    cronetEngine = null
-                }
-            }
+            // Cronet is disabled
         }
 
         /**
@@ -753,43 +723,13 @@ class CS3IPlayer : IPlayer {
             return source
         }
 
-        fun tryCreateEngine(context: Context, diskCacheSize: Long): CronetEngine? {
-            // Fast case, no need to recreate it
-            cronetEngine?.let {
-                return it
-            }
-
-            // https://gist.github.com/ShivamKumarJha/3c8398b47053ae05112d2a8f8b5de531
-            return try {
-                val cacheDirectory = File(context.cacheDir, "CronetEngine")
-                cacheDirectory.deleteRecursively()
-                if (!cacheDirectory.exists()) {
-                    cacheDirectory.mkdirs()
-                }
-                CronetEngine.Builder(context)
-                    .enableBrotli(true)
-                    .enableHttp2(true)
-                    .enableQuic(true)
-                    .setStoragePath(cacheDirectory.absolutePath)
-                    .setLibraryLoader(null)
-                    .enableHttpCache(CronetEngine.Builder.HTTP_CACHE_DISK, diskCacheSize)
-                    .build().also { buildEngine ->
-                        Log.d(
-                            TAG,
-                            "Created CronetEngine with cache at ${cacheDirectory.absolutePath}"
-                        )
-                        cronetEngine = buildEngine
-                    }
-            } catch (t: Throwable) {
-                logError(t)
-                // Something went wrong, so we use the backup okhttp
-                null
-            }
+        fun tryCreateEngine(context: Context, diskCacheSize: Long): Any? {
+            return null
         }
 
         private fun createVideoSource(
             link: ExtractorLink,
-            engine: CronetEngine?,
+            engine: Any?,
             interceptor: Interceptor?,
         ): HttpDataSource.Factory {
             val userAgent = link.headers.entries.find {
@@ -797,18 +737,8 @@ class CS3IPlayer : IPlayer {
             }?.value ?: USER_AGENT
 
             val source = if (interceptor == null) {
-                if (engine == null) {
-                    Log.d(TAG, "Using DefaultHttpDataSource for $link")
-                    OkHttpDataSource.Factory(app.baseClient).setUserAgent(userAgent)
-                } else {
-                    Log.d(TAG, "Using CronetDataSource for $link")
-                    CronetDataSource.Factory(engine, Executors.newSingleThreadExecutor())
-                        .setUserAgent(userAgent)
-                        .setConnectionTimeoutMs(CRONET_TIMEOUT_MS)
-                        .setReadTimeoutMs(CRONET_TIMEOUT_MS)
-                        .setResetTimeoutOnRedirects(true)
-                        .setHandleSetCookieRequests(true)
-                }
+                Log.d(TAG, "Using OkHttpDataSource for $link")
+                OkHttpDataSource.Factory(app.baseClient).setUserAgent(userAgent)
             } else {
                 Log.d(TAG, "Using OkHttpDataSource for $link")
                 val client = app.baseClient.newBuilder()

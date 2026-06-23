@@ -17,6 +17,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.platform.ComposeView
+import com.lagradost.cloudstream3.ui.home.KinoHomeScreen
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.appcompat.app.AlertDialog
 import androidx.core.net.toUri
