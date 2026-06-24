@@ -198,7 +198,7 @@ class CustomDecoder(private val fallbackFormat: Format?) : SubtitleParser {
     private fun getStr(byteArray: ByteArray): Pair<String, Charset> {
         val encoding = try {
             val encoding = overrideEncoding ?: run {
-                val detector = UniversalDetector()
+                val detector = UniversalDetector(null)
 
                 detector.handleData(byteArray, 0, byteArray.size)
                 detector.dataEnd()
