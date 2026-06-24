@@ -1396,7 +1396,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         }
 
 
-        fun setUserData(status: Resource<SyncViewModel.SyncData>?) {
+        fun setUserData(status: Resource<SyncAPI.AbstractSyncStatus>?) {
             if (isLocalList) return
             bottomPreviewBinding?.apply {
                 when (status) {
