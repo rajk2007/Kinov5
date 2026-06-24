@@ -1,12 +1,12 @@
 package com.lagradost.cloudstream3.api
 
-import com.lagradost.cloudstream3.mvvm.log
-
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
-
 import retrofit2.http.Query
 
 interface TMDBApi {
+
     @GET("trending/movie/week")
     suspend fun getTrending(
         @Query("api_key") apiKey: String
@@ -21,6 +21,20 @@ interface TMDBApi {
     suspend fun getTopRated(
         @Query("api_key") apiKey: String
     ): TMDBResponse
+
+    companion object {
+        const val BASE_URL = "https://api.themoviedb.org/3/"
+        const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
+        const val API_KEY = "cf5a2b948bb3cbe03332dc70594b4ba7"
+
+        fun create(): TMDBApi {
+            return Retrofit.Builder()
+                .baseUrl(BASE_URL)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(TMDBApi::class.java)
+        }
+    }
 }
 
 data class TMDBResponse(
