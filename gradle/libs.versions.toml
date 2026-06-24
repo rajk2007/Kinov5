@@ -55,6 +55,7 @@ tvprovider = "1.1.0"
 video = "1.0.0"
 workRuntimeKtx = "2.11.2"
 zipline = "1.27.0"
+retrofit = "2.9.0"
 
 jvmTarget = "1.8"
 jdkToolchain = "17"
@@ -137,6 +138,8 @@ tvprovider = { module = "androidx.tvprovider:tvprovider", version.ref = "tvprovi
 video = { module = "com.google.android.mediahome:video", version.ref = "video" }
 work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
 zipline = { module = "app.cash.zipline:zipline-android", version.ref = "zipline" }
+retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+retrofit-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
