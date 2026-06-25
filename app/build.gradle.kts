@@ -190,7 +190,6 @@ android {
 dependencies {
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
-    implementation("io.coil-kt:coil-compose:2.5.0")
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.json)
@@ -232,9 +231,7 @@ dependencies {
     implementation(libs.bundles.coil)
 
     // Media 3 (ExoPlayer)
-    implementation(libs.bundles.media3) {
-        exclude(group = "org.chromium.net")
-    }
+    implementation(libs.bundles.media3)
     implementation(libs.video)
 
     // FFmpeg Decoding
