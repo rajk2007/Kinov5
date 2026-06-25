@@ -1,6 +1,6 @@
+package com.lagradost.cloudstream3
 import com.lagradost.cloudstream3.plugins.RepositoryManager
 import com.lagradost.cloudstream3.ui.settings.extensions.RepositoryData
-package com.lagradost.cloudstream3
 
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
