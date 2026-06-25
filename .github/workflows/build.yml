@@ -21,21 +21,15 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # CRITICAL: Clear potentially corrupted caches before build
-      - name: Clear corrupted Gradle caches
-        run: |
-          rm -rf ~/.gradle/wrapper/dists/*
-          rm -rf ~/.gradle/caches/modules-2/files-2.1/*
-          rm -rf ~/.gradle/caches/transforms-3/*
+
 
       - name: Grant permission
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: |
-          ./gradlew clean assembleStableDebug --stacktrace --refresh-dependencies
+        run: ./gradlew clean assembleStableDebug --no-daemon --stacktrace
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
 
       - name: Upload APK
         if: success()
