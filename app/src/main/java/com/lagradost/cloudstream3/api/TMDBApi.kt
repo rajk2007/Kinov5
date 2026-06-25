@@ -6,21 +6,14 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 
 interface TMDBApi {
-
     @GET("trending/movie/week")
-    suspend fun getTrending(
-        @Query("api_key") apiKey: String
-    ): TMDBResponse
+    suspend fun getTrending(@Query("api_key") apiKey: String): TMDBResponse
 
     @GET("movie/popular")
-    suspend fun getPopular(
-        @Query("api_key") apiKey: String
-    ): TMDBResponse
+    suspend fun getPopular(@Query("api_key") apiKey: String): TMDBResponse
 
     @GET("movie/top_rated")
-    suspend fun getTopRated(
-        @Query("api_key") apiKey: String
-    ): TMDBResponse
+    suspend fun getTopRated(@Query("api_key") apiKey: String): TMDBResponse
 
     companion object {
         const val BASE_URL = "https://api.themoviedb.org/3/"
@@ -37,9 +30,7 @@ interface TMDBApi {
     }
 }
 
-data class TMDBResponse(
-    val results: List<MovieResult>
-)
+data class TMDBResponse(val results: List<MovieResult>)
 
 data class MovieResult(
     val id: Int,

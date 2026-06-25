@@ -28,22 +28,16 @@ class KinoHomeViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    init {
-        loadData()
-    }
+    init { loadData() }
 
     private fun loadData() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
-                val trending = tmdbApi.getTrending(TMDBApi.API_KEY)
-                val popular = tmdbApi.getPopular(TMDBApi.API_KEY)
-                val topRated = tmdbApi.getTopRated(TMDBApi.API_KEY)
-
-                _trendingMovies.value = trending.results
-                _popularMovies.value = popular.results
-                _topRatedMovies.value = topRated.results
+                _trendingMovies.value = tmdbApi.getTrending(TMDBApi.API_KEY).results
+                _popularMovies.value = tmdbApi.getPopular(TMDBApi.API_KEY).results
+                _topRatedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
             } catch (e: Exception) {
                 logError(e)
                 _error.value = e.message ?: "Unknown error"
@@ -53,7 +47,5 @@ class KinoHomeViewModel : ViewModel() {
         }
     }
 
-    fun retry() {
-        loadData()
-    }
+    fun retry() { loadData() }
 }
