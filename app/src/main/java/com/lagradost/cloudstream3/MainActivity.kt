@@ -1190,7 +1190,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         // Auto-install default repositories on first launch
         ioSafe {
             val firstLaunchKey = "kino_first_launch_repos"
-            val hasInstalledRepos = getKey<Boolean>(firstLaunchKey) == true
+            val hasInstalledRepos = getKey<Boolean>(firstLaunchKey) == true && 
+                RepositoryManager.getRepositories().isNotEmpty()
             if (!hasInstalledRepos) {
                 val defaultRepos = listOf(
                     RepositoryData(name = "CloudStream Extensions", url = "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json"),
@@ -1203,16 +1204,15 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                             val repository = RepositoryManager.parseRepository(parsedUrl)
                             if (repository != null) {
                                 RepositoryManager.addRepository(RepositoryData(repository.iconUrl, repo.name.ifBlank { repository.name }, parsedUrl))
+                                // Force plugin update and load
+                                main {
+                                    com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(this@MainActivity)
+                                }
                             }
                         }
                     } catch (e: Exception) { logError(e) }
                 }
             setKey(firstLaunchKey, true)
-
-            // Load plugins after repo installation
-            main {
-                PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(this@MainActivity)
-            }
         }
     }
 
@@ -1787,6 +1787,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                     }
                 }
             } else {
+                // Phone layout - make profile button visible
                 navProfileRoot.isVisible = true
                 navProfileRoot.setOnClickListener {
                     showAccountSelectLinear()
