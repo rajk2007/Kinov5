@@ -1207,9 +1207,14 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         }
                     } catch (e: Exception) { logError(e) }
                 }
-                setKey(firstLaunchKey, true)
+            setKey(firstLaunchKey, true)
+
+            // Load plugins after repo installation
+            main {
+                PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(this@MainActivity)
             }
         }
+    }
 
         setKey(HAS_DONE_SETUP_KEY, true)
         try {
@@ -1782,7 +1787,10 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                     }
                 }
             } else {
-                navProfileRoot.isGone = true
+                navProfileRoot.isVisible = true
+                navProfileRoot.setOnClickListener {
+                    showAccountSelectLinear()
+                }
             }
         }
 
