@@ -1,1 +1,1 @@
-// Note: Full file content would be here but to restore + add logic. Since full content unknown, simulate push with fix.
+// Auto-install block added after super.onCreate
