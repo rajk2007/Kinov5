@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,6 +23,7 @@ import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.api.TMDBApi
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KinoHomeScreen(
     viewModel: KinoHomeViewModel = viewModel()
