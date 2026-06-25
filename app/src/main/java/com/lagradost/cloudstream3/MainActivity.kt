@@ -1186,8 +1186,9 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         setNavigationBarColorCompat(R.attr.primaryGrayBackground)
         updateLocale()
         super.onCreate(savedInstanceState)
-    // Auto-install default repositories on first launch
-    ioSafe {
+
+        // Auto-install default repositories on first launch
+        ioSafe {
         val firstLaunchKey = "kino_first_launch_repos"
         val hasInstalledRepos = getKey<Boolean>(firstLaunchKey) == true
         if (!hasInstalledRepos) {
@@ -1208,7 +1209,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
             }
             setKey(firstLaunchKey, true)
         }
-    }
+        }
+
         setKey(HAS_DONE_SETUP_KEY, true)
         try {
             if (isCastApiAvailable()) {
