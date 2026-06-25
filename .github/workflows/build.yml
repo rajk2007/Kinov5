@@ -1,9 +1,10 @@
 name: Build Kino APK
+
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ master ]
 
 jobs:
   build:
@@ -16,24 +17,27 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-
-
-      - name: Grant permission
+      - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew clean assembleStableDebug --no-daemon --stacktrace
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
+        run: |
+          ./gradlew clean assembleStableDebug --no-daemon --stacktrace > build_output.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      - name: Upload APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kino-APK
-          path: '**/build/outputs/apk/**/*.apk'
+      - name: Print Only Errors and Warnings
+        if: always()
+        run: |
+          echo "=== COMPILATION ERRORS ==="
+          grep -E "^e:" build_output.txt | head -50 || echo "No Kotlin compiler errors found"
+          echo ""
+          echo "=== GRADLE FAILURES ==="
+          grep -E "FAILED|What went wrong|Caused by:" build_output.txt | head -20 || echo "No Gradle failure messages found"
+          echo "=== END ERRORS ==="
+
+      - name: Fail job if build failed
+        if: env.BUILD_FAILED == 'true'
+        run: exit 1
