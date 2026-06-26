@@ -1784,7 +1784,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         )
                         navProfileRoot.isVisible = true
                     } else {
-                        navProfileRoot.isGone = true
+                        navProfileRoot.isVisible = true
+                        navProfileRoot.setOnClickListener { showAccountSelectLinear() }
                     }
                 }
             } else {

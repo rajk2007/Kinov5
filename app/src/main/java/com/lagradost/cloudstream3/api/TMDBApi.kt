@@ -53,4 +53,18 @@ interface TMDBApi {
 
 data class TMDBResponse(val results: List<MovieResult>)
 
-data class MovieResult(val id: Int, val title: String, val poster_path: String?, val backdrop_path: String?, val overview: String?, val vote_average: Double?)
+data class MovieResult(
+    val id: Int,
+    val title: String?,
+    val name: String?,
+    val poster_path: String?,
+    val backdrop_path: String?,
+    val overview: String?,
+    val vote_average: Double?,
+    val release_date: String?,
+    val first_air_date: String?,
+    val genre_ids: List<Int>?
+) {
+    val displayTitle: String get() = title ?: name ?: "Unknown"
+    val year: String get() = (release_date ?: first_air_date ?: "").take(4)
+}
