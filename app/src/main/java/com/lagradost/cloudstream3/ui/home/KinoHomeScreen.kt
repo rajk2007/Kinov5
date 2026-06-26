@@ -328,8 +328,7 @@ fun Top10TodayRow(movies: List<MovieResult>) {
         }
         Spacer(modifier = Modifier.height(16.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            itemsIndexed(movies.take(10)) {
-                index, movie ->
+            itemsIndexed(movies.take(10)) { index, movie ->
                 Top10MovieCard(movie, index + 1)
             }
         }
@@ -374,7 +373,7 @@ fun PremiumBanner() {
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-            Icon(Icons.Default.Star, contentDescription = "Premium", tint = Color(0xFFFFD700), modifier = Modifier.size(48.dp))
+            Text("👑", fontSize = 48.sp)
             Spacer(modifier = Modifier.width(16.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("KINO Premium", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
