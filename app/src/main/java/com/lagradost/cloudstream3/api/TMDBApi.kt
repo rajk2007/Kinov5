@@ -17,6 +17,18 @@ interface TMDBApi {
     @GET("movie/top_rated")
     suspend fun getTopRated(@Query("api_key") apiKey: String): TMDBResponse
 
+    @GET("movie/now_playing")
+    suspend fun getNowPlaying(@Query("api_key") apiKey: String): TMDBResponse
+
+    @GET("movie/upcoming")
+    suspend fun getUpcoming(@Query("api_key") apiKey: String): TMDBResponse
+
+    @GET("tv/popular")
+    suspend fun getPopularTV(@Query("api_key") apiKey: String): TMDBResponse
+
+    @GET("tv/top_rated")
+    suspend fun getTopRatedTV(@Query("api_key") apiKey: String): TMDBResponse
+
     companion object {
         const val BASE_URL = "https://api.themoviedb.org/3/"
         const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"

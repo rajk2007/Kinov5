@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +28,7 @@ import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.api.TMDBApi
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +36,10 @@ fun KinoHomeScreen(viewModel: KinoHomeViewModel = viewModel()) {
     val trending by viewModel.trendingMovies.collectAsState()
     val popular by viewModel.popularMovies.collectAsState()
     val topRated by viewModel.topRatedMovies.collectAsState()
+    val nowPlaying by viewModel.nowPlaying.collectAsState()
+    val upcoming by viewModel.upcoming.collectAsState()
+    val popularTV by viewModel.popularTV.collectAsState()
+    val topRatedTV by viewModel.topRatedTV.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val context = LocalContext.current
@@ -58,14 +65,41 @@ fun KinoHomeScreen(viewModel: KinoHomeViewModel = viewModel()) {
             else -> {
                 LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
                     if (trending.isNotEmpty()) {
-                        item { HeroSection(movie = trending.first(), context = context) }
+                        item {
+                            HeroCarousel(movies = trending.take(5), context = context)
+                        }
                     }
                     item { ContentRow("Trending Now", trending, context) }
                     item { ContentRow("Popular Movies", popular, context) }
                     item { ContentRow("Top Rated", topRated, context) }
+                    item { ContentRow("Now Playing", nowPlaying, context) }
+                    item { ContentRow("Coming Soon", upcoming, context) }
+                    item { ContentRow("Popular TV Shows", popularTV, context) }
+                    item { ContentRow("Top Rated TV", topRatedTV, context) }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun HeroCarousel(movies: List<MovieResult>, context: Context) {
+    val pagerState = rememberPagerState(pageCount = { movies.size })
+    
+    // Auto-scroll
+    LaunchedEffect(pagerState) {
+        while (true) {
+            delay(5000) // 5 seconds
+            val nextPage = (pagerState.currentPage + 1) % movies.size
+            pagerState.animateScrollToPage(nextPage)
+        }
+    }
+    
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxWidth().height(500.dp)
+    ) { page ->
+        HeroSection(movie = movies[page], context = context)
     }
 }
 

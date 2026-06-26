@@ -22,6 +22,18 @@ class KinoHomeViewModel : ViewModel() {
     private val _topRatedMovies = MutableStateFlow<List<MovieResult>>(emptyList())
     val topRatedMovies: StateFlow<List<MovieResult>> = _topRatedMovies.asStateFlow()
 
+    private val _nowPlaying = MutableStateFlow<List<MovieResult>>(emptyList())
+    val nowPlaying: StateFlow<List<MovieResult>> = _nowPlaying.asStateFlow()
+
+    private val _upcoming = MutableStateFlow<List<MovieResult>>(emptyList())
+    val upcoming: StateFlow<List<MovieResult>> = _upcoming.asStateFlow()
+
+    private val _popularTV = MutableStateFlow<List<MovieResult>>(emptyList())
+    val popularTV: StateFlow<List<MovieResult>> = _popularTV.asStateFlow()
+
+    private val _topRatedTV = MutableStateFlow<List<MovieResult>>(emptyList())
+    val topRatedTV: StateFlow<List<MovieResult>> = _topRatedTV.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -38,6 +50,10 @@ class KinoHomeViewModel : ViewModel() {
                 _trendingMovies.value = tmdbApi.getTrending(TMDBApi.API_KEY).results
                 _popularMovies.value = tmdbApi.getPopular(TMDBApi.API_KEY).results
                 _topRatedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
+                _nowPlaying.value = tmdbApi.getNowPlaying(TMDBApi.API_KEY).results
+                _upcoming.value = tmdbApi.getUpcoming(TMDBApi.API_KEY).results
+                _popularTV.value = tmdbApi.getPopularTV(TMDBApi.API_KEY).results
+                _topRatedTV.value = tmdbApi.getTopRatedTV(TMDBApi.API_KEY).results
             } catch (e: Exception) {
                 logError(e)
                 _error.value = e.message ?: "Unknown error"

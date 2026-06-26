@@ -90,6 +90,7 @@ import com.lagradost.cloudstream3.mvvm.observeNullable
 import com.lagradost.cloudstream3.network.initClient
 import com.lagradost.cloudstream3.plugins.PluginManager
 import com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins
+import com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem
 import com.lagradost.cloudstream3.plugins.PluginManager.loadSinglePlugin
 import com.lagradost.cloudstream3.receivers.VideoDownloadRestartReceiver
 import com.lagradost.cloudstream3.services.SubscriptionWorkManager
@@ -2014,6 +2015,40 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
         ioSafe {
             migrateResumeWatching()
+            
+            val firstLaunchKey = "kino_first_launch_repos"
+            val hasInstalledRepos = getKey<Boolean>(firstLaunchKey) == true && RepositoryManager.getRepositories().isNotEmpty()
+            
+            if (!hasInstalledRepos) {
+                val defaultRepos = listOf(
+                    RepositoryData(name = "CloudStream Extensions", url = "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json"),
+                    RepositoryData(name = "Mega Repository", url = "https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json")
+                )
+                
+                defaultRepos.forEach { repo ->
+                    try {
+                        val parsedUrl = RepositoryManager.parseRepoUrl(repo.url)
+                        if (!parsedUrl.isNullOrBlank()) {
+                            val repository = RepositoryManager.parseRepository(parsedUrl)
+                            if (repository != null) {
+                                val newRepo = RepositoryData(
+                                    iconUrl = repository.iconUrl,
+                                    name = repo.name.ifBlank { repository.name },
+                                    url = parsedUrl
+                                )
+                                RepositoryManager.addRepository(newRepo)
+                            }
+                        }
+                    } catch (e: Exception) { logError(e) }
+                }
+                
+                setKey(firstLaunchKey, true)
+                
+                // Force load all plugins from installed repositories
+                main {
+                    PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(this@MainActivity)
+                }
+            }
         }
 
         main {
