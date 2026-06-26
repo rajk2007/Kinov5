@@ -7,7 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -15,6 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,13 +35,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.ui.home.KinoHomeViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.pager.ExperimentalPagerApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KinoHomeScreen(viewModel: KinoHomeViewModel = viewModel()) {
     val trendingMovies by viewModel.trendingMovies.collectAsState()
@@ -108,7 +113,7 @@ fun TopNavBar() {
             }
             IconButton(onClick = { /*TODO: Handle notifications*/ }) {
                 BadgedBox(badge = { Badge { Text("9+") } }) {
-                    Icon(Icons.Default.Notifications, "Notifications", tint = Color.White)
+                    Icon(Icons.Filled.Notifications, "Notifications", tint = Color.White)
                 }
             }
             // Profile Avatar Placeholder
@@ -123,7 +128,7 @@ fun TopNavBar() {
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.pager.ExperimentalPagerApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HeroBanner(movies: List<MovieResult>) {
     if (movies.isEmpty()) return
@@ -184,7 +189,7 @@ fun HeroBanner(movies: List<MovieResult>) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = "• 2h 30m •", color = Color(0xFFB3B3B3), fontSize = 12.sp) // Placeholder for runtime
                     Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.Star, contentDescription = "Rating", tint = Color(0xFFFFD700), modifier = Modifier.size(16.dp))
+                    Text(text = "★", color = Color(0xFFFFD700), fontSize = 12.sp)
                     Text(text = "${movie.vote_average?.let { "%.1f".format(it) } ?: "N/A"}", color = Color(0xFFFFD700), fontSize = 12.sp)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -293,7 +298,7 @@ fun MovieCard(movie: MovieResult, showNewBadge: Boolean) {
                     .padding(horizontal = 4.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Star, contentDescription = "Rating", tint = Color(0xFFFFD700), modifier = Modifier.size(12.dp))
+                Text(text = "★", color = Color(0xFFFFD700), fontSize = 10.sp)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(text = "${movie.vote_average?.let { "%.1f".format(it) } ?: "N/A"}", color = Color(0xFFFFD700), fontSize = 10.sp)
             }
@@ -386,7 +391,8 @@ fun BottomNavBar() {
         modifier = Modifier.clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
     ) {
         val items = listOf("Home", "Search", "Library", "Profile")
-        val icons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.LibraryBooks, Icons.Default.Person)
+        val icons = listOf(Icons.Filled.Home, Icons.Filled.Search, Icons.Filled.Menu, Icons.Filled.Person)
+
         items.forEachIndexed { index, item ->
             NavigationBarItem(
                 icon = { Icon(icons[index], contentDescription = item) },
