@@ -249,9 +249,7 @@ fun ContentRow(title: String, movies: List<MovieResult>, showNewBadge: Boolean =
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(movies) {
-                movie ->
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {            items(movies) { movie ->>
                 MovieCard(movie, showNewBadge)
             }
         }
