@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.ui.search
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -62,7 +63,7 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
             items(results) { movie ->
                 Row(Modifier.fillMaxWidth().padding(8.dp)) {
                     AsyncImage(
-                        model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
+                        model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path ?: ""}",
                         contentDescription = null,
                         modifier = Modifier.size(60.dp, 90.dp)
                     )
