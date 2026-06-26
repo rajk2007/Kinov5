@@ -41,10 +41,4 @@ interface TMDBApi {
 
 data class TMDBResponse(val results: List<MovieResult>)
 
-data class MovieResult(
-    val id: Int,
-    val title: String,
-    val poster_path: String?,
-    val overview: String?,
-    val vote_average: Double?
-)
+data class MovieResult(val id: Int, val title: String, val poster_path: String?, val backdrop_path: String?, val overview: String?, val vote_average: Double?)
