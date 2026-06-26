@@ -309,7 +309,7 @@
 
     <fragment
         android:id="@+id/navigation_search"
-        android:name="com.lagradost.cloudstream3.ui.search.SearchFragment"
+        android:name="com.lagradost.cloudstream3.ui.search.KinoSearchFragment"
         android:label="@string/title_search"
         app:enterAnim="@anim/enter_anim"
         app:exitAnim="@anim/exit_anim"
@@ -359,6 +359,16 @@
         android:name="com.lagradost.cloudstream3.ui.settings.SettingsFragment"
         android:layout_height="match_parent"
         android:label="@string/title_settings"
+        app:enterAnim="@anim/enter_anim"
+        app:exitAnim="@anim/exit_anim"
+        app:popEnterAnim="@anim/enter_anim"
+        app:popExitAnim="@anim/exit_anim"
+        tools:layout="@layout/main_settings" />
+
+    <fragment
+        android:id="@+id/navigation_profile"
+        android:name="com.lagradost.cloudstream3.ui.settings.SettingsFragment"
+        android:label="@string/profile"
         app:enterAnim="@anim/enter_anim"
         app:exitAnim="@anim/exit_anim"
         app:popEnterAnim="@anim/enter_anim"

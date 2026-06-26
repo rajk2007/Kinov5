@@ -1205,9 +1205,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                             val repository = RepositoryManager.parseRepository(parsedUrl)
                             if (repository != null) {
                                 RepositoryManager.addRepository(RepositoryData(repository.iconUrl, repo.name.ifBlank { repository.name }, parsedUrl))
-                                // Force plugin update and load
                                 main {
-                                    com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(this@MainActivity)
+                                    com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(this@MainActivity, newRepo)
                                 }
                             }
                         }
