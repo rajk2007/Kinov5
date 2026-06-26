@@ -327,9 +327,10 @@ fun Top10TodayRow(movies: List<MovieResult>) {
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
+        val top10Movies = movies.take(10)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(movies.take(10).size) { index ->
-                val movie = movies[index]
+            items(top10Movies.size) { index ->
+                val movie = top10Movies[index]
                 Top10MovieCard(movie, index + 1)
             }
         }
