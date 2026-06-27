@@ -32,37 +32,24 @@ fun KinoHomeScreen(
     val popular by viewModel.popularMovies.collectAsState()
     val topRated by viewModel.topRatedMovies.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val error by viewModel.error.collectAsState()
 
     Surface(color = Color(0xFF080808)) {
-        when {
-            isLoading && trending.isEmpty() -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFFE50914))
-                }
+        if (isLoading && trending.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color(0xFFE50914))
             }
-            error != null && trending.isEmpty() -> {
-                Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text("Error: $error", color = Color.White)
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 100.dp)
+            ) {
+                item { Header() }
+                if (trending.isNotEmpty()) {
+                    item { HeroBanner(movie = trending.first()) }
                 }
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 100.dp)
-                ) {
-                    item { 
-                        Header() 
-                    }
-                    if (trending.isNotEmpty()) {
-                        item { 
-                            HeroBanner(movie = trending.first()) 
-                        }
-                    }
-                    item { MovieSection("Trending Now", trending) }
-                    item { MovieSection("Popular Movies", popular) }
-                    item { MovieSection("Top Rated", topRated) }
-                }
+                item { MovieSection("Trending Now", trending) }
+                item { MovieSection("Popular Movies", popular) }
+                item { MovieSection("Top Rated", topRated) }
             }
         }
     }
@@ -85,7 +72,7 @@ fun HeroBanner(movie: MovieResult) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(400.dp)
+            .height(380.dp) // Approx 50% screen height
     ) {
         AsyncImage(
             model = "${TMDBApi.IMAGE_BASE_URL}${movie.backdrop_path ?: movie.poster_path}",
@@ -100,7 +87,7 @@ fun HeroBanner(movie: MovieResult) {
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(Color.Transparent, Color(0xFF080808)),
-                        startY = 300f
+                        startY = 200f
                     )
                 )
         )
@@ -108,7 +95,7 @@ fun HeroBanner(movie: MovieResult) {
         Column(
             modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
         ) {
-            Text(movie.displayTitle, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text(movie.title ?: "", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = { /* TODO: Play */ },
@@ -149,7 +136,7 @@ fun MovieCard(movie: MovieResult) {
     ) {
         AsyncImage(
             model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
-            contentDescription = movie.displayTitle,
+            contentDescription = movie.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(width = 120.dp, height = 180.dp)
@@ -157,7 +144,7 @@ fun MovieCard(movie: MovieResult) {
                 .background(Color(0xFF1A1A1A))
         )
         Text(
-            movie.displayTitle,
+            movie.title ?: "",
             color = Color.White,
             fontSize = 12.sp,
             maxLines = 2,

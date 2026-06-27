@@ -4,10 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,13 +29,14 @@ class KinoSearchViewModel : ViewModel() {
     val results: StateFlow<List<MovieResult>> = _results
     var query = MutableStateFlow("")
 
-    init {
-        viewModelScope.launch {
-            query.collect { q ->
-                if (q.length > 2) {
-                    try {
-                        _results.value = api.getTrending(TMDBApi.API_KEY).results
-                    } catch (e: Exception) {}
+    fun performSearch() {
+        val q = query.value
+        if (q.isNotEmpty()) {
+            viewModelScope.launch {
+                try {
+                    _results.value = api.searchMulti(TMDBApi.API_KEY, q).results
+                } catch (e: Exception) {
+                    // Handle error silently for now
                 }
             }
         }
@@ -42,7 +47,8 @@ class KinoSearchViewModel : ViewModel() {
 fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
-    
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -59,7 +65,15 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
                 unfocusedContainerColor = Color(0xFF1A1A1A),
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White
-            )
+            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = {
+                    viewModel.performSearch()
+                    keyboardController?.hide()
+                }
+            ),
+            singleLine = true
         )
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn {

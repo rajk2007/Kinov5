@@ -170,7 +170,7 @@
 
     <fragment
         android:id="@+id/navigation_library"
-        android:name="com.lagradost.cloudstream3.ui.library.LibraryFragment"
+        android:name="com.lagradost.cloudstream3.ui.library.KinoLibraryFragment"
         android:label="@string/library"
         app:enterAnim="@anim/enter_anim"
         app:exitAnim="@anim/exit_anim"
