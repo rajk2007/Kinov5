@@ -69,15 +69,22 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
                         .fillMaxWidth()
                         .padding(8.dp)
                 ) {
-                    val imageUrl = movie.poster_path?.let { "${TMDBApi.IMAGE_BASE_URL}$it" } ?: ""
+                    val imageUrl: String = if (movie.poster_path != null) {
+                        "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}"
+                    } else {
+                        ""
+                    }
+                    
+                    val title: String = movie.title ?: "Unknown Title"
+
                     AsyncImage(
                         model = imageUrl,
-                        contentDescription = movie.title,
+                        contentDescription = title,
                         modifier = Modifier.size(60.dp, 90.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = movie.title,
+                        text = title,
                         color = Color.White
                     )
                 }
