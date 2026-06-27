@@ -1210,9 +1210,6 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                                     url = parsedUrl
                                 )
                                 RepositoryManager.addRepository(newRepo)
-                                main {
-                                    com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(this@MainActivity, newRepo)
-                                }
                             }
                         }
                     } catch (e: Exception) { logError(e) }
