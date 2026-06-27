@@ -71,5 +71,5 @@ data class MovieResult(
     val first_air_date: String? = null,
     val media_type: String? = null
 ) {
-    fun getTitle(): String = title ?: name ?: "Unknown"
+    fun displayTitle(): String = title ?: name ?: "Unknown"
 }

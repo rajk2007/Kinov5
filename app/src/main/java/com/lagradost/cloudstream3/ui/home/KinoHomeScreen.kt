@@ -111,7 +111,7 @@ fun HeroBanner(movies: List<MovieResult>) {
             }) {
                 AsyncImage(
                     model = "${TMDBApi.IMAGE_BASE_URL}${movie.backdrop_path ?: movie.poster_path}",
-                    contentDescription = movie.getTitle(),
+                    contentDescription = movie.displayTitle(),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -141,7 +141,7 @@ fun HeroBanner(movies: List<MovieResult>) {
                 Column(
                     modifier = Modifier.align(Alignment.BottomStart).padding(24.dp)
                 ) {
-                    Text(movie.getTitle(), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                    Text(movie.displayTitle(), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -268,7 +268,7 @@ fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier) {
         ) {
             AsyncImage(
                 model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
-                contentDescription = movie.getTitle(),
+                contentDescription = movie.displayTitle(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
@@ -292,7 +292,7 @@ fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier) {
             }
         }
         Text(
-            movie.getTitle(),
+            movie.displayTitle(),
             color = Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,

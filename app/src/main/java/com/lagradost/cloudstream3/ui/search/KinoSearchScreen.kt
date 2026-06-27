@@ -84,7 +84,7 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
                         .fillMaxWidth()
                         .padding(8.dp)
                         .clickable {
-                            android.widget.Toast.makeText(context, "Loading ${movie.getTitle()}...", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Loading ${movie.displayTitle()}...", android.widget.Toast.LENGTH_SHORT).show()
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -94,7 +94,7 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
                         ""
                     }
                     
-                    val title: String = movie.getTitle()
+                    val title: String = movie.displayTitle()
 
                     AsyncImage(
                         model = imageUrl,
