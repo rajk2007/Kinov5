@@ -2,9 +2,6 @@ package com.lagradost.cloudstream3.ui.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -31,12 +28,7 @@ fun KinoLibraryScreen() {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.Default.Bookmark,
-                contentDescription = "Library",
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFFE50914)
-            )
+            Text("📚", color = Color.White, fontSize = 48.sp)
             Spacer(modifier = Modifier.height(16.dp))
             Text("Your Library is Empty", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))

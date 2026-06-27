@@ -78,7 +78,7 @@ fun Header() {
     }
 }
 
-@OptIn(androidx.foundation.ExperimentalFoundationApi::class)
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun HeroBanner(movies: List<MovieResult>) {
     val pagerState = rememberPagerState(pageCount = { movies.size })
@@ -181,7 +181,7 @@ fun HeroBanner(movies: List<MovieResult>) {
                         .padding(horizontal = 4.dp)
                         .clip(CircleShape)
                         .background(color)
-                        .size(if (pagerState.currentPage == index) 24.dp else 8.dp, 8.dp)
+                        .width(if (pagerState.currentPage == index) 24.dp else 8.dp).height(8.dp)
                 )
             }
         }
