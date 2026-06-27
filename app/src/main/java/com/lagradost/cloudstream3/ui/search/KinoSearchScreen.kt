@@ -63,7 +63,7 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
             items(results) { movie ->
                 Row(Modifier.fillMaxWidth().padding(8.dp)) {
                     AsyncImage(
-                        model = movie.poster_path?.let { "${TMDBApi.IMAGE_BASE_URL}$it" } ?: "",
+                        model = if (movie.poster_path != null) "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}" else "",
                         contentDescription = null,
                         modifier = Modifier.size(60.dp, 90.dp)
                     )

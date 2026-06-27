@@ -368,7 +368,7 @@
     <fragment
         android:id="@+id/navigation_profile"
         android:name="com.lagradost.cloudstream3.ui.settings.SettingsFragment"
-        android:label="@string/profile"
+        android:label="@string/title_profile"
         app:enterAnim="@anim/enter_anim"
         app:exitAnim="@anim/exit_anim"
         app:popEnterAnim="@anim/enter_anim"
