@@ -15,6 +15,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,7 +86,8 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
                         .fillMaxWidth()
                         .padding(8.dp)
                         .clickable {
-                            android.widget.Toast.makeText(context, "Loading ${movie.displayTitle()}...", android.widget.Toast.LENGTH_SHORT).show()
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("cloudstream3://search?query=${movie.displayTitle()}"))
+                            context.startActivity(intent)
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {

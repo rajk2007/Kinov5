@@ -15,6 +15,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -52,6 +57,7 @@ fun KinoHomeScreen(
                 contentPadding = PaddingValues(bottom = 100.dp)
             ) {
                 item { Header() }
+                item { QuickDiscoveryChips() }
                 if (trending.isNotEmpty()) {
                     item { 
                         HeroBanner(movies = trending.take(5)) 
@@ -61,6 +67,21 @@ fun KinoHomeScreen(
                 item { Top10Section("Top 10 Today", trending.take(10)) }
                 item { MovieSection("Popular Movies", popular) }
                 item { MovieSection("Top Rated", topRated) }
+                item { MovieSection("🆕 New Releases", viewModel.nowPlaying.collectAsState().value) }
+                item { MovieSection("🇮🇳 Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value) }
+                item { MovieSection("🌸 Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value) }
+                item { MovieSection("🇰🇷 K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value) }
+                item { MovieSection("💎 Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value) }
+                item { MovieSection("🎥 Popular Movies", viewModel.popularMovies.collectAsState().value) }
+                item { MovieSection("📺 Popular TV Shows", viewModel.popularTV.collectAsState().value) }
+                item { MovieSection("🍿 Weekend Picks", viewModel.popularMovies.collectAsState().value) }
+                item { MovieSection("⭐ Critically Acclaimed", viewModel.topRatedMovies.collectAsState().value) }
+                item { MovieSection("🎭 Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value) }
+                item { MovieSection("😂 Comedy Picks", viewModel.comedyMovies.collectAsState().value) }
+                item { MovieSection("😱 Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value) }
+                item { MovieSection("👨‍👩‍👧 Family & Kids", viewModel.familyKidsMovies.collectAsState().value) }
+                item { MovieSection("🌍 International Hits", viewModel.internationalHitsMovies.collectAsState().value) }
+                item { MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value) }
             }
         }
     }
@@ -69,12 +90,67 @@ fun KinoHomeScreen(
 @Composable
 fun Header() {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .background(Color.Transparent),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { /* TODO: Handle search click */ }) {
+                Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color.White)
+            }
+            IconButton(onClick = { /* TODO: Handle notifications click */ }) {
+                Icon(Icons.Filled.Notifications, contentDescription = "Notifications", tint = Color.White)
+            }
+        }
         Text("KINO", color = Color(0xFFE50914), fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        Text("Cinema. Redefined.", color = Color(0xFF8A8A8A), fontSize = 12.sp)
+        // Text("Cinema. Redefined.", color = Color(0xFF8A8A8A), fontSize = 12.sp) // Removed as per instruction to keep KINO on right/center
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QuickDiscoveryChips() {
+    val categories = listOf(
+        "All", "Movies", "TV Shows", "Anime", "K-Drama", "Hindi Dubbed",
+        "Trending", "New", "Top Rated", "Genres", "My List", "Under 2 Hours"
+    )
+    var selectedCategory by remember { mutableStateOf(categories[0]) }
+
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(categories) { category ->
+            val isSelected = selectedCategory == category
+            FilterChip(
+                selected = isSelected,
+                onClick = { selectedCategory = category },
+                label = { Text(category) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color.Transparent,
+                    selectedLabelColor = Color.White,
+                    containerColor = Color(0xFF1A1A1A),
+                    labelColor = Color.Gray
+                ),
+                border = FilterChipDefaults.filterChipBorder(borderColor = Color.Transparent),
+                modifier = Modifier
+                    .background(
+                        brush = if (isSelected) Brush.horizontalGradient(listOf(Color(0xFFE50914), Color(0xFF9C27B0))) else Brush.horizontalGradient(listOf(Color(0xFF1A1A1A), Color(0xFF1A1A1A))),
+                        shape = RoundedCornerShape(50)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (isSelected) Color.Transparent else Color(0x22FFFFFF),
+                        shape = RoundedCornerShape(50)
+                    )
+            )
+        }
     }
 }
 
@@ -95,7 +171,7 @@ fun HeroBanner(movies: List<MovieResult>) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(450.dp)
+            .height(380.dp)
     ) {
         HorizontalPager(
             state = pagerState,
@@ -128,15 +204,7 @@ fun HeroBanner(movies: List<MovieResult>) {
                         )
                     )
                 )
-                // Ambient Glow
-                Box(
-                    modifier = Modifier.fillMaxSize().background(
-                        Brush.radialGradient(
-                            colors = listOf(Color(0x33E50914), Color.Transparent),
-                            radius = 800f
-                        )
-                    )
-                )
+
                 // Content
                 Column(
                     modifier = Modifier.align(Alignment.BottomStart).padding(24.dp)
@@ -155,13 +223,23 @@ fun HeroBanner(movies: List<MovieResult>) {
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { /* TODO: Play */ },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text("▶ Watch Now", color = Color.White, fontWeight = FontWeight.Bold)
+                    Row {
+                        Button(
+                            onClick = { /* TODO: Play */ },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text("▶ Watch Now", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { /* TODO: Add to Watchlist */ },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                            border = BorderStroke(1.dp, Color.White),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("+ Watchlist", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

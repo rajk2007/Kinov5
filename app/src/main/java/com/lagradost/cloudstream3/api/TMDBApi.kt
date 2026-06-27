@@ -35,6 +35,25 @@ interface TMDBApi {
         @Query("query") query: String
     ): TMDBResponse
 
+    @GET("trending/tv/week")
+    suspend fun getTrendingTv(@Query("api_key") apiKey: String): TMDBResponse
+
+    @GET("discover/movie")
+    suspend fun discoverMovie(
+        @Query("api_key") apiKey: String,
+        @Query("with_genres") with_genres: String? = null,
+        @Query("with_original_language") with_original_language: String? = null,
+        @Query("sort_by") sort_by: String? = null,
+        @Query("vote_count.gte") vote_count_gte: Int? = null
+    ): TMDBResponse
+
+    @GET("discover/tv")
+    suspend fun discoverTv(
+        @Query("api_key") apiKey: String,
+        @Query("with_genres") with_genres: String? = null,
+        @Query("with_original_language") with_original_language: String? = null
+    ): TMDBResponse
+
     companion object {
         const val BASE_URL = "https://api.themoviedb.org/3/"
         const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
