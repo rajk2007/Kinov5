@@ -61,16 +61,15 @@ data class TMDBResponse(val results: List<MovieResult>)
 
 data class MovieResult(
     val id: Int,
-    val title: String?,
-    val name: String?,
-    val poster_path: String?,
-    val backdrop_path: String?,
-    val overview: String?,
-    val vote_average: Double?,
-    val release_date: String?,
-    val first_air_date: String?,
-    val genre_ids: List<Int>?
+    val title: String? = null,
+    val name: String? = null, // For TV shows
+    val poster_path: String? = null,
+    val backdrop_path: String? = null,
+    val overview: String? = null,
+    val vote_average: Double? = null,
+    val release_date: String? = null,
+    val first_air_date: String? = null,
+    val media_type: String? = null
 ) {
-    val displayTitle: String get() = title ?: name ?: "Unknown"
-    val year: String get() = (release_date ?: first_air_date ?: "").take(4)
+    fun getTitle(): String = title ?: name ?: "Unknown"
 }
