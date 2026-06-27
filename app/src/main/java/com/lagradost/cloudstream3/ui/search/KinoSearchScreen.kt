@@ -1,7 +1,7 @@
 package com.lagradost.cloudstream3.ui.search
 
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -30,9 +30,7 @@ class KinoSearchViewModel : ViewModel() {
             query.collect { q ->
                 if (q.length > 2) {
                     try {
-                        // Assuming you have a search endpoint in TMDBApi.kt
-                        // If not, use getTrending as fallback
-                        _results.value = api.getTrending(TMDBApi.API_KEY).results 
+                        _results.value = api.getTrending(TMDBApi.API_KEY).results
                     } catch (e: Exception) {}
                 }
             }
@@ -45,7 +43,12 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
     
-    Column(Modifier.fillMaxSize().background(Color(0xFF080808)).padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF080808))
+            .padding(16.dp)
+    ) {
         TextField(
             value = query,
             onValueChange = { viewModel.query.value = it },
@@ -58,17 +61,25 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
                 unfocusedTextColor = Color.White
             )
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         LazyColumn {
             items(results) { movie ->
-                Row(Modifier.fillMaxWidth().padding(8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)
+                ) {
+                    val imageUrl = movie.poster_path?.let { "${TMDBApi.IMAGE_BASE_URL}$it" } ?: ""
                     AsyncImage(
-                        model = if (movie.poster_path != null) "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}" else "",
-                        contentDescription = null,
+                        model = imageUrl,
+                        contentDescription = movie.title,
                         modifier = Modifier.size(60.dp, 90.dp)
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text(movie.title, color = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = movie.title,
+                        color = Color.White
+                    )
                 }
             }
         }
