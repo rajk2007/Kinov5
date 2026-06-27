@@ -38,6 +38,8 @@ import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.api.TMDBApi
 import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 
 @Composable
 fun KinoHomeScreen(
@@ -97,16 +99,22 @@ fun Header() {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Text("KINO", color = Color(0xFFE50914), fontSize = 32.sp, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { /* TODO: Handle search click */ }) {
+            IconButton(
+                onClick = { /* TODO: Handle search click */ },
+                modifier = Modifier.background(Color(0x33FFFFFF), CircleShape)
+            ) {
                 Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color.White)
             }
-            IconButton(onClick = { /* TODO: Handle notifications click */ }) {
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = { /* TODO: Handle notifications click */ },
+                modifier = Modifier.background(Color(0x33FFFFFF), CircleShape)
+            ) {
                 Icon(Icons.Filled.Notifications, contentDescription = "Notifications", tint = Color.White)
             }
         }
-        Text("KINO", color = Color(0xFFE50914), fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        // Text("Cinema. Redefined.", color = Color(0xFF8A8A8A), fontSize = 12.sp) // Removed as per instruction to keep KINO on right/center
     }
 }
 
@@ -167,13 +175,7 @@ fun HeroBanner(movies: List<MovieResult>) {
             modifier = Modifier.fillMaxSize()
         ) { page ->
             val movie = movies[page]
-            val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-            val scaleFactor = 1f - kotlin.math.abs(pageOffset) * 0.1f
-
-            Box(modifier = Modifier.graphicsLayer {
-                scaleX = scaleFactor
-                scaleY = scaleFactor
-            }) {
+            Box(modifier = Modifier.fillMaxSize()) {
                 AsyncImage(
                     model = "${TMDBApi.IMAGE_BASE_URL}${movie.backdrop_path ?: movie.poster_path}",
                     contentDescription = movie.displayTitle(),
@@ -320,11 +322,15 @@ fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
+    val context = LocalContext.current
 
     Column(
         modifier = modifier
             .width(140.dp)
             .scale(scale)
+            .clickable {
+                Toast.makeText(context, "Loading ${movie.displayTitle()}...", Toast.LENGTH_SHORT).show()
+            }
     ) {
         Box(
             modifier = Modifier
