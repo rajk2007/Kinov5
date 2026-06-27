@@ -111,7 +111,6 @@ fun Header() {
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickDiscoveryChips() {
     val categories = listOf(
@@ -128,28 +127,18 @@ fun QuickDiscoveryChips() {
     ) {
         items(categories) { category ->
             val isSelected = selectedCategory == category
-            FilterChip(
-                selected = isSelected,
-                onClick = { selectedCategory = category },
-                label = { Text(category) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Color.Transparent,
-                    selectedLabelColor = Color.White,
-                    containerColor = Color(0xFF1A1A1A),
-                    labelColor = Color.Gray
-                ),
-                border = FilterChipDefaults.filterChipBorder(borderColor = Color.Transparent),
+            Box(
                 modifier = Modifier
+                    .clip(RoundedCornerShape(50))
                     .background(
-                        brush = if (isSelected) Brush.horizontalGradient(listOf(Color(0xFFE50914), Color(0xFF9C27B0))) else Brush.horizontalGradient(listOf(Color(0xFF1A1A1A), Color(0xFF1A1A1A))),
-                        shape = RoundedCornerShape(50)
+                        if (isSelected) Brush.linearGradient(listOf(Color(0xFFE50914), Color(0xFF7B2FBE)))
+                        else Brush.linearGradient(listOf(Color(0x33FFFFFF), Color(0x33FFFFFF)))
                     )
-                    .border(
-                        width = 1.dp,
-                        color = if (isSelected) Color.Transparent else Color(0x22FFFFFF),
-                        shape = RoundedCornerShape(50)
-                    )
-            )
+                    .clickable { selectedCategory = category }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(category, color = if (isSelected) Color.White else Color.Gray)
+            }
         }
     }
 }

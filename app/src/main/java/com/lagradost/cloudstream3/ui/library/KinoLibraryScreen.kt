@@ -3,14 +3,7 @@ package com.lagradost.cloudstream3.ui.library
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Divider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -37,35 +30,35 @@ fun KinoLibraryScreen() {
         )
 
         LibraryItem(
-            icon = Icons.Filled.PlayArrow,
+            emoji = "▶",
             title = "Continue Watching",
             subtitle = "Resume movies, TV shows, anime, and K-dramas."
         )
         Divider(color = Color(0xFF1A1A1A), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
 
         LibraryItem(
-            icon = Icons.Filled.Download,
+            emoji = "⬇",
             title = "Downloads",
             subtitle = "Your offline content."
         )
         Divider(color = Color(0xFF1A1A1A), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
 
         LibraryItem(
-            icon = Icons.Filled.Bookmark,
+            emoji = "❤️",
             title = "Watchlist",
             subtitle = "Saved content to watch later."
         )
         Divider(color = Color(0xFF1A1A1A), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
 
         LibraryItem(
-            icon = Icons.Filled.History,
+            emoji = "🕒",
             title = "History",
             subtitle = "Recently watched content."
         )
         Divider(color = Color(0xFF1A1A1A), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
 
         LibraryItem(
-            icon = Icons.Filled.Favorite,
+            emoji = "⭐",
             title = "Liked",
             subtitle = "Your favorite movies and TV shows."
         )
@@ -73,7 +66,7 @@ fun KinoLibraryScreen() {
 }
 
 @Composable
-fun LibraryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String) {
+fun LibraryItem(emoji: String, title: String, subtitle: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -81,11 +74,11 @@ fun LibraryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: St
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = title,
-            tint = Color(0xFFE50914),
-            modifier = Modifier.size(32.dp)
+        Text(
+            text = emoji,
+            color = Color.White,
+            fontSize = 24.sp,
+            modifier = Modifier.width(32.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))
         Column {
