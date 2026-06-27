@@ -43,12 +43,20 @@ import android.widget.Toast
 
 @Composable
 fun KinoHomeScreen(
-    viewModel: KinoHomeViewModel = viewModel()
+    viewModel: KinoHomeViewModel = viewModel(),
+    onMovieClick: (MovieResult) -> Unit = {},
+    onSearchClick: () -> Unit = {}
 ) {
     val trending by viewModel.trendingMovies.collectAsState()
     val popular by viewModel.popularMovies.collectAsState()
     val topRated by viewModel.topRatedMovies.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    
+    val categories = listOf(
+        "All", "Movies", "TV Shows", "Anime", "K-Drama", "Hindi Dubbed",
+        "Trending", "New", "Top Rated", "Genres", "My List", "Under 2 Hours"
+    )
+    var selectedCategory by remember { mutableStateOf(categories[0]) }
 
     Surface(color = Color(0xFF080808)) {
         if (isLoading && trending.isEmpty()) {
@@ -58,42 +66,73 @@ fun KinoHomeScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 100.dp)
             ) {
-                item { Header() }
-                item { QuickDiscoveryChips() }
-                if (trending.isNotEmpty()) {
+                item { Header(onSearchClick) }
+                item { 
+                    QuickDiscoveryChips(
+                        categories = categories,
+                        selectedCategory = selectedCategory,
+                        onCategorySelected = { selectedCategory = it }
+                    ) 
+                }
+                
+                val showAll = selectedCategory == "All"
+                val showMovies = showAll || selectedCategory == "Movies" || selectedCategory == "Trending" || selectedCategory == "Top Rated"
+                val showTV = showAll || selectedCategory == "TV Shows" || selectedCategory == "Trending" || selectedCategory == "Top Rated"
+                val showAnime = showAll || selectedCategory == "Anime"
+                val showHindi = showAll || selectedCategory == "Hindi Dubbed"
+
+                if (showAll && trending.isNotEmpty()) {
                     item { 
-                        HeroBanner(movies = trending.take(5)) 
+                        HeroBanner(movies = trending.take(5), onMovieClick = onMovieClick) 
                     }
                 }
-                item { MovieSection("Trending Now", trending) }
-                item { Top10Section("Top 10 Today", trending.take(10)) }
-                item { MovieSection("Popular Movies", popular) }
-                item { MovieSection("Top Rated", topRated) }
-                item { MovieSection("🆕 New Releases", viewModel.nowPlaying.collectAsState().value) }
-                item { MovieSection("🇮🇳 Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value) }
-                item { MovieSection("🌸 Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value) }
-                item { MovieSection("🇰🇷 K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value) }
-                item { MovieSection("💎 Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value) }
-                item { MovieSection("🎥 Popular Movies", viewModel.popularMovies.collectAsState().value) }
-                item { MovieSection("📺 Popular TV Shows", viewModel.popularTV.collectAsState().value) }
-                item { MovieSection("🍿 Weekend Picks", viewModel.popularMovies.collectAsState().value) }
-                item { MovieSection("⭐ Critically Acclaimed", viewModel.topRatedMovies.collectAsState().value) }
-                item { MovieSection("🎭 Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value) }
-                item { MovieSection("😂 Comedy Picks", viewModel.comedyMovies.collectAsState().value) }
-                item { MovieSection("😱 Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value) }
-                item { MovieSection("👨‍👩‍👧 Family & Kids", viewModel.familyKidsMovies.collectAsState().value) }
-                item { MovieSection("🌍 International Hits", viewModel.internationalHitsMovies.collectAsState().value) }
-                item { MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value) }
+                
+                if (showMovies || showTV) {
+                    item { MovieSection("Trending Now", trending, onMovieClick) }
+                    item { Top10Section("Top 10 Today", trending.take(10), onMovieClick) }
+                }
+                
+                if (showMovies) {
+                    item { MovieSection("Popular Movies", popular, onMovieClick) }
+                    item { MovieSection("Top Rated", topRated, onMovieClick) }
+                    item { MovieSection("🆕 New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick) }
+                }
+                
+                if (showHindi) {
+                    item { MovieSection("🇮🇳 Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick) }
+                }
+                
+                if (showAnime) {
+                    item { MovieSection("🌸 Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick) }
+                    item { MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick) }
+                }
+                
+                if (showTV) {
+                    item { MovieSection("🇰🇷 K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick) }
+                    item { MovieSection("📺 Popular TV Shows", viewModel.popularTV.collectAsState().value, onMovieClick) }
+                }
+                
+                if (showMovies) {
+                    item { MovieSection("💎 Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value, onMovieClick) }
+                    item { MovieSection("🍿 Weekend Picks", viewModel.popularMovies.collectAsState().value, onMovieClick) }
+                    item { MovieSection("⭐ Critically Acclaimed", viewModel.topRatedMovies.collectAsState().value, onMovieClick) }
+                    item { MovieSection("🎭 Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick) }
+                    item { MovieSection("😂 Comedy Picks", viewModel.comedyMovies.collectAsState().value, onMovieClick) }
+                    item { MovieSection("😱 Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick) }
+                    item { MovieSection("👨‍👩‍👧 Family & Kids", viewModel.familyKidsMovies.collectAsState().value, onMovieClick) }
+                    item { MovieSection("🌍 International Hits", viewModel.internationalHitsMovies.collectAsState().value, onMovieClick) }
+                }
             }
         }
     }
 }
 
 @Composable
-fun Header() {
+fun Header(onSearchClick: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
             .padding(16.dp)
             .background(Color.Transparent),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -102,7 +141,7 @@ fun Header() {
         Text("KINO", color = Color(0xFFE50914), fontSize = 32.sp, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
-                onClick = { /* TODO: Handle search click */ },
+                onClick = onSearchClick,
                 modifier = Modifier.background(Color(0x33FFFFFF), CircleShape)
             ) {
                 Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color.White)
@@ -120,13 +159,11 @@ fun Header() {
 
 
 @Composable
-fun QuickDiscoveryChips() {
-    val categories = listOf(
-        "All", "Movies", "TV Shows", "Anime", "K-Drama", "Hindi Dubbed",
-        "Trending", "New", "Top Rated", "Genres", "My List", "Under 2 Hours"
-    )
-    var selectedCategory by remember { mutableStateOf(categories[0]) }
-
+fun QuickDiscoveryChips(
+    categories: List<String>,
+    selectedCategory: String,
+    onCategorySelected: (String) -> Unit
+) {
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
@@ -142,7 +179,7 @@ fun QuickDiscoveryChips() {
                         if (isSelected) Brush.linearGradient(listOf(Color(0xFFE50914), Color(0xFF7B2FBE)))
                         else Brush.linearGradient(listOf(Color(0x33FFFFFF), Color(0x33FFFFFF)))
                     )
-                    .clickable { selectedCategory = category }
+                    .clickable { onCategorySelected(category) }
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Text(category, color = if (isSelected) Color.White else Color.Gray)
@@ -153,7 +190,7 @@ fun QuickDiscoveryChips() {
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun HeroBanner(movies: List<MovieResult>) {
+fun HeroBanner(movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit = {}) {
     val pagerState = rememberPagerState(pageCount = { movies.size })
 
     // Auto-scroll
@@ -168,6 +205,7 @@ fun HeroBanner(movies: List<MovieResult>) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
             .height(380.dp)
     ) {
         HorizontalPager(
@@ -216,7 +254,7 @@ fun HeroBanner(movies: List<MovieResult>) {
                     Spacer(Modifier.height(12.dp))
                     Row {
                         Button(
-                            onClick = { /* TODO: Play */ },
+                            onClick = { onMovieClick(movie) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914)),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.padding(end = 8.dp)
@@ -258,7 +296,7 @@ fun HeroBanner(movies: List<MovieResult>) {
 }
 
 @Composable
-fun MovieSection(title: String, movies: List<MovieResult>) {
+fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit = {}) {
     val listState = rememberLazyListState()
     
     Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
@@ -275,14 +313,14 @@ fun MovieSection(title: String, movies: List<MovieResult>) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(movies) { movie ->
-                PremiumMovieCard(movie)
+                PremiumMovieCard(movie, onMovieClick = onMovieClick)
             }
         }
     }
 }
 
 @Composable
-fun Top10Section(title: String, movies: List<MovieResult>) {
+fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit = {}) {
     val listState = rememberLazyListState()
     
     Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
@@ -310,7 +348,7 @@ fun Top10Section(title: String, movies: List<MovieResult>) {
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.offset(x = 12.dp)
                     )
-                    PremiumMovieCard(movie, modifier = Modifier.offset(x = -16.dp))
+                    PremiumMovieCard(movie, modifier = Modifier.offset(x = -16.dp), onMovieClick = onMovieClick)
                 }
             }
         }
@@ -318,18 +356,17 @@ fun Top10Section(title: String, movies: List<MovieResult>) {
 }
 
 @Composable
-fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier) {
+fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier, onMovieClick: (MovieResult) -> Unit = {}) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
-    val context = LocalContext.current
 
     Column(
         modifier = modifier
             .width(140.dp)
             .scale(scale)
             .clickable {
-                Toast.makeText(context, "Loading ${movie.displayTitle()}...", Toast.LENGTH_SHORT).show()
+                onMovieClick(movie)
             }
     ) {
         Box(

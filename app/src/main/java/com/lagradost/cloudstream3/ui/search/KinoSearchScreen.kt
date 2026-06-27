@@ -50,10 +50,12 @@ class KinoSearchViewModel : ViewModel() {
 }
 
 @Composable
-fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
+fun KinoSearchScreen(
+    viewModel: KinoSearchViewModel = viewModel(),
+    onMovieClick: (MovieResult) -> Unit = {}
+) {
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
-    val context = LocalContext.current
     val trendingSearches = listOf("Jawan", "One Piece", "Oppenheimer", "Attack on Titan", "RRR", "The Boys")
 
     Column(
@@ -105,7 +107,7 @@ fun KinoSearchScreen(viewModel: KinoSearchViewModel = viewModel()) {
                 items(results) { movie ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(8.dp).clickable {
-                            android.widget.Toast.makeText(context, "Loading ${movie.displayTitle()}...", android.widget.Toast.LENGTH_SHORT).show()
+                            onMovieClick(movie)
                         },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
