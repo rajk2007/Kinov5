@@ -48,10 +48,6 @@ fun KinoHomeScreen(
     onMovieClick: (MovieResult) -> Unit = { },
     onSearchClick: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val movieClickHandler: (MovieResult) -> Unit = {
-        Toast.makeText(context, "Details screen coming soon", Toast.LENGTH_SHORT).show()
-    }
     val trending by viewModel.trendingMovies.collectAsState()
     val popular by viewModel.popularMovies.collectAsState()
     val topRated by viewModel.topRatedMovies.collectAsState()
@@ -104,62 +100,62 @@ fun KinoHomeScreen(
                 when (selectedCategory) {
                     "All" -> {
                         if (trending.isNotEmpty()) {
-                            item { HeroBanner(movies = trending.take(5), onMovieClick = movieClickHandler, pagerState = pagerState) }
+                            item { HeroBanner(movies = trending.take(5), onMovieClick = { movieClickHandler(it) }, pagerState = pagerState) }
                         }
-                        item { MovieSection("Trending Now", trending, movieClickHandler) }
-                        item { Top10Section("Top 10 Today", trending.take(10), movieClickHandler) }
-                        item { MovieSection("Popular Movies", popular, movieClickHandler) }
-                        item { MovieSection("Popular TV Shows", viewModel.popularTV.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("Trending Now", trending, { movieClickHandler(it) }) }
+                        item { Top10Section("Top 10 Today", trending.take(10), { movieClickHandler(it) }) }
+                        item { MovieSection("Popular Movies", popular, { movieClickHandler(it) }) }
+                        item { MovieSection("Popular TV Shows", viewModel.popularTV.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "Movies" -> {
-                        item { MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Popular Movies", popular, movieClickHandler) }
-                        item { MovieSection("Top Rated", topRated, movieClickHandler) }
-                        item { MovieSection("Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Comedy Picks", viewModel.comedyMovies.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Popular Movies", popular, { movieClickHandler(it) }) }
+                        item { MovieSection("Top Rated", topRated, { movieClickHandler(it) }) }
+                        item { MovieSection("Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Comedy Picks", viewModel.comedyMovies.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "TV Shows" -> {
-                        item { MovieSection("Popular TV Shows", viewModel.popularTV.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("Popular TV Shows", viewModel.popularTV.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "Anime" -> {
-                        item { MovieSection("Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Action Anime", viewModel.animeSpotlightTv.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Romance Anime", viewModel.animeSpotlightTv.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Action Anime", viewModel.animeSpotlightTv.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Romance Anime", viewModel.animeSpotlightTv.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "Hindi Dubbed" -> {
-                        item { MovieSection("Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Popular Hindi Movies", viewModel.hindiDubbedMovies.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Top Rated Hindi", viewModel.hindiDubbedMovies.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Popular Hindi Movies", viewModel.hindiDubbedMovies.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Top Rated Hindi", viewModel.hindiDubbedMovies.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "K-Drama" -> {
-                        item { MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Popular Korean TV", viewModel.kDramaSpotlightTv.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Popular Korean TV", viewModel.kDramaSpotlightTv.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "Trending" -> {
-                        item { MovieSection("Trending Now", trending, movieClickHandler) }
-                        item { MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("Trending Now", trending, { movieClickHandler(it) }) }
+                        item { MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "New" -> {
-                        item { MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "Top Rated" -> {
-                        item { MovieSection("Top Rated", topRated, movieClickHandler) }
-                        item { MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("Top Rated", topRated, { movieClickHandler(it) }) }
+                        item { MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "Genres" -> {
-                        item { MovieSection("Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Comedy Picks", viewModel.comedyMovies.collectAsState().value, movieClickHandler) }
-                        item { MovieSection("Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value, movieClickHandler) }
+                        item { MovieSection("Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Comedy Picks", viewModel.comedyMovies.collectAsState().value, { movieClickHandler(it) }) }
+                        item { MovieSection("Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value, { movieClickHandler(it) }) }
                     }
                     "My List" -> {
-                        item { MovieSection("Watchlist", emptyList(), movieClickHandler) }
+                        item { MovieSection("Watchlist", emptyList(), { movieClickHandler(it) }) }
                     }
                     "Under 2 Hours" -> {
-                        item { MovieSection("Popular Movies", popular, movieClickHandler) }
+                        item { MovieSection("Popular Movies", popular, { movieClickHandler(it) }) }
                     }
                 }
             }
@@ -372,7 +368,7 @@ fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieR
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(movies) { movie ->
-                PremiumMovieCard(movie, onMovieClick = movieClickHandler)
+                PremiumMovieCard(movie, onMovieClick = { movieClickHandler(it) })
             }
         }
     }
@@ -407,7 +403,7 @@ fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieR
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.offset(x = 12.dp)
                     )
-                    PremiumMovieCard(movie, modifier = Modifier.offset(x = -16.dp), onMovieClick = movieClickHandler)
+                    PremiumMovieCard(movie, modifier = Modifier.offset(x = -16.dp), onMovieClick = { movieClickHandler(it) })
                 }
             }
         }
@@ -469,6 +465,12 @@ fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier, onMovieC
             modifier = Modifier.padding(top = 6.dp, start = 2.dp)
         )
     }
+}
+
+@Composable
+fun movieClickHandler(movie: MovieResult) {
+    val context = LocalContext.current
+    Toast.makeText(context, "Details screen coming soon", Toast.LENGTH_SHORT).show()
 }
 
 @Composable
