@@ -54,6 +54,7 @@ fun KinoSearchScreen(
     viewModel: KinoSearchViewModel = viewModel(),
     onMovieClick: (MovieResult) -> Unit = {}
 ) {
+    val context = LocalContext.current
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
     val trendingSearches = listOf("Jawan", "One Piece", "Oppenheimer", "Attack on Titan", "RRR", "The Boys")
@@ -107,7 +108,7 @@ fun KinoSearchScreen(
                 items(results) { movie ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(8.dp).clickable {
-                            onMovieClick(movie)
+                            Toast.makeText(context, "Details screen coming soon", Toast.LENGTH_SHORT).show()
                         },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
