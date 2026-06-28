@@ -45,6 +45,7 @@ import android.widget.Toast
 @Composable
 fun KinoHomeScreen(
     viewModel: KinoHomeViewModel = viewModel(),
+    onMovieClick: (MovieResult) -> Unit = {},
     onSearchClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -102,62 +103,77 @@ fun KinoHomeScreen(
                         when (selectedCategory) {
                             "All" -> {
                                 if (trending.isNotEmpty()) {
-                                    HeroBanner(movies = trending.take(5),  pagerState = pagerState)
+                                    HeroBanner(movies = trending.take(5), onMovieClick = onMovieClick, pagerState = pagerState)
                                 }
-                                MovieSection("Trending Now", trending)
-                                Top10Section("Top 10 Today", trending.take(10))
-                                MovieSection("Popular Movies", popular)
-                                MovieSection("Popular TV Shows", viewModel.popularTV.collectAsState().value)
+                                MovieSection("🔥 Trending Now", trending, onMovieClick)
+                                Top10Section("🏆 Top 10 Today", trending.take(10), onMovieClick)
+                                MovieSection("🆕 New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
+                                MovieSection("🇮🇳 Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
+                                MovieSection("🌸 Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick)
+                                MovieSection("🇰🇷 K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
+                                MovieSection("❤️ Recommended For You", popular, onMovieClick)
+                                MovieSection("💎 Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value, onMovieClick)
+                                MovieSection("🎥 Popular Movies", popular, onMovieClick)
+                                MovieSection("📺 Popular TV Shows", viewModel.popularTV.collectAsState().value, onMovieClick)
+                                MovieSection("🍿 Weekend Picks", popular, onMovieClick)
+                                MovieSection("⭐ Critically Acclaimed", viewModel.criticallyAcclaimedMovies.collectAsState().value, onMovieClick)
+                                MovieSection("🎭 Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
+                                MovieSection("😂 Comedy Picks", viewModel.comedyMovies.collectAsState().value, onMovieClick)
+                                MovieSection("😱 Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
+                                MovieSection("👨‍👩‍👧 Family & Kids", viewModel.familyKidsMovies.collectAsState().value, onMovieClick)
+                                MovieSection("🌍 International Hits", viewModel.internationalHitsMovies.collectAsState().value, onMovieClick)
+                                MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
                             }
                             "Movies" -> {
-                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value)
-                                MovieSection("Popular Movies", popular)
-                                MovieSection("Top Rated", topRated)
-                                MovieSection("Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value)
-                                MovieSection("Comedy Picks", viewModel.comedyMovies.collectAsState().value)
+                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
+                                MovieSection("Popular Movies", popular, onMovieClick)
+                                MovieSection("Top Rated", topRated, onMovieClick)
+                                MovieSection("Action", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Comedy", viewModel.comedyMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
                             }
                             "TV Shows" -> {
-                                MovieSection("Popular TV Shows", viewModel.popularTV.collectAsState().value)
-                                MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value)
-                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value)
-                                MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value)
+                                MovieSection("Popular TV", viewModel.popularTV.collectAsState().value, onMovieClick)
+                                MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, onMovieClick)
+                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, onMovieClick)
+                                MovieSection("K-Drama", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
                             }
                             "Anime" -> {
-                                MovieSection("Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value)
-                                MovieSection("Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value)
-                                MovieSection("Action Anime", viewModel.animeSpotlightTv.collectAsState().value)
-                                MovieSection("Romance Anime", viewModel.animeSpotlightTv.collectAsState().value)
+                                MovieSection("Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick)
+                                MovieSection("Trending Anime", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
+                                MovieSection("Action Anime", viewModel.actionAnimeTv.collectAsState().value, onMovieClick)
                             }
                             "Hindi Dubbed" -> {
-                                MovieSection("Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value)
-                                MovieSection("Popular Hindi Movies", viewModel.hindiDubbedMovies.collectAsState().value)
-                                MovieSection("Top Rated Hindi", viewModel.hindiDubbedMovies.collectAsState().value)
+                                MovieSection("Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Popular Hindi", viewModel.popularHindiMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Top Rated Hindi", viewModel.topRatedHindiMovies.collectAsState().value, onMovieClick)
                             }
                             "K-Drama" -> {
-                                MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value)
-                                MovieSection("Popular Korean TV", viewModel.kDramaSpotlightTv.collectAsState().value)
+                                MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
+                                MovieSection("Popular Korean TV", viewModel.popularKoreanTv.collectAsState().value, onMovieClick)
                             }
                             "Trending" -> {
-                                MovieSection("Trending Now", trending)
-                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value)
+                                MovieSection("Trending Now", trending, onMovieClick)
+                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, onMovieClick)
                             }
                             "New" -> {
-                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value)
+                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
                             }
                             "Top Rated" -> {
-                                MovieSection("Top Rated", topRated)
-                                MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value)
+                                MovieSection("Critically Acclaimed", viewModel.criticallyAcclaimedMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value, onMovieClick)
                             }
                             "Genres" -> {
-                                MovieSection("Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value)
-                                MovieSection("Comedy Picks", viewModel.comedyMovies.collectAsState().value)
-                                MovieSection("Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value)
+                                MovieSection("Action", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Comedy", viewModel.comedyMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Family", viewModel.familyKidsMovies.collectAsState().value, onMovieClick)
                             }
                             "My List" -> {
-                                MovieSection("Watchlist", emptyList())
+                                MovieSection("Watchlist", emptyList(), onMovieClick)
                             }
                             "Under 2 Hours" -> {
-                                MovieSection("Popular Movies", popular)
+                                MovieSection("Popular Movies", popular, onMovieClick)
                             }
                         }
                     }
@@ -232,6 +248,7 @@ fun QuickDiscoveryChips(
 @Composable
 fun HeroBanner(
     movies: List<MovieResult>, 
+    onMovieClick: (MovieResult) -> Unit = {},
     pagerState: androidx.compose.foundation.pager.PagerState = rememberPagerState(pageCount = { movies.size })
 ) {
     val context = LocalContext.current
@@ -243,9 +260,9 @@ fun HeroBanner(
         label = "progress"
     )
 
-    LaunchedEffect(pagerState.currentPage) {
-        progress = 1f
-        delay(4000)
+    LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
+        if (pagerState.isScrollInProgress) return@LaunchedEffect
+        delay(5000)
         val nextPage = (pagerState.currentPage + 1) % movies.size
         pagerState.animateScrollToPage(nextPage)
     }
@@ -308,9 +325,7 @@ fun HeroBanner(
                             Spacer(Modifier.height(16.dp))
                             Row {
                                 Button(
-                                    onClick = { 
-                                        Toast.makeText(context, "Details screen coming soon", Toast.LENGTH_SHORT).show()
-                                    },
+                                    onClick = { onMovieClick(movie) },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914)),
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.padding(end = 8.dp)
@@ -357,7 +372,7 @@ fun HeroBanner(
 }
 
 @Composable
-fun MovieSection(title: String, movies: List<MovieResult>) {
+fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit = {}) {
     val listState = rememberLazyListState()
     
     Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
@@ -374,14 +389,14 @@ fun MovieSection(title: String, movies: List<MovieResult>) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(movies) { movie ->
-                PremiumMovieCard(movie)
+                PremiumMovieCard(movie, onMovieClick = onMovieClick)
             }
         }
     }
 }
 
 @Composable
-fun Top10Section(title: String, movies: List<MovieResult>) {
+fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit = {}) {
     val listState = rememberLazyListState()
     
     Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
@@ -409,7 +424,7 @@ fun Top10Section(title: String, movies: List<MovieResult>) {
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.offset(x = 12.dp)
                     )
-                    PremiumMovieCard(movie, modifier = Modifier.offset(x = -16.dp))
+                    PremiumMovieCard(movie, modifier = Modifier.offset(x = -16.dp), onMovieClick = onMovieClick)
                 }
             }
         }
@@ -417,7 +432,7 @@ fun Top10Section(title: String, movies: List<MovieResult>) {
 }
 
 @Composable
-fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier) {
+fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier, onMovieClick: (MovieResult) -> Unit = {}) {
     val context = LocalContext.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -428,7 +443,7 @@ fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier) {
             .width(140.dp)
             .scale(scale)
             .clickable {
-                Toast.makeText(context, "Details screen coming soon", Toast.LENGTH_SHORT).show()
+                onMovieClick(movie)
             }
     ) {
         Box(

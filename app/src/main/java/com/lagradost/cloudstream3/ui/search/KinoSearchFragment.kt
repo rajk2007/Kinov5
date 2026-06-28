@@ -7,8 +7,7 @@ import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
-import com.lagradost.cloudstream3.R
+import com.lagradost.cloudstream3.api.MovieResult
 
 class KinoSearchFragment : Fragment() {
     override fun onCreateView(
@@ -19,13 +18,14 @@ class KinoSearchFragment : Fragment() {
         return ComposeView(requireContext()).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
+                val context = requireContext()
                 KinoSearchScreen(
                     onMovieClick = { movie ->
-                        val bundle = Bundle()
-                        bundle.putString("argTitle", movie.displayTitle())
-                        bundle.putInt("argId", movie.id)
-                        bundle.putString("argType", movie.media_type ?: "movie")
-                        findNavController().navigate(R.id.navigation_results_phone, bundle)
+                        val intent = android.content.Intent(context, com.lagradost.cloudstream3.MainActivity::class.java).apply {
+                            action = android.content.Intent.ACTION_SEARCH
+                            putExtra(android.app.SearchManager.QUERY, movie.displayTitle())
+                        }
+                        context.startActivity(intent)
                     }
                 )
             }

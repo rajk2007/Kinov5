@@ -67,6 +67,21 @@ class KinoHomeViewModel : ViewModel() {
     private val _trendingAnimeThisWeekTv = MutableStateFlow<List<MovieResult>>(emptyList())
     val trendingAnimeThisWeekTv: StateFlow<List<MovieResult>> = _trendingAnimeThisWeekTv.asStateFlow()
 
+    private val _criticallyAcclaimedMovies = MutableStateFlow<List<MovieResult>>(emptyList())
+    val criticallyAcclaimedMovies: StateFlow<List<MovieResult>> = _criticallyAcclaimedMovies.asStateFlow()
+
+    private val _popularHindiMovies = MutableStateFlow<List<MovieResult>>(emptyList())
+    val popularHindiMovies: StateFlow<List<MovieResult>> = _popularHindiMovies.asStateFlow()
+
+    private val _topRatedHindiMovies = MutableStateFlow<List<MovieResult>>(emptyList())
+    val topRatedHindiMovies: StateFlow<List<MovieResult>> = _topRatedHindiMovies.asStateFlow()
+
+    private val _popularKoreanTv = MutableStateFlow<List<MovieResult>>(emptyList())
+    val popularKoreanTv: StateFlow<List<MovieResult>> = _popularKoreanTv.asStateFlow()
+
+    private val _actionAnimeTv = MutableStateFlow<List<MovieResult>>(emptyList())
+    val actionAnimeTv: StateFlow<List<MovieResult>> = _actionAnimeTv.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -98,6 +113,11 @@ class KinoHomeViewModel : ViewModel() {
                 _familyKidsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_genres = "10751").results
                 _internationalHitsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_original_language = "ja").results
                 _trendingAnimeThisWeekTv.value = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results
+                _criticallyAcclaimedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
+                _popularHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_original_language = "hi", sort_by = "popularity.desc").results
+                _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_original_language = "hi", sort_by = "vote_average.desc").results
+                _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, with_original_language = "ko", sort_by = "popularity.desc").results
+                _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, with_genres = "16,10759").results
             } catch (e: Exception) {
                 logError(e)
                 _error.value = e.message ?: "Unknown error"

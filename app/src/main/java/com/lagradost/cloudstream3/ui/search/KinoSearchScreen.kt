@@ -109,7 +109,7 @@ fun KinoSearchScreen(
                 items(results) { movie ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(8.dp).clickable {
-                            Toast.makeText(context, "Details screen coming soon", Toast.LENGTH_SHORT).show()
+                            onMovieClick(movie)
                         },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
