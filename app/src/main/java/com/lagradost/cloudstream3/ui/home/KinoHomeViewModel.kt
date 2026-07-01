@@ -103,21 +103,21 @@ class KinoHomeViewModel : ViewModel() {
                 _popularTV.value = tmdbApi.getPopularTV(TMDBApi.API_KEY).results
                 _topRatedTV.value = tmdbApi.getTopRatedTV(TMDBApi.API_KEY).results
                 _trendingTv.value = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results
-                _hindiDubbedMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_original_language = "hi").results
-                _animeSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, with_genres = "16").results
-                _kDramaSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, with_original_language = "ko").results
-                _hiddenGemsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, sort_by = "vote_average.desc", vote_count_gte = 200).results
-                _actionAdventureMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_genres = "28").results
-                _comedyMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_genres = "35").results
-                _thrillerHorrorMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_genres = "27").results
-                _familyKidsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_genres = "10751").results
-                _internationalHitsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_original_language = "ja").results
+                _hindiDubbedMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi").results
+                _animeSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16").results
+                _kDramaSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko").results
+                _hiddenGemsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, sortBy = "vote_average.desc", voteCountGte = 200).results
+                _actionAdventureMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "28").results
+                _comedyMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "35").results
+                _thrillerHorrorMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "27").results
+                _familyKidsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "10751").results
+                _internationalHitsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "ja").results
                 _trendingAnimeThisWeekTv.value = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results
                 _criticallyAcclaimedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
-                _popularHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_original_language = "hi", sort_by = "popularity.desc").results
-                _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, with_original_language = "hi", sort_by = "vote_average.desc").results
-                _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, with_original_language = "ko", sort_by = "popularity.desc").results
-                _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, with_genres = "16,10759").results
+                _popularHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results
+                _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "vote_average.desc").results
+                _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko", sortBy = "popularity.desc").results
+                _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
             } catch (e: Exception) {
                 logError(e)
                 _error.value = e.message ?: "Unknown error"
