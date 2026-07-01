@@ -41,17 +41,18 @@ interface TMDBApi {
     @GET("discover/movie")
     suspend fun discoverMovie(
         @Query("api_key") apiKey: String,
-        @Query("with_genres") with_genres: String? = null,
-        @Query("with_original_language") with_original_language: String? = null,
-        @Query("sort_by") sort_by: String? = null,
-        @Query("vote_count.gte") vote_count_gte: Int? = null
+        @Query("with_genres") withGenres: String? = null,
+        @Query("with_original_language") withOriginalLanguage: String? = null,
+        @Query("sort_by") sortBy: String? = null,
+        @Query("vote_count.gte") voteCountGte: Int? = null
     ): TMDBResponse
 
     @GET("discover/tv")
     suspend fun discoverTv(
         @Query("api_key") apiKey: String,
-        @Query("with_genres") with_genres: String? = null,
-        @Query("with_original_language") with_original_language: String? = null
+        @Query("with_genres") withGenres: String? = null,
+        @Query("with_original_language") withOriginalLanguage: String? = null,
+        @Query("sort_by") sortBy: String? = null
     ): TMDBResponse
 
     companion object {
