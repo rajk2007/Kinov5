@@ -87,7 +87,7 @@ fun KinoHomeScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 100.dp)
             ) {
-                stickyHeader {
+                item {
                     Column(Modifier.background(Color(0xFF080808))) {
                         Header(onSearchClick)
                         QuickDiscoveryChips(
@@ -251,20 +251,12 @@ fun HeroBanner(
     onMovieClick: (MovieResult) -> Unit = {},
     pagerState: androidx.compose.foundation.pager.PagerState = rememberPagerState(pageCount = { movies.size })
 ) {
-    val context = LocalContext.current
-    // Progress for current page
-    var progress by remember(pagerState.currentPage) { mutableStateOf(0f) }
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(durationMillis = 4000, easing = LinearEasing),
-        label = "progress"
-    )
-
-    LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
-        if (pagerState.isScrollInProgress) return@LaunchedEffect
-        delay(5000)
-        val nextPage = (pagerState.currentPage + 1) % movies.size
-        pagerState.animateScrollToPage(nextPage)
+    LaunchedEffect(pagerState) {
+        while (true) {
+            delay(5000)
+            val nextPage = (pagerState.currentPage + 1) % movies.size
+            pagerState.animateScrollToPage(nextPage)
+        }
     }
 
     Box(
@@ -345,24 +337,21 @@ fun HeroBanner(
                     }
                 }
 
-                // Progress Indicators
+                // Dot Indicators
                 Row(
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp)
-                        .padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.Center
                 ) {
                     repeat(movies.size) { index ->
-                        val isCurrent = pagerState.currentPage == index
-                        LinearProgressIndicator(
-                            progress = { if (isCurrent) animatedProgress else if (index < pagerState.currentPage) 1f else 0f },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(3.dp)
-                                .clip(CircleShape),
-                            color = Color(0xFFE50914),
-                            trackColor = Color(0x44FFFFFF),
+                        val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
+                        Box(
+                            Modifier
+                                .padding(horizontal = 4.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .size(8.dp)
                         )
                     }
                 }
@@ -433,7 +422,6 @@ fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieR
 
 @Composable
 fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier, onMovieClick: (MovieResult) -> Unit = {}) {
-    val context = LocalContext.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")

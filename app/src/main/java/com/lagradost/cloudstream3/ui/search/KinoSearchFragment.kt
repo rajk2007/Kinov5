@@ -21,11 +21,7 @@ class KinoSearchFragment : Fragment() {
                 val context = requireContext()
                 KinoSearchScreen(
                     onMovieClick = { movie ->
-                        val intent = android.content.Intent(context, com.lagradost.cloudstream3.MainActivity::class.java).apply {
-                            action = android.content.Intent.ACTION_SEARCH
-                            putExtra(android.app.SearchManager.QUERY, movie.displayTitle())
-                        }
-                        context.startActivity(intent)
+                        android.widget.Toast.makeText(context, "Loading ${movie.displayTitle()}...", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 )
             }
