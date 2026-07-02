@@ -24,18 +24,8 @@ class KinoSearchFragment : Fragment() {
                 KinoSearchScreen(
                     onMovieClick = { movie ->
                         val bundle = Bundle()
-                        bundle.putInt("argId", movie.id)
-                        bundle.putString("argName", movie.displayTitle())
-                        bundle.putString("argPoster", movie.poster_path ?: "")
-
-                        val type = when (movie.media_type) {
-                            "movie" -> 0
-                            "tv" -> 1
-                            else -> 0
-                        }
-                        bundle.putInt("argType", type)
-
-                        findNavController().navigate(R.id.navigation_results_phone, bundle)
+                        bundle.putString("query", movie.displayTitle())
+                        findNavController().navigate(R.id.navigation_search, bundle)
                     }
                 )
             }

@@ -647,7 +647,7 @@ class SearchFragment : BaseFragment<FragmentSearchBinding>(
 
             // Automatically search the specified query, this allows the app search to launch from intent
             var sq =
-                arguments?.getString(SEARCH_QUERY) ?: savedInstanceState?.getString(SEARCH_QUERY)
+                arguments?.getString(SEARCH_QUERY) ?: savedInstanceState?.getString(SEARCH_QUERY) ?: arguments?.getString("query")
             if (sq.isNullOrBlank()) {
                 sq = MainActivity.nextSearchQuery
             }
@@ -661,7 +661,9 @@ class SearchFragment : BaseFragment<FragmentSearchBinding>(
                 }
                 // Clear the query as to not make it request the same query every time the page is opened
                 arguments?.remove(SEARCH_QUERY)
+                arguments?.remove("query")
                 savedInstanceState?.remove(SEARCH_QUERY)
+                savedInstanceState?.remove("query")
                 MainActivity.nextSearchQuery = null
             }
         }

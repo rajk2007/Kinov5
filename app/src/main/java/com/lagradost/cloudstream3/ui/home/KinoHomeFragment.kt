@@ -24,19 +24,8 @@ class KinoHomeFragment : Fragment() {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
                         val bundle = Bundle()
-                        bundle.putInt("argId", movie.id)
-                        bundle.putString("argName", movie.displayTitle())
-                        bundle.putString("argPoster", movie.poster_path ?: "")
-
-                        // Map TMDB media_type to CloudStream type (0=Movie, 1=TV)
-                        val type = when (movie.media_type) {
-                            "movie" -> 0
-                            "tv" -> 1
-                            else -> 0 // Default to movie
-                        }
-                        bundle.putInt("argType", type)
-
-                        findNavController().navigate(R.id.navigation_results_phone, bundle)
+                        bundle.putString("query", movie.displayTitle())
+                        findNavController().navigate(R.id.navigation_search, bundle)
                     }
                 )
             }
