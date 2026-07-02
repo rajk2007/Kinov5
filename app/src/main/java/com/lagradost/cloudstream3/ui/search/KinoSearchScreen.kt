@@ -53,12 +53,19 @@ class KinoSearchViewModel : ViewModel() {
 @Composable
 fun KinoSearchScreen(
     viewModel: KinoSearchViewModel = viewModel(),
+    initialQuery: String = "",
     onMovieClick: (MovieResult) -> Unit = {}
 ) {
     val context = LocalContext.current
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
     val trendingSearches = listOf("Jawan", "One Piece", "Oppenheimer", "Attack on Titan", "RRR", "The Boys")
+
+    LaunchedEffect(initialQuery) {
+        if (initialQuery.isNotBlank()) {
+            viewModel.query.value = initialQuery
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFF000000)).padding(24.dp)
