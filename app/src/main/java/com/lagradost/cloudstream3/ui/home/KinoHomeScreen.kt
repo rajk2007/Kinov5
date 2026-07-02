@@ -432,7 +432,7 @@ fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier, onMovieC
             .scale(scale)
             .clickable(
                 interactionSource = interactionSource,
-                indication = androidx.compose.material.ripple.rememberRipple()
+                indication = null
             ) {
                 onMovieClick(movie)
             }
