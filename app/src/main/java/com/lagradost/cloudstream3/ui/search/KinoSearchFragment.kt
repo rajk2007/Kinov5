@@ -23,9 +23,15 @@ class KinoSearchFragment : Fragment() {
                 val context = requireContext()
                 KinoSearchScreen(
                     onMovieClick = { movie ->
-                        val bundle = Bundle()
-                        bundle.putString("query", movie.displayTitle())
-                        findNavController().navigate(R.id.navigation_search, bundle)
+                        try {
+                            val bundle = Bundle()
+                            bundle.putString("url", movie.id.toString())
+                            bundle.putString("apiName", "TmdbProvider")
+                            bundle.putString("name", movie.displayTitle())
+                            findNavController().navigate(R.id.navigation_results_phone, bundle)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Error loading details", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }
