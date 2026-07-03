@@ -16,19 +16,14 @@ class KinoSearchFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        val initialQuery = arguments?.getString("search_query") ?: ""
         val navController = findNavController()
-        
         return ComposeView(requireContext()).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 KinoSearchScreen(
-                    initialQuery = initialQuery,
                     onMovieClick = { movie ->
-                        val bundle = Bundle().apply {
-                            putString("search_query", movie.displayTitle())
-                        }
-                        navController.navigate(R.id.navigation_search, bundle)
+                        com.lagradost.cloudstream3.MainActivity.nextSearchQuery = movie.displayTitle()
+                        navController.navigate(R.id.navigation_search)
                     }
                 )
             }

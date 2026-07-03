@@ -22,10 +22,8 @@ class KinoHomeFragment : Fragment() {
             setContent {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
-                        val bundle = Bundle().apply {
-                            putString("search_query", movie.displayTitle())
-                        }
-                        navController.navigate(R.id.navigation_search, bundle)
+                        com.lagradost.cloudstream3.MainActivity.nextSearchQuery = movie.displayTitle()
+                        navController.navigate(R.id.navigation_search)
                     },
                     onSearchClick = {
                         navController.navigate(R.id.navigation_search)
