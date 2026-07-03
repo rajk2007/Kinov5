@@ -7,6 +7,9 @@ import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.navigationrail.NavigationRailView
+import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.R
 
 class KinoHomeFragment : Fragment() {
@@ -20,24 +23,23 @@ class KinoHomeFragment : Fragment() {
             setContent {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
-                        val navController = androidx.navigation.Navigation.findNavController(
-                            requireActivity(),
-                            R.id.nav_host_fragment
-                        )
-                        val bundle = Bundle().apply {
-                            putString("search_query", movie.displayTitle())
-                        }
-                        navController.navigate(R.id.navigation_search_providers, bundle)
+                        // Set global search query and select Search tab
+                        MainActivity.nextSearchQuery = movie.displayTitle()
+                        selectSearchTab()
                     },
                     onSearchClick = {
-                        val navController = androidx.navigation.Navigation.findNavController(
-                            requireActivity(),
-                            R.id.nav_host_fragment
-                        )
-                        navController.navigate(R.id.navigation_search)
+                        // Just select the Search tab - don't push a new fragment
+                        selectSearchTab()
                     }
                 )
             }
         }
+    }
+
+    private fun selectSearchTab() {
+        activity?.findViewById<BottomNavigationView>(R.id.nav_view)
+            ?.selectedItemId = R.id.navigation_search
+        activity?.findViewById<NavigationRailView>(R.id.nav_rail_view)
+            ?.selectedItemId = R.id.navigation_search
     }
 }

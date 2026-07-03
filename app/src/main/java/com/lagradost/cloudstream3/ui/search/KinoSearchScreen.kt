@@ -16,49 +16,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
-import com.lagradost.cloudstream3.api.TMDBApi
-import com.lagradost.cloudstream3.api.MovieResult
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-
-class KinoSearchViewModel : ViewModel() {
-    private val api = TMDBApi.create()
-    private val _results = MutableStateFlow<List<MovieResult>>(emptyList())
-    val results: StateFlow<List<MovieResult>> = _results
-    var query = MutableStateFlow("")
-
-    init {
-        viewModelScope.launch {
-            query.collect { q ->
-                if (q.length >= 2) {
-                    try { _results.value = api.searchMulti(TMDBApi.API_KEY, q).results } catch (e: Exception) {}
-                } else {
-                    _results.value = emptyList()
-                }
-            }
-        }
-    }
-}
+import com.lagradost.cloudstream3.TvType
 
 @Composable
 fun KinoSearchScreen(
     viewModel: KinoSearchViewModel = viewModel(),
     initialQuery: String = "",
-    onMovieClick: (MovieResult) -> Unit = {}
+    onResultClick: (KinoSearchResult) -> Unit = {}
 ) {
     val context = LocalContext.current
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
     val trendingSearches = listOf("Jawan", "One Piece", "Oppenheimer", "Attack on Titan", "RRR", "The Boys")
 
     LaunchedEffect(initialQuery) {
@@ -72,13 +47,13 @@ fun KinoSearchScreen(
     ) {
         Text("Search", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
-        
-        // Premium Search Bar
+
+        // Search Bar
         TextField(
             value = query,
             onValueChange = { viewModel.query.value = it },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Movies, TV Shows, Actors...", color = Color.Gray) },
+            placeholder = { Text("Movies, TV Shows, Anime...", color = Color.Gray) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color(0xFF141414),
@@ -92,10 +67,18 @@ fun KinoSearchScreen(
             shape = RoundedCornerShape(24.dp),
             singleLine = true
         )
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
-        if (results.isEmpty()) {
+
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color(0xFFE50914))
+            }
+        } else if (results.isEmpty() && query.isBlank()) {
+            // Show trending when no query
             Text("Trending Searches", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -111,27 +94,91 @@ fun KinoSearchScreen(
                     }
                 }
             }
+        } else if (results.isEmpty()) {
+            Text("No results found", color = Color.Gray, fontSize = 16.sp)
         } else {
             LazyColumn {
-                items(results) { movie ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(8.dp).clickable {
-                            onMovieClick(movie)
-                        },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val imageUrl = if (movie.poster_path != null) "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}" else ""
-                        AsyncImage(
-                            model = imageUrl,
-                            contentDescription = movie.displayTitle(),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(80.dp, 120.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A))
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(movie.displayTitle(), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
+                items(results) { result ->
+                    ProviderResultCard(
+                        result = result,
+                        onClick = { onResultClick(result) }
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ProviderResultCard(
+    result: KinoSearchResult,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable { onClick() },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Poster
+        AsyncImage(
+            model = result.posterUrl ?: "",
+            contentDescription = result.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(80.dp, 120.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF1A1A1A))
+        )
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = result.name,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Type + Quality badges row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                // Type badge (Movie / TV / Anime)
+                val typeText = when (result.type) {
+                    TvType.Movie -> "Movie"
+                    TvType.TvSeries -> "TV"
+                    TvType.Anime -> "Anime"
+                    TvType.AsianDrama -> "Drama"
+                    else -> result.type?.name ?: "Video"
+                }
+                Badge(text = typeText, color = Color(0xFF333333))
+
+                // Quality badge (HD, 4K, etc.)
+                result.quality?.let { quality ->
+                    Badge(text = quality, color = Color(0xFFE50914))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun Badge(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(color)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
