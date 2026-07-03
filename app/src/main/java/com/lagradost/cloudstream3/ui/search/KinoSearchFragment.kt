@@ -26,9 +26,12 @@ class KinoSearchFragment : Fragment() {
                     initialQuery = initialQuery,
                     onMovieClick = { movie ->
                         val bundle = Bundle().apply {
-                            putString("search_query", movie.displayTitle())
+                            putString("url", movie.id.toString())
+                            putString("apiName", "TmdbProvider")
+                            putString("name", movie.displayTitle())
+                            putBoolean("restart", true)
                         }
-                        navController.navigate(R.id.navigation_search_providers, bundle)
+                        navController.navigate(R.id.navigation_results_phone, bundle)
                     }
                 )
             }
