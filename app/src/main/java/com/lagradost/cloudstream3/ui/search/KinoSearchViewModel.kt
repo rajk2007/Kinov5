@@ -60,7 +60,7 @@ class KinoSearchViewModel : ViewModel() {
                 when (val resource = repo.search(query, page = 1)) {
                     is Resource.Success -> {
                         val searchResponseList = resource.value
-                        searchResponseList.forEach { response ->
+                        searchResponseList.items.forEach { response ->
                             allResults.add(
                                 KinoSearchResult(
                                     name = response.name,
