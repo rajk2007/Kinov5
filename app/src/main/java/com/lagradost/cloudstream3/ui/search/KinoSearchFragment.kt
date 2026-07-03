@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
 import com.lagradost.cloudstream3.R
 
 class KinoSearchFragment : Fragment() {
@@ -16,7 +15,6 @@ class KinoSearchFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        val navController = findNavController()
         val initialQuery = arguments?.getString("search_query") ?: ""
         
         return ComposeView(requireContext()).apply {
@@ -25,6 +23,10 @@ class KinoSearchFragment : Fragment() {
                 KinoSearchScreen(
                     initialQuery = initialQuery,
                     onMovieClick = { movie ->
+                        val navController = androidx.navigation.Navigation.findNavController(
+                            requireActivity(),
+                            R.id.nav_host_fragment
+                        )
                         val bundle = Bundle().apply {
                             putString("search_query", movie.displayTitle())
                         }
