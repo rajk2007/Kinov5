@@ -2085,15 +2085,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
             if (getKey(HAS_DONE_SETUP_KEY, false) != true) {
                 navController.navigate(R.id.navigation_setup_language)
                 // If no plugins bring up extensions screen
-            }/* else if (PluginManager.getPluginsOnline().isEmpty()
-                && PluginManager.getPluginsLocal().isEmpty()
-//                && PREBUILT_REPOSITORIES.isNotEmpty()
-            ) {
-                navController.navigate(
-                    R.id.navigation_setup_extensions,
-                    SetupFragmentExtensions.newInstance(false)
-                )
-            }*/
+            }
         } catch (e: Exception) {
             logError(e)
         }
