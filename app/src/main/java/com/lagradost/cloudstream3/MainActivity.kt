@@ -194,6 +194,9 @@ import kotlin.system.exitProcess
 import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.lagradost.cloudstream3.AutoDownloadMode
 
 class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCallback {
     companion object {
@@ -473,6 +476,39 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
     override fun onColorSelected(dialogId: Int, color: Int) {
         onColorSelectedEvent.invoke(Pair(dialogId, color))
+    }
+
+    private fun autoInstallRepositories() {
+        val prefs = getSharedPreferences("kino_setup", MODE_PRIVATE)
+        if (prefs.getBoolean("repos_installed", false)) return
+
+        val repos = listOf(
+            RepositoryData(name = "CNC Verse", url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/refs/heads/builds/CNC.json"),
+            RepositoryData(name = "MegaRepo", url = "https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json"),
+            RepositoryData(name = "Phisher Repo", url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json"),
+            RepositoryData(name = "Megix / CSX", url = "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CS.json"),
+            RepositoryData(name = "Official CloudStream", url = "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json")
+        )
+
+        ioSafe {
+            repos.forEach { repo ->
+                try {
+                    if (RepositoryManager.getRepositories().none { it.url == repo.url }) {
+                        RepositoryManager.addRepository(repo)
+                    }
+                } catch (e: Exception) { logError(e) }
+            }
+
+            withContext(Dispatchers.Main) { showToast("Installing providers...") }
+            try {
+                // Download all plugins from all repos
+                PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(this@MainActivity, AutoDownloadMode.All)
+                prefs.edit().putBoolean("repos_installed", true).apply()
+                withContext(Dispatchers.Main) { showToast("All providers installed!") }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { showToast("Plugin download failed") }
+            }
+        }
     }
 
     override fun onDialogDismissed(dialogId: Int) {
@@ -1168,6 +1204,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        autoInstallRepositories()
         app.initClient(this, ignoreSSL = false)
         @OptIn(UnsafeSSL::class)
         insecureApp.initClient(this, ignoreSSL = true)
