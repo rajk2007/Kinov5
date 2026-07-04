@@ -10,6 +10,11 @@ import com.lagradost.cloudstream3.ui.APIRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class KinoSearchResult(
     val name: String,
@@ -49,22 +54,26 @@ class KinoSearchViewModel : ViewModel() {
         }
     }
 
-    private suspend fun searchProviders(query: String) {
-        _isLoading.value = true
-        val allResults = mutableListOf<KinoSearchResult>()
+private suspend fun searchProviders(query: String) {
+    _isLoading.value = true
+    val allResults = mutableListOf<KinoSearchResult>()
 
-        // Get ALL providers, sorted by priority
-        val providers = APIHolder.apis.sortedBy { api ->
-            providerPriority[api.name] ?: Int.MAX_VALUE  // Unprioritized providers go last
-        }
+    val providers = APIHolder.apis.sortedBy { api ->
+        providerPriority[api.name] ?: Int.MAX_VALUE
+    }
 
-        providers.forEach { api ->
-            try {
-                val repo = APIRepository(api)
-                when (val resource = repo.search(query, page = 1)) {
-                    is Resource.Success -> {
-                        resource.value.items.forEach { response ->
-                            allResults.add(
+    coroutineScope {
+        val deferredResults = providers.map { api ->
+            async(Dispatchers.IO) {
+                try {
+                    val repo = APIRepository(api)
+                    // Add a 5-second timeout so a slow provider doesn't block the UI
+                    val resource = withTimeoutOrNull(5000L) {
+                        repo.search(query, page = 1)
+                    }
+                    when (resource) {
+                        is Resource.Success -> {
+                            resource.value.items.map { response ->
                                 KinoSearchResult(
                                     name = response.name,
                                     url = response.url,
@@ -74,20 +83,25 @@ class KinoSearchViewModel : ViewModel() {
                                     year = null,
                                     quality = response.quality?.name
                                 )
-                            )
+                            }
                         }
+                        else -> emptyList()
                     }
-                    is Resource.Failure -> {
-                        // Log error but continue with other providers
-                    }
-                    else -> {}
+                } catch (e: Exception) {
+                    emptyList()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
         }
 
-        _results.value = allResults
-        _isLoading.value = false
+        deferredResults.awaitAll().forEach { resultList ->
+            allResults.addAll(resultList)
+        }
     }
+
+    // Sort final results by priority
+    _results.value = allResults.sortedBy { result ->
+        providerPriority[result.apiName] ?: Int.MAX_VALUE
+    }
+    _isLoading.value = false
+}
 }
