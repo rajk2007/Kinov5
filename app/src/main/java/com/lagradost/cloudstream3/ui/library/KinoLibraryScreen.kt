@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,9 +23,15 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun KinoLibraryScreen() {
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(Color(0xFF080808)).padding(16.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF080808))
+            .padding(16.dp)
     ) {
         item {
+            // Status bar padding
+            Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars))
+            
             Text("LIBRARY", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Text("Everything you've saved, downloaded, and watched.", color = Color.Gray, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(24.dp))
@@ -32,24 +40,40 @@ fun KinoLibraryScreen() {
         // Summary Card
         item {
             Box(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color(0xFF141414)).padding(24.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xFF141414))
+                    .padding(24.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("❤️", fontSize = 24.sp); Text("42", color = Color.White, fontWeight = FontWeight.Bold); Text("Saved", color = Color.Gray, fontSize = 12.sp) }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("⬇", fontSize = 24.sp); Text("18", color = Color.White, fontWeight = FontWeight.Bold); Text("Downloads", color = Color.Gray, fontSize = 12.sp) }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("▶", fontSize = 24.sp); Text("236", color = Color.White, fontWeight = FontWeight.Bold); Text("Hours", color = Color.Gray, fontSize = 12.sp) }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                        Text("❤️", fontSize = 24.sp) 
+                        Text("42", color = Color.White, fontWeight = FontWeight.Bold) 
+                        Text("Saved", color = Color.Gray, fontSize = 12.sp) 
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                        Text("⬇", fontSize = 24.sp) 
+                        Text("18", color = Color.White, fontWeight = FontWeight.Bold) 
+                        Text("Downloads", color = Color.Gray, fontSize = 12.sp) 
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                        Text("▶", fontSize = 24.sp) 
+                        Text("236", color = Color.White, fontWeight = FontWeight.Bold) 
+                        Text("Hours", color = Color.Gray, fontSize = 12.sp) 
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Section Cards
+        // Section Cards (Correct Order)
         val sections = listOf(
-            Triple("Continue Watching", "Resume movies, TV shows, anime.", "▶"),
             Triple("Downloads", "12 Downloads • 18.2 GB Used", "⬇"),
+            Triple("Continue Watching", "Resume movies, TV shows, anime.", "▶"),
             Triple("Watchlist", "Saved content to watch later.", "❤️"),
             Triple("History", "Recently watched content.", "🕒"),
             Triple("Liked", "Your favorite movies and TV shows.", "⭐")
@@ -75,7 +99,10 @@ fun LibraryCard(title: String, subtitle: String, emoji: String) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0x22E50914)),
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color(0x22E50914)),
             contentAlignment = Alignment.Center
         ) {
             Text(emoji, fontSize = 20.sp)
@@ -89,10 +116,14 @@ fun LibraryCard(title: String, subtitle: String, emoji: String) {
         // Dummy Poster Previews
         Row {
             repeat(3) {
-                Box(modifier = Modifier.size(40.dp, 60.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF2A2A2A)))
+                Box(modifier = Modifier
+                    .size(40.dp, 60.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF2A2A2A))
+                )
                 Spacer(modifier = Modifier.width(4.dp))
             }
         }
-        Text("❯", color = Color.Gray, fontSize = 24.sp)
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
     }
 }

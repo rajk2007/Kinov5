@@ -17,7 +17,14 @@ class KinoSearchFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        val initialQuery = arguments?.getString("search_query") ?: ""
+        val initialQuery = arguments?.getString("search_query")
+            ?: com.lagradost.cloudstream3.MainActivity.nextSearchQuery
+            ?: ""
+
+        // Clear the global query so it doesn't trigger again
+        if (com.lagradost.cloudstream3.MainActivity.nextSearchQuery != null) {
+            com.lagradost.cloudstream3.MainActivity.nextSearchQuery = null
+        }
 
         return ComposeView(requireContext()).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
