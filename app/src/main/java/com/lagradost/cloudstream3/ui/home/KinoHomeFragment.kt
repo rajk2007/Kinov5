@@ -7,10 +7,17 @@ import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
-import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.material.navigationrail.NavigationRailView
-import com.lagradost.cloudstream3.MainActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.Navigation
+import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.R
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.mvvm.Resource
+import com.lagradost.cloudstream3.ui.APIRepository
+import com.lagradost.cloudstream3.ui.result.ResultFragment
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class KinoHomeFragment : Fragment() {
     override fun onCreateView(
@@ -23,23 +30,62 @@ class KinoHomeFragment : Fragment() {
             setContent {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
-                        // Set global search query and select Search tab
-                        MainActivity.nextSearchQuery = movie.displayTitle()
-                        selectSearchTab()
+                        // Show loading toast
+                        android.widget.Toast.makeText(context, "Searching for sources...", android.widget.Toast.LENGTH_SHORT).show()
+                        
+                        // Search providers for this movie title, then open ResultFragment
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            val result = findFirstProviderResult(movie.displayTitle())
+                            
+                            withContext(Dispatchers.Main) {
+                                if (result != null) {
+                                    val bundle = ResultFragment.newInstance(
+                                        url = result.url,
+                                        apiName = result.apiName,
+                                        name = result.name
+                                    )
+                                    val navController = Navigation.findNavController(
+                                        requireActivity(),
+                                        R.id.nav_host_fragment
+                                    )
+                                    navController.navigate(R.id.navigation_results_phone, bundle)
+                                } else {
+                                    // Fallback: open search screen with query
+                                    com.lagradost.cloudstream3.MainActivity.nextSearchQuery = movie.displayTitle()
+                                    activity?.findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.nav_view)
+                                        ?.selectedItemId = R.id.navigation_search
+                                }
+                            }
+                        }
                     },
                     onSearchClick = {
-                        // Just select the Search tab - don't push a new fragment
-                        selectSearchTab()
+                        activity?.findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.nav_view)
+                            ?.selectedItemId = R.id.navigation_search
                     }
                 )
             }
         }
     }
 
-    private fun selectSearchTab() {
-        activity?.findViewById<BottomNavigationView>(R.id.nav_view)
-            ?.selectedItemId = R.id.navigation_search
-        activity?.findViewById<NavigationRailView>(R.id.nav_rail_view)
-            ?.selectedItemId = R.id.navigation_search
+    private suspend fun findFirstProviderResult(query: String): SearchResponse? {
+        val providers = APIHolder.apis.filter { api ->
+            api.name in setOf("MovieBox", "CastleTV", "Pikashow")
+        }
+        
+        for (api in providers) {
+            try {
+                val repo = APIRepository(api)
+                when (val resource = repo.search(query, page = 1)) {
+                    is Resource.Success -> {
+                        val firstResult = resource.value.items.firstOrNull()
+                        if (firstResult != null) return firstResult
+                    }
+                    else -> {}
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return null
     }
 }

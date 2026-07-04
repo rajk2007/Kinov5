@@ -30,8 +30,12 @@ class KinoSearchViewModel : ViewModel() {
 
     var query = MutableStateFlow("")
 
-    // Only search these providers
-    private val targetProviders = setOf("MovieBox", "CastleTV")
+    // Priority order: lower number = higher priority
+    private val providerPriority = mapOf(
+        "MovieBox" to 1,
+        "CastleTV" to 2,
+        "Pikashow" to 3
+    )
 
     init {
         viewModelScope.launch {
@@ -49,9 +53,9 @@ class KinoSearchViewModel : ViewModel() {
         _isLoading.value = true
         val allResults = mutableListOf<KinoSearchResult>()
 
-        // Get only MovieBox and CastleTV providers
-        val providers = APIHolder.apis.filter { api ->
-            api.name in targetProviders
+        // Get ALL providers, sorted by priority
+        val providers = APIHolder.apis.sortedBy { api ->
+            providerPriority[api.name] ?: Int.MAX_VALUE  // Unprioritized providers go last
         }
 
         providers.forEach { api ->
@@ -59,8 +63,7 @@ class KinoSearchViewModel : ViewModel() {
                 val repo = APIRepository(api)
                 when (val resource = repo.search(query, page = 1)) {
                     is Resource.Success -> {
-                        val searchResponseList = resource.value
-                        searchResponseList.items.forEach { response ->
+                        resource.value.items.forEach { response ->
                             allResults.add(
                                 KinoSearchResult(
                                     name = response.name,
