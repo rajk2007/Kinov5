@@ -231,14 +231,16 @@ fun QuickDiscoveryChips(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(
-                        if (isSelected) Brush.linearGradient(listOf(Color(0xFFE50914), Color(0xFF7B2FBE)))
-                        else Brush.linearGradient(listOf(Color(0x33FFFFFF), Color(0x33FFFFFF)))
-                    )
+                    .background(if (isSelected) Color(0xFFE50914) else Color(0x22FFFFFF))
                     .clickable { onCategorySelected(category) }
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text(category, color = if (isSelected) Color.White else Color.Gray)
+                Text(
+                    category,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }
