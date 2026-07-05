@@ -69,42 +69,21 @@ class KinoHomeFragment : Fragment() {
     }
 
     private suspend fun findFirstProviderResult(query: String): SearchResponse? {
-        // 1. Try MovieBox strictly first for maximum speed
-        val movieBoxApi = APIHolder.apis.find { it.name.lowercase().contains("moviebox") }
-        if (movieBoxApi != null) {
+        val priorityOrder = listOf("moviebox", "castle", "cine", "pikashow", "multimovies")
+        
+        for (priorityName in priorityOrder) {
+            val api = APIHolder.apis.find { it.name.lowercase().contains(priorityName) } ?: continue
             try {
-                val repo = APIRepository(movieBoxApi)
+                val repo = APIRepository(api)
                 val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
                 if (resource is Resource.Success) {
-                    resource.value.items.firstOrNull()?.let { return it }
+                    val firstResult = resource.value.items.firstOrNull()
+                    if (firstResult != null) return firstResult
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) { 
+                e.printStackTrace() 
+            }
         }
-
-        // 2. Fallback to CastleTV if MovieBox failed
-        val castleApi = APIHolder.apis.find { it.name.lowercase().contains("castletv") }
-        if (castleApi != null) {
-            try {
-                val repo = APIRepository(castleApi)
-                val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
-                if (resource is Resource.Success) {
-                    resource.value.items.firstOrNull()?.let { return it }
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-        }
-
-        // 3. Fallback to CineTV
-        val cineApi = APIHolder.apis.find { it.name.lowercase().contains("cinetv") }
-        if (cineApi != null) {
-            try {
-                val repo = APIRepository(cineApi)
-                val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
-                if (resource is Resource.Success) {
-                    resource.value.items.firstOrNull()?.let { return it }
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-        }
-
         return null
     }
 }
