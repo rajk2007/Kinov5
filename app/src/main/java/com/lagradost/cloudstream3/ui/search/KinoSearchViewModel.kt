@@ -60,26 +60,22 @@ class KinoSearchViewModel : ViewModel() {
 
     private suspend fun searchProviders(query: String) {
         _isLoading.value = true
-        val allResults = mutableListOf<KinoSearchResult>()
-
-        // ONLY search these 5 providers to avoid lag
+        _results.value = emptyList() // Clear previous results immediately
+        
+        val masterList = mutableListOf<KinoSearchResult>()
         val allowedProviders = listOf("moviebox", "castletv", "cinetv", "pikashow", "multimovies")
         val providers = APIHolder.apis.filter { api -> 
             allowedProviders.any { api.name.lowercase().contains(it) }
         }
 
         coroutineScope {
-            // Search all 5 providers IN PARALLEL for maximum speed
-            val deferredResults = providers.map { api ->
-                async(Dispatchers.IO) {
+            providers.forEach { api ->
+                launch(Dispatchers.IO) {
                     try {
                         val repo = APIRepository(api)
-                        // Strict 2-second timeout. If a provider is slow, ignore it.
-                        val resource = withTimeoutOrNull(2000L) {
-                            repo.search(query, page = 1)
-                        }
+                        val resource = withTimeoutOrNull(5000L) { repo.search(query, page = 1) }
                         if (resource is Resource.Success) {
-                            resource.value.items.map { response ->
+                            val mapped = resource.value.items.map { response ->
                                 KinoSearchResult(
                                     name = response.name,
                                     url = response.url,
@@ -90,24 +86,17 @@ class KinoSearchViewModel : ViewModel() {
                                     quality = response.quality?.name
                                 )
                             }
-                        } else {
-                            emptyList()
+                            // Add results and update UI INSTANTLY as each provider finishes
+                            synchronized(masterList) {
+                                masterList.addAll(mapped)
+                                _results.value = masterList.sortedBy { getProviderPriority(it.apiName) }
+                            }
                         }
                     } catch (e: Exception) {
-                        emptyList()
+                        // Ignore failures, let other providers populate
                     }
                 }
             }
-
-            // Wait for all parallel searches to finish (max 2 seconds)
-            deferredResults.awaitAll().forEach { resultList ->
-                allResults.addAll(resultList)
-            }
-        }
-
-        // Sort final results so MovieBox is 1st, CastleTV is 2nd, CineTV is 3rd
-        _results.value = allResults.sortedBy { result ->
-            getProviderPriority(result.apiName)
         }
         _isLoading.value = false
     }

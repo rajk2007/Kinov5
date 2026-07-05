@@ -68,31 +68,43 @@ class KinoHomeFragment : Fragment() {
         }
     }
 
-private suspend fun findFirstProviderResult(query: String): SearchResponse? {
-    val allowedProviders = listOf("moviebox", "castletv", "cinetv", "pikashow", "multimovies")
-    val providers = APIHolder.apis.filter { api -> 
-        allowedProviders.any { api.name.lowercase().contains(it) }
-    }.sortedBy { api -> 
-        when {
-            api.name.lowercase().contains("moviebox") -> 1
-            api.name.lowercase().contains("castletv") -> 2
-            api.name.lowercase().contains("cinetv") -> 3
-            api.name.lowercase().contains("pikashow") -> 4
-            else -> 5
+    private suspend fun findFirstProviderResult(query: String): SearchResponse? {
+        // 1. Try MovieBox strictly first for maximum speed
+        val movieBoxApi = APIHolder.apis.find { it.name.lowercase().contains("moviebox") }
+        if (movieBoxApi != null) {
+            try {
+                val repo = APIRepository(movieBoxApi)
+                val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
+                if (resource is Resource.Success) {
+                    resource.value.items.firstOrNull()?.let { return it }
+                }
+            } catch (e: Exception) { e.printStackTrace() }
         }
-    }
 
-    for (api in providers) {
-        try {
-            val repo = APIRepository(api)
-            // Reduced timeout to 1.5s for instant loading
-            val resource = withTimeoutOrNull(1500L) { repo.search(query, page = 1) }
-            if (resource is Resource.Success) {
-                val firstResult = resource.value.items.firstOrNull()
-                if (firstResult != null) return firstResult
-            }
-        } catch (e: Exception) { e.printStackTrace() }
+        // 2. Fallback to CastleTV if MovieBox failed
+        val castleApi = APIHolder.apis.find { it.name.lowercase().contains("castletv") }
+        if (castleApi != null) {
+            try {
+                val repo = APIRepository(castleApi)
+                val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
+                if (resource is Resource.Success) {
+                    resource.value.items.firstOrNull()?.let { return it }
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+
+        // 3. Fallback to CineTV
+        val cineApi = APIHolder.apis.find { it.name.lowercase().contains("cinetv") }
+        if (cineApi != null) {
+            try {
+                val repo = APIRepository(cineApi)
+                val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
+                if (resource is Resource.Success) {
+                    resource.value.items.firstOrNull()?.let { return it }
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+
+        return null
     }
-    return null
-}
 }
