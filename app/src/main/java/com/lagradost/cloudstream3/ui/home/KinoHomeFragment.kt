@@ -18,6 +18,7 @@ import com.lagradost.cloudstream3.ui.result.ResultFragment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class KinoHomeFragment : Fragment() {
     override fun onCreateView(
@@ -67,25 +68,31 @@ class KinoHomeFragment : Fragment() {
         }
     }
 
-    private suspend fun findFirstProviderResult(query: String): SearchResponse? {
-        val providers = APIHolder.apis.filter { api ->
-            api.name in setOf("MovieBox", "CastleTV", "Pikashow")
+private suspend fun findFirstProviderResult(query: String): SearchResponse? {
+    val allowedProviders = listOf("moviebox", "castletv", "cinetv", "pikashow", "multimovies")
+    val providers = APIHolder.apis.filter { api -> 
+        allowedProviders.any { api.name.lowercase().contains(it) }
+    }.sortedBy { api -> 
+        when {
+            api.name.lowercase().contains("moviebox") -> 1
+            api.name.lowercase().contains("castletv") -> 2
+            api.name.lowercase().contains("cinetv") -> 3
+            api.name.lowercase().contains("pikashow") -> 4
+            else -> 5
         }
-        
-        for (api in providers) {
-            try {
-                val repo = APIRepository(api)
-                when (val resource = repo.search(query, page = 1)) {
-                    is Resource.Success -> {
-                        val firstResult = resource.value.items.firstOrNull()
-                        if (firstResult != null) return firstResult
-                    }
-                    else -> {}
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        return null
     }
+
+    for (api in providers) {
+        try {
+            val repo = APIRepository(api)
+            // Reduced timeout to 1.5s for instant loading
+            val resource = withTimeoutOrNull(1500L) { repo.search(query, page = 1) }
+            if (resource is Resource.Success) {
+                val firstResult = resource.value.items.firstOrNull()
+                if (firstResult != null) return firstResult
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+    return null
+}
 }

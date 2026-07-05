@@ -35,12 +35,17 @@ class KinoSearchViewModel : ViewModel() {
 
     var query = MutableStateFlow("")
 
-    // Priority order: lower number = higher priority
-    private val providerPriority = mapOf(
-        "MovieBox" to 1,
-        "CastleTV" to 2,
-        "Pikashow" to 3
-    )
+private fun getProviderPriority(apiName: String): Int {
+    val name = apiName.lowercase()
+    return when {
+        name.contains("moviebox") -> 1
+        name.contains("castletv") || name.contains("castle tv") -> 2
+        name.contains("cinetv") || name.contains("cine tv") -> 3
+        name.contains("pikashow") -> 4
+        name.contains("multimovies") -> 5
+        else -> Int.MAX_VALUE
+    }
+}
 
     init {
         viewModelScope.launch {
@@ -56,52 +61,75 @@ class KinoSearchViewModel : ViewModel() {
 
 private suspend fun searchProviders(query: String) {
     _isLoading.value = true
-    val allResults = mutableListOf<KinoSearchResult>()
+    val topProviders = mutableListOf<KinoSearchResult>()
+    val otherResults = mutableListOf<KinoSearchResult>()
 
-    val providers = APIHolder.apis.sortedBy { api ->
-        providerPriority[api.name] ?: Int.MAX_VALUE
-    }
+    val allowedProviders = listOf("moviebox", "castletv", "cinetv", "pikashow", "multimovies")
+    val providers = APIHolder.apis.filter { api -> 
+        allowedProviders.any { api.name.lowercase().contains(it) }
+    }.sortedBy { api -> getProviderPriority(api.name) }
 
     coroutineScope {
-        val deferredResults = providers.map { api ->
+        // Phase 1: Search Top 3 Providers (MovieBox, CastleTV, CineTV) in parallel with 1.5s timeout
+        val top3 = providers.take(3)
+        val deferredTop = top3.map { api ->
             async(Dispatchers.IO) {
                 try {
                     val repo = APIRepository(api)
-                    // Add a 5-second timeout so a slow provider doesn't block the UI
-                    val resource = withTimeoutOrNull(5000L) {
-                        repo.search(query, page = 1)
-                    }
-                    when (resource) {
-                        is Resource.Success -> {
-                            resource.value.items.map { response ->
-                                KinoSearchResult(
-                                    name = response.name,
-                                    url = response.url,
-                                    apiName = response.apiName,
-                                    posterUrl = response.posterUrl,
-                                    type = response.type,
-                                    year = null,
-                                    quality = response.quality?.name
-                                )
-                            }
+                    val resource = withTimeoutOrNull(1500L) { repo.search(query, page = 1) }
+                    if (resource is Resource.Success) {
+                        resource.value.items.map { response ->
+                            KinoSearchResult(response.name, response.url, response.apiName, response.posterUrl, response.type, null, response.quality?.name)
                         }
-                        else -> emptyList()
-                    }
-                } catch (e: Exception) {
-                    emptyList()
-                }
+                    } else emptyList()
+                } catch (e: Exception) { emptyList() }
             }
         }
+        
+        deferredTop.awaitAll().forEach { topProviders.addAll(it) }
+        
+        // Interleave the top 3 results so they alternate
+        val movieBoxList = topProviders.filter { it.apiName.lowercase().contains("moviebox") }
+        val castleTvList = topProviders.filter { it.apiName.lowercase().contains("castletv") }
+        val cineTvList = topProviders.filter { it.apiName.lowercase().contains("cinetv") }
+        val remainingTop = topProviders.filter { !it.apiName.lowercase().contains("moviebox") && !it.apiName.lowercase().contains("castletv") && !it.apiName.lowercase().contains("cinetv") }
 
-        deferredResults.awaitAll().forEach { resultList ->
-            allResults.addAll(resultList)
+        val interleavedList = mutableListOf<KinoSearchResult>()
+        val maxIndex = maxOf(movieBoxList.size, castleTvList.size, cineTvList.size)
+
+        for (i in 0 until maxIndex) {
+            if (i < movieBoxList.size) interleavedList.add(movieBoxList[i])
+            if (i < castleTvList.size) interleavedList.add(castleTvList[i])
+            if (i < cineTvList.size) interleavedList.add(cineTvList[i])
         }
-    }
+        interleavedList.addAll(remainingTop)
 
-    // Sort final results by priority
-    _results.value = allResults.sortedBy { result ->
-        providerPriority[result.apiName] ?: Int.MAX_VALUE
+        // Update UI immediately with interleaved top 3 results
+        _results.value = interleavedList
+
+        // Phase 2: Search remaining providers in parallel with 2s timeout
+        val rest = providers.drop(3)
+        val deferredRest = rest.map { api ->
+            async(Dispatchers.IO) {
+                try {
+                    val repo = APIRepository(api)
+                    val resource = withTimeoutOrNull(2000L) { repo.search(query, page = 1) }
+                    if (resource is Resource.Success) {
+                        resource.value.items.map { response ->
+                            KinoSearchResult(response.name, response.url, response.apiName, response.posterUrl, response.type, null, response.quality?.name)
+                        }
+                    } else emptyList()
+                } catch (e: Exception) { emptyList() }
+            }
+        }
+        
+        deferredRest.awaitAll().forEach { otherResults.addAll(it) }
+        
+        // Combine and sort final results
+        val finalResults = (interleavedList + otherResults.sortedBy { getProviderPriority(it.apiName) })
+        _results.value = finalResults
     }
+    
     _isLoading.value = false
 }
 }
