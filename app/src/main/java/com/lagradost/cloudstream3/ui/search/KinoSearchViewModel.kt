@@ -40,7 +40,7 @@ class KinoSearchViewModel : ViewModel() {
         return when {
             name.contains("moviebox") || cls.contains("moviebox") -> 1
             name.contains("castle") || cls.contains("castle") -> 2
-            name.contains("netmirror") || cls.contains("netmirror") -> 3
+            name.contains("netmirror") || cls.contains("netmirror") || name.contains("netflix") || cls.contains("netflix") -> 3
             else -> Int.MAX_VALUE
         }
     }
@@ -62,7 +62,7 @@ class KinoSearchViewModel : ViewModel() {
         _results.value = emptyList()
         
         val masterList = mutableListOf<KinoSearchResult>()
-        val allowedProviders = listOf("moviebox", "castle", "netmirror")
+        val allowedProviders = listOf("moviebox", "castle", "netmirror", "netflix")
         
         val providers = APIHolder.apis.filter { api ->
             val nameLower = api.name.lowercase()
