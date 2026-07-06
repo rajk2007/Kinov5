@@ -34,16 +34,17 @@ class KinoSearchViewModel : ViewModel() {
 
     var query = MutableStateFlow("")
 
-    private fun getProviderPriority(apiName: String): Int {
+    private fun getProviderPriority(apiName: String, className: String): Int {
         val name = apiName.lowercase()
+        val cls = className.lowercase()
         return when {
-            name.contains("moviebox") -> 1
-            name.contains("castle") -> 2
-            name.contains("cine") -> 3
-            name.contains("dooflix") -> 4
-            name.contains("netmirror") -> 5
-            name.contains("pikashow") -> 6
-            name.contains("multimovies") -> 7
+            name.contains("moviebox") || cls.contains("moviebox") -> 1
+            name.contains("castle") || cls.contains("castle") -> 2
+            name.contains("cine") || cls.contains("cine") -> 3
+            name.contains("dooflix") || cls.contains("dooflix") -> 4
+            name.contains("netmirror") || cls.contains("netmirror") -> 5
+            name.contains("pikashow") || cls.contains("pikashow") -> 6
+            name.contains("multimovies") || cls.contains("multimovies") -> 7
             else -> Int.MAX_VALUE
         }
     }
@@ -62,12 +63,17 @@ class KinoSearchViewModel : ViewModel() {
 
     private suspend fun searchProviders(query: String) {
         _isLoading.value = true
-        _results.value = emptyList() // Clear previous results immediately
+        _results.value = emptyList()
         
         val masterList = mutableListOf<KinoSearchResult>()
         val allowedProviders = listOf("moviebox", "castle", "cine", "dooflix", "netmirror", "pikashow", "multimovies")
-        val providers = APIHolder.apis.filter { api -> 
-            allowedProviders.any { api.name.lowercase().contains(it) }
+        
+        val providers = APIHolder.apis.filter { api ->
+            val nameLower = api.name.lowercase()
+            val classNameLower = api::class.java.simpleName.lowercase()
+            allowedProviders.any { pattern ->
+                nameLower.contains(pattern) || classNameLower.contains(pattern)
+            }
         }
 
         coroutineScope {
@@ -88,14 +94,13 @@ class KinoSearchViewModel : ViewModel() {
                                     quality = response.quality?.name
                                 )
                             }
-                            // Add results and update UI INSTANTLY as each provider finishes
                             synchronized(masterList) {
                                 masterList.addAll(mapped)
-                                _results.value = masterList.sortedBy { getProviderPriority(it.apiName) }
+                                _results.value = masterList.sortedBy { getProviderPriority(it.apiName, "") }
                             }
                         }
                     } catch (e: Exception) {
-                        // Ignore failures, let other providers populate
+                        // Ignore failures
                     }
                 }
             }

@@ -72,7 +72,9 @@ class KinoHomeFragment : Fragment() {
         val priorityOrder = listOf("moviebox", "castle", "cine", "dooflix", "netmirror", "pikashow", "multimovies")
         
         for (priorityName in priorityOrder) {
-            val api = APIHolder.apis.find { it.name.lowercase().contains(priorityName) } ?: continue
+            val api = APIHolder.apis.find { 
+                it.name.lowercase().contains(priorityName) || it::class.java.simpleName.lowercase().contains(priorityName) 
+            } ?: continue
             try {
                 val repo = APIRepository(api)
                 val resource = withTimeoutOrNull(6000L) { repo.search(query, page = 1) }

@@ -7,6 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -63,7 +66,10 @@ fun KinoHomeScreen(
     val pagerState = rememberPagerState(pageCount = { trending.take(5).size })
     val currentMovie = if (trending.isNotEmpty()) trending[pagerState.currentPage % trending.size] else null
 
-    Surface(color = Color(0xFF080808)) {
+    Surface(
+        color = Color(0xFF080808),
+        modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+    ) {
         // Dynamic Blurred Background
         if (currentMovie != null) {
             Box(modifier = Modifier.fillMaxSize()) {

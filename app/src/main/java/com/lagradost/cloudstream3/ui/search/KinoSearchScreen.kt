@@ -3,6 +3,9 @@ package com.lagradost.cloudstream3.ui.search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -43,7 +46,11 @@ fun KinoSearchScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(Color(0xFF000000)).padding(24.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF000000))
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(24.dp)
     ) {
         Text("Search", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
