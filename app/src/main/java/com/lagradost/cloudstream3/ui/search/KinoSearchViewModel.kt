@@ -62,7 +62,7 @@ class KinoSearchViewModel : ViewModel() {
         _results.value = emptyList()
         
         val masterList = mutableListOf<KinoSearchResult>()
-        val allowedProviders = listOf("moviebox", "castle", "netmirror", "netflix")
+        val allowedProviders = listOf("netmirror", "netflix")
         
         val providers = APIHolder.apis.filter { api ->
             val nameLower = api.name.lowercase()
