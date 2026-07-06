@@ -69,7 +69,7 @@ class KinoHomeFragment : Fragment() {
     }
 
     private suspend fun findFirstProviderResult(query: String): SearchResponse? {
-        val priorityOrder = listOf("castle")
+        val priorityOrder = listOf("moviebox", "castle", "netmirror")
         
         for (priorityName in priorityOrder) {
             val api = APIHolder.apis.find { 

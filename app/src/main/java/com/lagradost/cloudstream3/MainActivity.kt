@@ -487,8 +487,9 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
            RepositoryData(name = "MegaRepo", url = "https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json"),
            RepositoryData(name = "Phisher Repo", url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json"),
            RepositoryData(name = "Megix / CSX", url = "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CS.json"),
-           RepositoryData(name = "Official CloudStream", url = "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json")
-       )
+            RepositoryData(name = "Official CloudStream", url = "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json"),
+            RepositoryData(name = "NetMirror", url = "https://raw.githubusercontent.com/Sushan64/NetMirror-Extension/refs/heads/builds/Netflix.json")
+        )
        
        ioSafe {
            withContext(Dispatchers.Main) { showToast("Installing providers...") }
