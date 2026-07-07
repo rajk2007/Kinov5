@@ -197,6 +197,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.lagradost.cloudstream3.AutoDownloadMode
+import com.lagradost.cloudstream3.amap
 
 class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCallback {
     companion object {
@@ -503,11 +504,24 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
            }
            
            try {
-               // Download all plugins from all repos
-               PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(
-                   this@MainActivity,
-                   AutoDownloadMode.All
-               )
+               // Download only MovieBox plugin from all repos
+               val targetProviders = setOf("MovieBox")
+               val urls = RepositoryManager.getRepositories()
+               val onlinePlugins = urls.amap {
+                   PluginManager.getRepoPlugins(it.url)?.toList() ?: emptyList()
+               }.flatten().distinctBy { it.second.url }
+
+               onlinePlugins.filter { it.second.name.lowercase().contains("moviebox") }.amap { pluginData ->
+                   PluginManager.downloadPlugin(
+                       this@MainActivity,
+                       pluginData.second.url,
+                       pluginData.second.fileHash,
+                       pluginData.second.internalName,
+                       pluginData.first,
+                       true
+                   )
+               }
+
                prefs.edit().putBoolean("repos_installed", true).apply()
                withContext(Dispatchers.Main) { showToast("All providers installed!") }
            } catch (e: Exception) {

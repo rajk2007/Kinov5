@@ -69,23 +69,20 @@ class KinoHomeFragment : Fragment() {
     }
 
     private suspend fun findFirstProviderResult(query: String): SearchResponse? {
-        val priorityOrder = listOf("moviebox", "castle", "netmirror", "netflix")
+        val movieBoxApi = APIHolder.apis.find { 
+            it.name.lowercase().contains("moviebox") || it::class.java.simpleName.lowercase().contains("moviebox") 
+        } ?: return null
         
-        for (priorityName in priorityOrder) {
-            val api = APIHolder.apis.find { 
-                it.name.lowercase().contains(priorityName) || it::class.java.simpleName.lowercase().contains(priorityName) 
-            } ?: continue
-            try {
-                val repo = APIRepository(api)
-                val resource = withTimeoutOrNull(6000L) { repo.search(query, page = 1) }
-                if (resource is Resource.Success) {
-                    val firstResult = resource.value.items.firstOrNull()
-                    if (firstResult != null) return firstResult
-                }
-            } catch (e: Exception) { 
-                e.printStackTrace() 
+        return try {
+            val repo = APIRepository(movieBoxApi)
+            val resource = withTimeoutOrNull(3000L) { repo.search(query, page = 1) }
+            if (resource is Resource.Success) {
+                resource.value.items.firstOrNull()
+            } else {
+                null
             }
+        } catch (e: Exception) {
+            null
         }
-        return null
     }
 }
