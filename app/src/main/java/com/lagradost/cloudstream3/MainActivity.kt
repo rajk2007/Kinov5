@@ -518,7 +518,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                     val sitePlugin = pluginPair.second  
                     
                     // FIX 3: Use sitePlugin.name and sitePlugin.fileHash
-                    if (sitePlugin.name.equals("MovieBox", ignoreCase = true)) {
+                    if (sitePlugin.name.contains("moviebox", ignoreCase = true) || sitePlugin.internalName.contains("moviebox", ignoreCase = true)) {
                         try {
                             PluginManager.downloadPlugin(
                                 activity = this@MainActivity,
@@ -535,6 +535,9 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         }
 
         prefs.edit().putBoolean("repos_installed", true).apply()
+        // Ensure all plugins are downloaded and loaded based on the mode
+        PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(this@MainActivity, AutoDownloadMode.All)
+
         withContext(Dispatchers.Main) { showToast("All providers installed!") }
        }
    }
