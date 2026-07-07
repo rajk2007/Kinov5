@@ -69,13 +69,15 @@ class KinoHomeFragment : Fragment() {
     }
 
     private suspend fun findFirstProviderResult(query: String): SearchResponse? {
+        // Find the first (and only) MovieBox provider
         val movieBoxApi = APIHolder.apis.find { 
             it.name.lowercase().contains("moviebox") || it::class.java.simpleName.lowercase().contains("moviebox") 
         } ?: return null
         
         return try {
             val repo = APIRepository(movieBoxApi)
-            val resource = withTimeoutOrNull(3000L) { repo.search(query, page = 1) }
+            // 1.5s timeout for instant loading
+            val resource = withTimeoutOrNull(1500L) { repo.search(query, page = 1) }
             if (resource is Resource.Success) {
                 resource.value.items.firstOrNull()
             } else {

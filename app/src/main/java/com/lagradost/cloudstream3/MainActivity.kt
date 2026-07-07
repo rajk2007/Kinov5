@@ -504,30 +504,27 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
            }
            
         val allRepos = RepositoryManager.getRepositories()
+        var movieBoxInstalled = false // Add this flag
 
         allRepos.forEach { repoData ->
             try {
-                // FIX 1: Pass repoData.url (String), not repoData (RepositoryData)
                 val plugins = RepositoryManager.getRepoPlugins(repoData.url)
-                
-                // FIX 2: plugins is List<Pair<String, SitePlugin>>?
-                // pluginPair.first = repositoryUrl (String)
-                // pluginPair.second = SitePlugin
                 plugins?.forEach { pluginPair ->
                     val repoUrl = pluginPair.first      
                     val sitePlugin = pluginPair.second  
                     
-                    // FIX 3: Use sitePlugin.name and sitePlugin.fileHash
-                    if (sitePlugin.name.contains("moviebox", ignoreCase = true) || sitePlugin.internalName.contains("moviebox", ignoreCase = true)) {
+                    // Only download if flag is false and name matches
+                    if (!movieBoxInstalled && (sitePlugin.name.contains("moviebox", ignoreCase = true) || sitePlugin.internalName.contains("moviebox", ignoreCase = true))) {
                         try {
                             PluginManager.downloadPlugin(
                                 activity = this@MainActivity,
                                 pluginUrl = sitePlugin.url,
-                                pluginHash = sitePlugin.fileHash,  // NOT .hash
+                                pluginHash = sitePlugin.fileHash,
                                 internalName = sitePlugin.internalName,
                                 repositoryUrl = repoUrl,
                                 loadPlugin = true
                             )
+                            movieBoxInstalled = true // Set flag to true so it doesn't download again
                         } catch (e: Exception) { logError(e) }
                     }
                 }
