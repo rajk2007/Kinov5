@@ -55,12 +55,10 @@ fun KinoHomeScreen(
     val trending by viewModel.trendingMovies.collectAsState()
     val popular by viewModel.popularMovies.collectAsState()
     val topRated by viewModel.topRatedMovies.collectAsState()
+    val liveEvents by viewModel.liveEvents.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     
-    val categories = listOf(
-        "All", "Movies", "TV Shows", "Anime", "K-Drama", "Hindi Dubbed",
-        "Trending", "New", "Top Rated", "Genres", "My List", "Under 2 Hours"
-    )
+    val categories = listOf("All", "Live", "Movies", "Series", "Anime", "Hindi")
     var selectedCategory by remember { mutableStateOf(categories[0]) }
 
     val pagerState = rememberPagerState(pageCount = { trending.take(5).size })
@@ -99,7 +97,12 @@ fun KinoHomeScreen(
                         QuickDiscoveryChips(
                             categories = categories,
                             selectedCategory = selectedCategory,
-                            onCategorySelected = { selectedCategory = it }
+                            onCategorySelected = { 
+                                selectedCategory = it 
+                                if (it == "Live" && liveEvents.isEmpty()) {
+                                    viewModel.loadLiveEvents()
+                                }
+                            }
                         )
                     }
                 }
@@ -129,6 +132,9 @@ fun KinoHomeScreen(
                                 MovieSection("👨‍👩‍👧 Family & Kids", viewModel.familyKidsMovies.collectAsState().value, onMovieClick)
                                 MovieSection("🌍 International Hits", viewModel.internationalHitsMovies.collectAsState().value, onMovieClick)
                                 MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
+                            }
+                            "Live" -> {
+                                MovieSection("📺 Live Events", liveEvents, onMovieClick)
                             }
                             "Movies" -> {
                                 MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)

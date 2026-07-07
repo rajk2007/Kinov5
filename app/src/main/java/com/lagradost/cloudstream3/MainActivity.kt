@@ -504,7 +504,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
            }
            
         val allRepos = RepositoryManager.getRepositories()
-        var movieBoxInstalled = false // Add this flag
+        var movieBoxInstalled = false
+        var cricifyInstalled = false // Add this flag
 
         allRepos.forEach { repoData ->
             try {
@@ -513,8 +514,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                     val repoUrl = pluginPair.first      
                     val sitePlugin = pluginPair.second  
                     
-                    // Only download if flag is false and name matches
-                    if (!movieBoxInstalled && (sitePlugin.name.contains("moviebox", ignoreCase = true) || sitePlugin.internalName.contains("moviebox", ignoreCase = true))) {
+                    if (!movieBoxInstalled && sitePlugin.name.contains("moviebox", ignoreCase = true)) {
                         try {
                             PluginManager.downloadPlugin(
                                 activity = this@MainActivity,
@@ -524,7 +524,22 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                                 repositoryUrl = repoUrl,
                                 loadPlugin = true
                             )
-                            movieBoxInstalled = true // Set flag to true so it doesn't download again
+                            movieBoxInstalled = true
+                        } catch (e: Exception) { logError(e) }
+                    }
+                    
+                    // Add this block for Cricify
+                    if (!cricifyInstalled && sitePlugin.name.contains("cricify", ignoreCase = true)) {
+                        try {
+                            PluginManager.downloadPlugin(
+                                activity = this@MainActivity,
+                                pluginUrl = sitePlugin.url,
+                                pluginHash = sitePlugin.fileHash,
+                                internalName = sitePlugin.internalName,
+                                repositoryUrl = repoUrl,
+                                loadPlugin = true
+                            )
+                            cricifyInstalled = true
                         } catch (e: Exception) { logError(e) }
                     }
                 }

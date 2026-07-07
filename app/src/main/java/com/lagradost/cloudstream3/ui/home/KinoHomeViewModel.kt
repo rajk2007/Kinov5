@@ -9,6 +9,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.lagradost.cloudstream3.APIHolder
+import com.lagradost.cloudstream3.ui.APIRepository
+import com.lagradost.cloudstream3.mvvm.Resource
+import com.lagradost.cloudstream3.LoadResponse
+import kotlinx.coroutines.Dispatchers
 
 class KinoHomeViewModel : ViewModel() {
     private val tmdbApi = TMDBApi.create()
@@ -82,6 +87,9 @@ class KinoHomeViewModel : ViewModel() {
     private val _actionAnimeTv = MutableStateFlow<List<MovieResult>>(emptyList())
     val actionAnimeTv: StateFlow<List<MovieResult>> = _actionAnimeTv.asStateFlow()
 
+    private val _liveEvents = MutableStateFlow<List<MovieResult>>(emptyList())
+    val liveEvents: StateFlow<List<MovieResult>> = _liveEvents.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -128,4 +136,37 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     fun retry() { loadData() }
+
+    fun loadLiveEvents() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cricifyApi = APIHolder.apis.find { it.name.lowercase().contains("cricify") }
+            if (cricifyApi != null) {
+                try {
+                    val repo = APIRepository(cricifyApi)
+                    val pages = repo.mainPage?.items
+                    if (pages != null && pages.isNotEmpty()) {
+                        // Fetch the first page of the main section
+                        val firstPage = pages.first()
+                        val response = repo.load(firstPage.data)
+                        if (response is Resource.Success && response.value != null) {
+                            val liveResults = (response.value as? LoadResponse)?.episodes?.map { ep ->
+                                MovieResult(
+                                    id = ep.id?.hashCode() ?: ep.name.hashCode(),
+                                    title = ep.name,
+                                    poster_path = ep.posterUrl,
+                                    backdrop_path = null,
+                                    overview = ep.description,
+                                    vote_average = null,
+                                    release_date = null
+                                )
+                            } ?: emptyList()
+                            _liveEvents.value = liveResults
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
 }
