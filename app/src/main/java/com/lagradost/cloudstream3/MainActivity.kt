@@ -536,7 +536,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
         prefs.edit().putBoolean("repos_installed", true).apply()
         // Ensure all plugins are downloaded and loaded based on the mode
-        PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(this@MainActivity, AutoDownloadMode.All)
+        // PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(this@MainActivity, AutoDownloadMode.All)
 
         withContext(Dispatchers.Main) { showToast("All providers installed!") }
        }
@@ -1412,6 +1412,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                     mainPluginsLoadedEvent.invoke(false)
                 }
 
+/*
                 ioSafe {
                     if (settingsManager.getBoolean(
                             getString(R.string.auto_update_plugins_key),
@@ -1439,6 +1440,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         )
                     }
                 }
+*/
 
                 ioSafe {
                     PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllLocalPlugins(
@@ -2085,9 +2087,11 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 setKey(firstLaunchKey, true)
                 
                 // Force load all plugins from installed repositories
+                /*
                 main {
                     PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(this@MainActivity)
                 }
+                */
             }
         }
 
