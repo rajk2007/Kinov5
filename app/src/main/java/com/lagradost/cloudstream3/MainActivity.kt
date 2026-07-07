@@ -503,31 +503,39 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                } catch (e: Exception) { logError(e) }
            }
            
-           try {
-               // Download only MovieBox plugin from all repos
-               val targetProviders = setOf("MovieBox")
-               val urls = RepositoryManager.getRepositories()
-               val onlinePlugins = urls.amap {
-                   PluginManager.getRepoPlugins(it.url)?.toList() ?: emptyList()
-               }.flatten().distinctBy { it.second.url }
+        val allRepos = RepositoryManager.getRepositories()
 
-               onlinePlugins.filter { it.second.name.lowercase().contains("moviebox") }.amap { pluginData ->
-                   PluginManager.downloadPlugin(
-                       this@MainActivity,
-                       pluginData.second.url,
-                       pluginData.second.fileHash,
-                       pluginData.second.internalName,
-                       pluginData.first,
-                       true
-                   )
-               }
+        allRepos.forEach { repoData ->
+            try {
+                // FIX 1: Pass repoData.url (String), not repoData (RepositoryData)
+                val plugins = RepositoryManager.getRepoPlugins(repoData.url)
+                
+                // FIX 2: plugins is List<Pair<String, SitePlugin>>?
+                // pluginPair.first = repositoryUrl (String)
+                // pluginPair.second = SitePlugin
+                plugins?.forEach { pluginPair ->
+                    val repoUrl = pluginPair.first      
+                    val sitePlugin = pluginPair.second  
+                    
+                    // FIX 3: Use sitePlugin.name and sitePlugin.fileHash
+                    if (sitePlugin.name.equals("MovieBox", ignoreCase = true)) {
+                        try {
+                            PluginManager.downloadPlugin(
+                                activity = this@MainActivity,
+                                pluginUrl = sitePlugin.url,
+                                pluginHash = sitePlugin.fileHash,  // NOT .hash
+                                internalName = sitePlugin.internalName,
+                                repositoryUrl = repoUrl,
+                                loadPlugin = true
+                            )
+                        } catch (e: Exception) { logError(e) }
+                    }
+                }
+            } catch (e: Exception) { logError(e) }
+        }
 
-               prefs.edit().putBoolean("repos_installed", true).apply()
-               withContext(Dispatchers.Main) { showToast("All providers installed!") }
-           } catch (e: Exception) {
-               withContext(Dispatchers.Main) { showToast("Plugin download failed") }
-               logError(e)
-           }
+        prefs.edit().putBoolean("repos_installed", true).apply()
+        withContext(Dispatchers.Main) { showToast("All providers installed!") }
        }
    }
 
