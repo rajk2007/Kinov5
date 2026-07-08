@@ -300,8 +300,9 @@ fun HeroBanner(
     onMovieClick: (MovieResult) -> Unit = {},
     pagerState: androidx.compose.foundation.pager.PagerState = rememberPagerState(pageCount = { movies.size })
 ) {
-    LaunchedEffect(pagerState.currentPage) {
-        if (movies.size > 1) {
+    // Guaranteed Auto-Scroll
+    LaunchedEffect(Unit) {
+        while (movies.size > 1) {
             delay(5000)
             val nextPage = (pagerState.currentPage + 1) % movies.size
             pagerState.animateScrollToPage(nextPage)
@@ -311,67 +312,72 @@ fun HeroBanner(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(400.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
+            .height(320.dp) // Reduced height for better ratio
     ) {
-        val movie = if (movies.isNotEmpty()) movies[pagerState.currentPage % movies.size] else null
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxSize().clickable { movie?.let { onMovieClick(it) } }
-        ) {
-            Box {
-                val backdropUrl = movie?.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                    ?: movie?.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                    ?: ""
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val movie = movies[page % movies.size]
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxSize().clickable { onMovieClick(movie) }
+            ) {
+                Box {
+                    val backdropUrl = movie.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                        ?: movie.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                        ?: ""
 
-                AsyncImage(
-                    model = backdropUrl,
-                    contentDescription = movie?.displayTitle(),
-                    contentScale = ContentScale.Crop, // Fills the box perfectly
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)),
-                                startY = 200f
-                            )
-                        )
-                )
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        movie?.displayTitle() ?: "",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
+                    AsyncImage(
+                        model = backdropUrl,
+                        contentDescription = movie.displayTitle(),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            color = Color(0xFFE50914),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                "TOP 10",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)),
+                                    startY = 200f
+                                )
                             )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
+                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(16.dp)
+                    ) {
                         Text(
-                            "Number 1 in Movies Today",
+                            movie.displayTitle() ?: "",
                             color = Color.White,
-                            fontSize = 12.sp,
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = Color(0xFFE50914),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    "TOP 10",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Number 1 in Movies Today",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
