@@ -300,13 +300,11 @@ fun HeroBanner(
     onMovieClick: (MovieResult) -> Unit = {},
     pagerState: androidx.compose.foundation.pager.PagerState = rememberPagerState(pageCount = { movies.size })
 ) {
-    LaunchedEffect(pagerState) {
-        while (true) {
+    LaunchedEffect(pagerState.currentPage) {
+        if (movies.size > 1) {
             delay(5000)
-            if (movies.isNotEmpty()) {
-                val nextPage = (pagerState.currentPage + 1) % movies.size
-                pagerState.animateScrollToPage(nextPage)
-            }
+            val nextPage = (pagerState.currentPage + 1) % movies.size
+            pagerState.animateScrollToPage(nextPage)
         }
     }
 
