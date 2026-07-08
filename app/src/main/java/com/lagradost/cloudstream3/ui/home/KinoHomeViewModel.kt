@@ -143,25 +143,22 @@ class KinoHomeViewModel : ViewModel() {
             if (cricifyApi != null) {
                 try {
                     val repo = APIRepository(cricifyApi)
-                    val pages = repo.mainPage?.items
-                    if (pages != null && pages.isNotEmpty()) {
-                        // Fetch the first page of the main section
-                        val firstPage = pages.first()
-                        val response = repo.load(firstPage.data)
-                        if (response is Resource.Success && response.value != null) {
-                            val liveResults = (response.value as? LoadResponse)?.episodes?.map { ep ->
-                                MovieResult(
-                                    id = ep.id?.hashCode() ?: ep.name.hashCode(),
-                                    title = ep.name,
-                                    poster_path = ep.posterUrl,
-                                    backdrop_path = null,
-                                    overview = ep.description,
-                                    vote_average = null,
-                                    release_date = null
-                                )
-                            } ?: emptyList()
-                            _liveEvents.value = liveResults
+                    val resource = repo.search("live", page = 1)
+                    if (resource is Resource.Success) {
+                        val liveResults = resource.value.items.map { response ->
+                            MovieResult(
+                                id = response.id ?: response.url.hashCode(),
+                                title = response.name,
+                                name = response.name,
+                                poster_path = response.posterUrl,
+                                backdrop_path = null,
+                                overview = null,
+                                vote_average = null,
+                                release_date = null,
+                                media_type = "live"
+                            )
                         }
+                        _liveEvents.value = liveResults
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
