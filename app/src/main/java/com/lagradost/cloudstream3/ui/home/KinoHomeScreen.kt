@@ -57,14 +57,14 @@ fun KinoHomeScreen(
     val trending by viewModel.trendingMovies.collectAsState()
     val popular by viewModel.popularMovies.collectAsState()
     val topRated by viewModel.topRatedMovies.collectAsState()
-    val liveEvents by viewModel.liveEvents.collectAsState()
+    val liveEventsMap by viewModel.liveEvents.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     
     val categories = listOf("All", "Live", "Movies", "Series", "Anime", "Hindi")
     var selectedCategory by remember { mutableStateOf(categories[0]) }
 
     LaunchedEffect(selectedCategory) {
-        if (selectedCategory == "Live" && viewModel.liveEvents.value.isEmpty()) {
+        if (selectedCategory == "Live" && liveEventsMap.isEmpty()) {
             viewModel.loadLiveEvents()
         }
     }
@@ -107,7 +107,7 @@ fun KinoHomeScreen(
                             selectedCategory = selectedCategory,
                             onCategorySelected = { 
                                 selectedCategory = it 
-                                if (it == "Live" && liveEvents.isEmpty()) {
+                                if (it == "Live" && liveEventsMap.isEmpty()) {
                                     viewModel.loadLiveEvents()
                                 }
                             }
@@ -201,8 +201,6 @@ fun KinoHomeScreen(
 
                 // When selectedCategory == "Live", show grouped live events
                 if (selectedCategory == "Live") {
-                    val liveEventsMap by viewModel.liveEvents.collectAsState()
-                    
                     if (liveEventsMap.isEmpty()) {
                         item {
                             Box(
