@@ -335,50 +335,69 @@ fun HeroBanner(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)),
-                                    startY = 200f
-                                )
-                            )
-                    )
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            movie.displayTitle() ?: "",
-                            color = Color.White,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                color = Color(0xFFE50914),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    "TOP 10",
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "Number 1 in Movies Today",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+        // Premium Gradient Overlay
+        Box(
+            modifier = Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color(0xCC080808), Color(0xFF080808)),
+                    startY = 100f
+                )
+            )
+        )
+        
+        // Content (Text & Button)
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(24.dp)
+                .padding(bottom = 24.dp) // Extra padding so it doesn't mix with dots
+        ) {
+            Text(movie.displayTitle() ?: "", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            
+            // Metadata Row (Year, Rating, Genre)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (movie.release_date != null) {
+                    Text(movie.release_date.take(4), color = Color.Gray, fontSize = 14.sp)
+                }
+                if (movie.vote_average != null) {
+                    Text("⭐ ${movie.vote_average}", color = Color(0xFFF5C518), fontSize = 14.sp)
+                }
+                // Show media type or genre if available
+                Text(movie.media_type?.replaceFirstChar { it.uppercase() } ?: "Movie", color = Color.Gray, fontSize = 14.sp)
+            }
+            
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { onMovieClick(movie) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("▶ Watch Now", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+        
+        // Premium Auto-Scroll Indicator Dots
+        Row(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            repeat(movies.size) { index ->
+                val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
+                Box(
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .size(8.dp)
+                )
+            }
+        }
                 }
             }
         }
