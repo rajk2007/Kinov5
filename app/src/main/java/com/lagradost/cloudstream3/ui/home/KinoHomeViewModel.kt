@@ -88,8 +88,8 @@ class KinoHomeViewModel : ViewModel() {
     private val _actionAnimeTv = MutableStateFlow<List<MovieResult>>(emptyList())
     val actionAnimeTv: StateFlow<List<MovieResult>> = _actionAnimeTv.asStateFlow()
 
-    private val _liveEvents = MutableStateFlow<List<KinoSearchResult>>(emptyList())
-    val liveEvents: StateFlow<List<KinoSearchResult>> = _liveEvents.asStateFlow()
+    private val _liveEvents = MutableStateFlow<Map<String, List<KinoSearchResult>>>(emptyMap())
+    val liveEvents: StateFlow<Map<String, List<KinoSearchResult>>> = _liveEvents
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -144,36 +144,47 @@ class KinoHomeViewModel : ViewModel() {
             if (cricifyApi != null) {
                 try {
                     val repo = APIRepository(cricifyApi)
-                    val allLiveResults = mutableListOf<KinoSearchResult>()
+                    val liveMap = mutableMapOf<String, MutableList<KinoSearchResult>>()
                     
-                    // Search for multiple sports terms to get all live events
-                    val searchTerms = listOf("live", "cricket", "football", "basketball", "tennis", "hockey")
+                    // Define sports and their search terms
+                    val sports = mapOf(
+                        "Cricket" to listOf("cricket", "ipl", "bbl", "psl"),
+                        "Football" to listOf("football", "soccer", "epl", "la liga"),
+                        "Basketball" to listOf("basketball", "nba"),
+                        "Tennis" to listOf("tennis", "atp", "wta"),
+                        "Live Now" to listOf("live") // Catch-all for other live events
+                    )
                     
-                    searchTerms.forEach { term ->
-                        try {
-                            val resource = repo.search(term, page = 1)
-                            if (resource is Resource.Success) {
-                                resource.value.items.forEach { response ->
-                                    // Avoid duplicates
-                                    if (allLiveResults.none { it.url == response.url }) {
-                                        allLiveResults.add(
-                                            KinoSearchResult(
-                                                name = response.name,
-                                                url = response.url,
-                                                apiName = response.apiName,
-                                                posterUrl = response.posterUrl,
-                                                type = response.type,
-                                                year = null,
-                                                quality = response.quality?.name
+                    sports.forEach { (sportName, terms) ->
+                        val sportList = mutableListOf<KinoSearchResult>()
+                        terms.forEach { term ->
+                            try {
+                                val resource = repo.search(term, page = 1)
+                                if (resource is Resource.Success) {
+                                    resource.value.items.forEach { response ->
+                                        if (sportList.none { it.url == response.url }) {
+                                            sportList.add(
+                                                KinoSearchResult(
+                                                    name = response.name,
+                                                    url = response.url,
+                                                    apiName = response.apiName,
+                                                    posterUrl = response.posterUrl,
+                                                    type = response.type,
+                                                    year = null,
+                                                    quality = response.quality?.name
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
-                            }
-                        } catch (e: Exception) { e.printStackTrace() }
+                            } catch (e: Exception) { e.printStackTrace() }
+                        }
+                        if (sportList.isNotEmpty()) {
+                            liveMap[sportName] = sportList
+                        }
                     }
                     
-                    _liveEvents.value = allLiveResults
+                    _liveEvents.value = liveMap
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }

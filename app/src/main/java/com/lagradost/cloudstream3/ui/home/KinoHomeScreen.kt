@@ -142,10 +142,7 @@ fun KinoHomeScreen(
                                 MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
                             }
                             "Live" -> {
-                                LiveEventsSection(
-                                    liveEvents = liveEvents,
-                                    onLiveClick = onLiveClick
-                                )
+                                // Handled in a separate logic below to avoid nesting item inside item
                             }
                             "Movies" -> {
                                 MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
@@ -197,6 +194,32 @@ fun KinoHomeScreen(
                             }
                             "Under 2 Hours" -> {
                                 MovieSection("Popular Movies", popular, onMovieClick)
+                            }
+                        }
+                    }
+                }
+
+                // When selectedCategory == "Live", show grouped live events
+                if (selectedCategory == "Live") {
+                    val liveEventsMap by viewModel.liveEvents.collectAsState()
+                    
+                    if (liveEventsMap.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Color(0xFFE50914))
+                            }
+                        }
+                    } else {
+                        liveEventsMap.forEach { (sportName, events) ->
+                            item {
+                                LiveEventsSection(
+                                    title = sportName,
+                                    liveEvents = events,
+                                    onLiveClick = onLiveClick
+                                )
                             }
                         }
                     }
@@ -291,211 +314,145 @@ fun HeroBanner(
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Card(
-            shape = RoundedCornerShape(24.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            modifier = Modifier.fillMaxSize()
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxSize().clickable { onMovieClick(movies[pagerState.currentPage]) }
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                HorizontalPager(
-                    state = pagerState,
+            Box {
+                AsyncImage(
+                    model = "${TMDBApi.IMAGE_BASE_URL}${movies[pagerState.currentPage].backdrop_path ?: movies[pagerState.currentPage].poster_path}",
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
-                ) { page ->
-                    val movie = movies[page]
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        AsyncImage(
-                            model = "${TMDBApi.IMAGE_BASE_URL}${movie.backdrop_path ?: movie.poster_path}",
-                            contentDescription = movie.displayTitle(),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        // Premium Gradient Overlay
-                        Box(
-                            modifier = Modifier.fillMaxSize().background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        Color(0x99000000),
-                                        Color(0xFF000000)
-                                    ),
-                                    startY = 300f
-                                )
-                            )
-                        )
-
-                        // Content
-                        Column(
-                            modifier = Modifier.align(Alignment.BottomStart).padding(24.dp)
-                        ) {
-                            Text(movie.displayTitle(), color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                if (movie.release_date != null && movie.release_date.length >= 4) {
-                                    Text(movie.release_date.take(4), color = Color.Gray, fontSize = 14.sp)
-                                }
-                                if (movie.vote_average != null) {
-                                    Text("⭐ ${movie.vote_average}", color = Color(0xFFF5C518), fontSize = 14.sp)
-                                }
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Row {
-                                Button(
-                                    onClick = { onMovieClick(movie) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914)),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.padding(end = 8.dp)
-                                ) {
-                                    Text("▶ Watch Now", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                OutlinedButton(
-                                    onClick = { /* TODO: Add to Watchlist */ },
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                    border = BorderStroke(1.dp, Color.White),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("+ Watchlist", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Dot Indicators
-                Row(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    repeat(movies.size) { index ->
-                        val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
-                        Box(
-                            Modifier
-                                .padding(horizontal = 4.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .size(8.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit = {}) {
-    val listState = rememberLazyListState()
-    
-    Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-        LazyRow(
-            state = listState,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(movies) { movie ->
-                PremiumMovieCard(movie, onMovieClick = onMovieClick)
-            }
-        }
-    }
-}
-
-@Composable
-fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit = {}) {
-    val listState = rememberLazyListState()
-    
-    Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-        LazyRow(
-            state = listState,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            items(movies.size) { index ->
-                val movie = movies[index]
-                Row(
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    Text(
-                        "${index + 1}",
-                        color = Color(0xFF1A1A1A),
-                        fontSize = 96.sp,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.offset(x = 12.dp)
-                    )
-                    PremiumMovieCard(movie, modifier = Modifier.offset(x = -16.dp), onMovieClick = onMovieClick)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun PremiumMovieCard(movie: MovieResult, modifier: Modifier = Modifier, onMovieClick: (MovieResult) -> Unit = {}) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
-
-    Column(
-        modifier = modifier
-            .width(140.dp)
-            .scale(scale)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) {
-                onMovieClick(movie)
-            }
-    ) {
-        Box(
-            modifier = Modifier
-                .size(width = 140.dp, height = 210.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF1A1A1A))
-                .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(12.dp))
-        ) {
-            AsyncImage(
-                model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
-                contentDescription = movie.displayTitle(),
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-            // Rating Badge
-            if (movie.vote_average != null) {
+                )
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xCC000000))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)),
+                                startY = 200f
+                            )
+                        )
+                )
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp)
                 ) {
                     Text(
-                        text = "⭐ ${movie.vote_average}",
-                        color = Color(0xFFF5C518),
-                        fontSize = 10.sp,
+                        movies[pagerState.currentPage].title ?: movies[pagerState.currentPage].name ?: "",
+                        color = Color.White,
+                        fontSize = 24.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            color = Color(0xFFE50914),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "TOP 10",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Number 1 in Movies Today",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit) {
+    if (movies.isEmpty()) return
+    
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Text(
+            title,
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(movies) { movie ->
+                MovieCard(movie, onMovieClick)
+            }
+        }
+    }
+}
+
+@Composable
+fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit) {
+    if (movies.isEmpty()) return
+
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Text(
+            title,
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(movies.size) { index ->
+                Box(modifier = Modifier.width(140.dp)) {
+                    Text(
+                        text = (index + 1).toString(),
+                        fontSize = 100.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .offset(x = (-10).dp, y = 10.dp)
+                            .graphicsLayer(alpha = 0.5f)
+                    )
+                    MovieCard(
+                        movie = movies[index],
+                        onClick = onMovieClick,
+                        modifier = Modifier.align(Alignment.CenterEnd)
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .width(110.dp)
+            .clickable { onClick(movie) }
+    ) {
+        AsyncImage(
+            model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
+            contentDescription = movie.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .height(160.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+        )
         Text(
-            movie.displayTitle(),
+            movie.title ?: movie.name ?: "",
             color = Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
@@ -541,32 +498,24 @@ fun ShimmerLoading() {
 
 @Composable
 fun LiveEventsSection(
+    title: String,
     liveEvents: List<KinoSearchResult>,
     onLiveClick: (KinoSearchResult) -> Unit
 ) {
-    if (liveEvents.isEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxWidth().padding(32.dp),
-            contentAlignment = Alignment.Center
+    Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
+        Text(
+            "🔴 $title",
+            color = Color(0xFFE50914),
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            CircularProgressIndicator(color = Color(0xFFE50914))
-        }
-    } else {
-        Column(modifier = Modifier.padding(top = 16.dp)) {
-            Text(
-                "🔴 Live Sports",
-                color = Color(0xFFE50914),
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-            )
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(liveEvents) { event ->
-                    LiveEventCard(event, onLiveClick)
-                }
+            items(liveEvents) { event ->
+                LiveEventCard(event, onLiveClick)
             }
         }
     }
