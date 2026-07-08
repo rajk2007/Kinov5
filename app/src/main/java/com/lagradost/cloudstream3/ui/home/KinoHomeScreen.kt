@@ -345,14 +345,19 @@ fun HeroBanner(
             )
         )
         
-        // Content (Text & Button)
+        // Content (Text)
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(24.dp)
                 .padding(bottom = 24.dp) // Extra padding so it doesn't mix with dots
         ) {
-            Text(movie.displayTitle() ?: "", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Text(
+                movie.displayTitle(),
+                color = Color.White,
+                fontSize = 26.sp, // Reduced from 32.sp to 26.sp
+                fontWeight = FontWeight.Bold
+            )
             Spacer(Modifier.height(8.dp))
             
             // Metadata Row (Year, Rating, Genre)
@@ -366,17 +371,7 @@ fun HeroBanner(
                 if (movie.vote_average != null) {
                     Text("⭐ ${movie.vote_average}", color = Color(0xFFF5C518), fontSize = 14.sp)
                 }
-                // Show media type or genre if available
                 Text(movie.media_type?.replaceFirstChar { it.uppercase() } ?: "Movie", color = Color.Gray, fontSize = 14.sp)
-            }
-            
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = { onMovieClick(movie) },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("▶ Watch Now", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
         
