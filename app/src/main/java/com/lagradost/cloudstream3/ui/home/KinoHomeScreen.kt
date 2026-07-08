@@ -70,7 +70,7 @@ fun KinoHomeScreen(
     }
 
     val pagerState = rememberPagerState(pageCount = { trending.take(5).size })
-    val currentMovie = if (trending.isNotEmpty()) trending[pagerState.currentPage % trending.size] else null
+    val currentMovie = if (trending.isNotEmpty() && pagerState.pageCount > 0) trending[pagerState.currentPage % trending.size] else null
 
     Surface(
         color = Color(0xFF080808),
@@ -79,8 +79,11 @@ fun KinoHomeScreen(
         // Dynamic Blurred Background
         if (currentMovie != null) {
             Box(modifier = Modifier.fillMaxSize()) {
+                val backdropUrl = currentMovie.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                    ?: currentMovie.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                    ?: ""
                 AsyncImage(
-                    model = "${TMDBApi.IMAGE_BASE_URL}${currentMovie.backdrop_path ?: currentMovie.poster_path}",
+                    model = backdropUrl,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -123,7 +126,7 @@ fun KinoHomeScreen(
                                     HeroBanner(movies = trending.take(5), onMovieClick = onMovieClick, pagerState = pagerState)
                                 }
                                 MovieSection("🔥 Trending Now", trending, onMovieClick)
-                                Top10Section("🏆 Top 10 Today", trending.take(10), onMovieClick)
+
                                 MovieSection("🆕 New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
                                 MovieSection("🇮🇳 Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
                                 MovieSection("🌸 Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick)
@@ -300,8 +303,10 @@ fun HeroBanner(
     LaunchedEffect(pagerState) {
         while (true) {
             delay(5000)
-            val nextPage = (pagerState.currentPage + 1) % movies.size
-            pagerState.animateScrollToPage(nextPage)
+            if (movies.isNotEmpty()) {
+                val nextPage = (pagerState.currentPage + 1) % movies.size
+                pagerState.animateScrollToPage(nextPage)
+            }
         }
     }
 
@@ -311,15 +316,20 @@ fun HeroBanner(
             .height(400.dp)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
+        val movie = if (movies.isNotEmpty()) movies[pagerState.currentPage % movies.size] else null
         Card(
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxSize().clickable { onMovieClick(movies[pagerState.currentPage]) }
+            modifier = Modifier.fillMaxSize().clickable { movie?.let { onMovieClick(it) } }
         ) {
             Box {
+                val backdropUrl = movie?.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                    ?: movie?.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                    ?: ""
+
                 AsyncImage(
-                    model = "${TMDBApi.IMAGE_BASE_URL}${movies[pagerState.currentPage].backdrop_path ?: movies[pagerState.currentPage].poster_path}",
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                    model = backdropUrl,
+                    contentDescription = movie?.displayTitle(),
+                    contentScale = ContentScale.Crop, // Fills the box perfectly
                     modifier = Modifier.fillMaxSize()
                 )
                 Box(
@@ -338,7 +348,7 @@ fun HeroBanner(
                         .padding(16.dp)
                 ) {
                     Text(
-                        movies[pagerState.currentPage].title ?: movies[pagerState.currentPage].name ?: "",
+                        movie?.displayTitle() ?: "",
                         color = Color.White,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold
