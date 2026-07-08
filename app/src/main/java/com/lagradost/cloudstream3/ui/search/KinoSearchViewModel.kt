@@ -7,12 +7,12 @@ import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 data class KinoSearchResult(
@@ -34,14 +34,16 @@ class KinoSearchViewModel : ViewModel() {
 
     var query = MutableStateFlow("")
 
-    private fun getProviderPriority(apiName: String, className: String): Int {
+    private val mutex = Mutex()
+
+    private fun getProviderPriority(apiName: String): Int {
         val name = apiName.lowercase()
-        val cls = className.lowercase()
         return when {
-            name.contains("moviebox") || cls.contains("moviebox") -> 1
-            name.contains("castle") || cls.contains("castle") -> 2
-            name.contains("netmirror") || cls.contains("netmirror") || name.contains("netflix") || cls.contains("netflix") -> 3
-            else -> Int.MAX_VALUE
+            name.contains("moviebox") -> 1
+            name.contains("castle") -> 2
+            name.contains("netmirror") || name.contains("netflix") -> 3
+            name.contains("pikashow") -> 4
+            else -> 100
         }
     }
 
@@ -60,16 +62,19 @@ class KinoSearchViewModel : ViewModel() {
     private suspend fun searchProviders(query: String) {
         _isLoading.value = true
         _results.value = emptyList()
-        
+
         val masterList = mutableListOf<KinoSearchResult>()
-        val allowedProviders = listOf("moviebox")
-        
-        val providers = APIHolder.apis.filter { api ->
+
+        val priorityNames = listOf("moviebox", "castle", "netmirror", "netflix", "pikashow")
+        val providers = APIHolder.apis.sortedBy { api ->
             val nameLower = api.name.lowercase()
-            val classNameLower = api::class.java.simpleName.lowercase()
-            allowedProviders.any { pattern ->
-                nameLower.contains(pattern) || classNameLower.contains(pattern)
-            }
+            val index = priorityNames.indexOfFirst { nameLower.contains(it) }
+            if (index >= 0) index else Int.MAX_VALUE
+        }
+
+        if (providers.isEmpty()) {
+            _isLoading.value = false
+            return
         }
 
         coroutineScope {
@@ -77,7 +82,7 @@ class KinoSearchViewModel : ViewModel() {
                 launch(Dispatchers.IO) {
                     try {
                         val repo = APIRepository(api)
-                        val resource = withTimeoutOrNull(3000L) { repo.search(query, page = 1) }
+                        val resource = withTimeoutOrNull(6000L) { repo.search(query, page = 1) }
                         if (resource is Resource.Success) {
                             val mapped = resource.value.items.map { response ->
                                 KinoSearchResult(
@@ -90,13 +95,13 @@ class KinoSearchViewModel : ViewModel() {
                                     quality = response.quality?.name
                                 )
                             }
-                            synchronized(masterList) {
+                            mutex.withLock {
                                 masterList.addAll(mapped)
-                                _results.value = masterList.sortedBy { getProviderPriority(it.apiName, "") }
+                                _results.value = masterList.sortedBy { getProviderPriority(it.apiName) }
                             }
                         }
                     } catch (e: Exception) {
-                        // Ignore failures
+                        e.printStackTrace()
                     }
                 }
             }

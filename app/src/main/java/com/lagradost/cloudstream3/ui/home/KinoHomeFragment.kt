@@ -9,6 +9,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.Navigation
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.SearchResponse
@@ -31,13 +32,8 @@ class KinoHomeFragment : Fragment() {
             setContent {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
-                        // Show loading toast
-                        android.widget.Toast.makeText(context, "Searching for sources...", android.widget.Toast.LENGTH_SHORT).show()
-                        
-                        // Search providers for this movie title, then open ResultFragment
                         lifecycleScope.launch(Dispatchers.IO) {
                             val result = findFirstProviderResult(movie.displayTitle())
-                            
                             withContext(Dispatchers.Main) {
                                 if (result != null) {
                                     val bundle = ResultFragment.newInstance(
@@ -45,35 +41,17 @@ class KinoHomeFragment : Fragment() {
                                         apiName = result.apiName,
                                         name = result.name
                                     )
-                                    val navController = Navigation.findNavController(
-                                        requireActivity(),
-                                        R.id.nav_host_fragment
-                                    )
+                                    val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
                                     navController.navigate(R.id.navigation_results_phone, bundle)
                                 } else {
-                                    // Fallback: open search screen with query
                                     com.lagradost.cloudstream3.MainActivity.nextSearchQuery = movie.displayTitle()
-                                    activity?.findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.nav_view)
-                                        ?.selectedItemId = R.id.navigation_search
+                                    activity?.findViewById<BottomNavigationView>(R.id.nav_view)?.selectedItemId = R.id.navigation_search
                                 }
                             }
                         }
                     },
-                    onLiveClick = { liveResult ->
-                        // Open Cricify details page directly using the URL and apiName
-                        lifecycleScope.launch(Dispatchers.Main) {
-                            val bundle = ResultFragment.newInstance(
-                                url = liveResult.url,
-                                apiName = liveResult.apiName,
-                                name = liveResult.name
-                            )
-                            val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
-                            navController.navigate(R.id.navigation_results_phone, bundle)
-                        }
-                    },
                     onSearchClick = {
-                        activity?.findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.nav_view)
-                            ?.selectedItemId = R.id.navigation_search
+                        activity?.findViewById<BottomNavigationView>(R.id.nav_view)?.selectedItemId = R.id.navigation_search
                     }
                 )
             }
@@ -81,22 +59,26 @@ class KinoHomeFragment : Fragment() {
     }
 
     private suspend fun findFirstProviderResult(query: String): SearchResponse? {
-        // Find the first (and only) MovieBox provider
-        val movieBoxApi = APIHolder.apis.find { 
-            it.name.lowercase().contains("moviebox") || it::class.java.simpleName.lowercase().contains("moviebox") 
-        } ?: return null
-        
-        return try {
-            val repo = APIRepository(movieBoxApi)
-            // 1.5s timeout for instant loading
-            val resource = withTimeoutOrNull(1500L) { repo.search(query, page = 1) }
-            if (resource is Resource.Success) {
-                resource.value.items.firstOrNull()
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
+        if (APIHolder.apis.isEmpty()) return null
+
+        val targetProviders = listOf("moviebox", "castle", "netmirror", "netflix", "pikashow")
+        val providers = APIHolder.apis.filter { api ->
+            val nameLower = api.name.lowercase()
+            val classLower = api::class.java.simpleName.lowercase()
+            targetProviders.any { nameLower.contains(it) || classLower.contains(it) }
         }
+
+        for (api in providers) {
+            try {
+                val repo = APIRepository(api)
+                val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
+                if (resource is Resource.Success) {
+                    return resource.value.items.firstOrNull()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return null
     }
 }
