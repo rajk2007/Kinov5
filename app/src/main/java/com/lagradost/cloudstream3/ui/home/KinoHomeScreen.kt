@@ -44,11 +44,13 @@ import com.lagradost.cloudstream3.api.TMDBApi
 import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
+import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 
 @Composable
 fun KinoHomeScreen(
     viewModel: KinoHomeViewModel = viewModel(),
     onMovieClick: (MovieResult) -> Unit = {},
+    onLiveClick: (KinoSearchResult) -> Unit = {},
     onSearchClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -60,6 +62,12 @@ fun KinoHomeScreen(
     
     val categories = listOf("All", "Live", "Movies", "Series", "Anime", "Hindi")
     var selectedCategory by remember { mutableStateOf(categories[0]) }
+
+    LaunchedEffect(selectedCategory) {
+        if (selectedCategory == "Live" && viewModel.liveEvents.value.isEmpty()) {
+            viewModel.loadLiveEvents()
+        }
+    }
 
     val pagerState = rememberPagerState(pageCount = { trending.take(5).size })
     val currentMovie = if (trending.isNotEmpty()) trending[pagerState.currentPage % trending.size] else null
@@ -134,7 +142,10 @@ fun KinoHomeScreen(
                                 MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
                             }
                             "Live" -> {
-                                MovieSection("📺 Live Events", liveEvents, onMovieClick)
+                                LiveEventsSection(
+                                    liveEvents = liveEvents,
+                                    onLiveClick = onLiveClick
+                                )
                             }
                             "Movies" -> {
                                 MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
@@ -525,5 +536,77 @@ fun ShimmerLoading() {
             Box(modifier = Modifier.size(120.dp, 180.dp).clip(RoundedCornerShape(8.dp)).background(brush))
             Spacer(modifier = Modifier.height(20.dp))
         }
+    }
+}
+
+@Composable
+fun LiveEventsSection(
+    liveEvents: List<KinoSearchResult>,
+    onLiveClick: (KinoSearchResult) -> Unit
+) {
+    if (liveEvents.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color(0xFFE50914))
+        }
+    } else {
+        Column(modifier = Modifier.padding(top = 16.dp)) {
+            Text(
+                "🔴 Live Sports",
+                color = Color(0xFFE50914),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+            )
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(liveEvents) { event ->
+                    LiveEventCard(event, onLiveClick)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LiveEventCard(event: KinoSearchResult, onClick: (KinoSearchResult) -> Unit) {
+    Column(
+        modifier = Modifier.width(160.dp).clickable { onClick(event) }
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 160.dp, height = 100.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF1A1A1A))
+        ) {
+            AsyncImage(
+                model = event.posterUrl ?: "",
+                contentDescription = event.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            // LIVE badge
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFFE50914))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text("LIVE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Text(
+            event.name,
+            color = Color.White,
+            fontSize = 12.sp,
+            maxLines = 2,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }

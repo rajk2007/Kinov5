@@ -59,6 +59,18 @@ class KinoHomeFragment : Fragment() {
                             }
                         }
                     },
+                    onLiveClick = { liveResult ->
+                        // Open Cricify details page directly using the URL and apiName
+                        lifecycleScope.launch(Dispatchers.Main) {
+                            val bundle = ResultFragment.newInstance(
+                                url = liveResult.url,
+                                apiName = liveResult.apiName,
+                                name = liveResult.name
+                            )
+                            val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
+                            navController.navigate(R.id.navigation_results_phone, bundle)
+                        }
+                    },
                     onSearchClick = {
                         activity?.findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.nav_view)
                             ?.selectedItemId = R.id.navigation_search

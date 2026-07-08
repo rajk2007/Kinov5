@@ -14,6 +14,7 @@ import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.LoadResponse
 import kotlinx.coroutines.Dispatchers
+import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 
 class KinoHomeViewModel : ViewModel() {
     private val tmdbApi = TMDBApi.create()
@@ -87,8 +88,8 @@ class KinoHomeViewModel : ViewModel() {
     private val _actionAnimeTv = MutableStateFlow<List<MovieResult>>(emptyList())
     val actionAnimeTv: StateFlow<List<MovieResult>> = _actionAnimeTv.asStateFlow()
 
-    private val _liveEvents = MutableStateFlow<List<MovieResult>>(emptyList())
-    val liveEvents: StateFlow<List<MovieResult>> = _liveEvents.asStateFlow()
+    private val _liveEvents = MutableStateFlow<List<KinoSearchResult>>(emptyList())
+    val liveEvents: StateFlow<List<KinoSearchResult>> = _liveEvents.asStateFlow()
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -143,23 +144,36 @@ class KinoHomeViewModel : ViewModel() {
             if (cricifyApi != null) {
                 try {
                     val repo = APIRepository(cricifyApi)
-                    val resource = repo.search("live", page = 1)
-                    if (resource is Resource.Success) {
-                        val liveResults = resource.value.items.map { response ->
-                            MovieResult(
-                                id = response.id ?: response.url.hashCode(),
-                                title = response.name,
-                                name = response.name,
-                                poster_path = response.posterUrl,
-                                backdrop_path = null,
-                                overview = null,
-                                vote_average = null,
-                                release_date = null,
-                                media_type = "live"
-                            )
-                        }
-                        _liveEvents.value = liveResults
+                    val allLiveResults = mutableListOf<KinoSearchResult>()
+                    
+                    // Search for multiple sports terms to get all live events
+                    val searchTerms = listOf("live", "cricket", "football", "basketball", "tennis", "hockey")
+                    
+                    searchTerms.forEach { term ->
+                        try {
+                            val resource = repo.search(term, page = 1)
+                            if (resource is Resource.Success) {
+                                resource.value.items.forEach { response ->
+                                    // Avoid duplicates
+                                    if (allLiveResults.none { it.url == response.url }) {
+                                        allLiveResults.add(
+                                            KinoSearchResult(
+                                                name = response.name,
+                                                url = response.url,
+                                                apiName = response.apiName,
+                                                posterUrl = response.posterUrl,
+                                                type = response.type,
+                                                year = null,
+                                                quality = response.quality?.name
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) { e.printStackTrace() }
                     }
+                    
+                    _liveEvents.value = allLiveResults
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
