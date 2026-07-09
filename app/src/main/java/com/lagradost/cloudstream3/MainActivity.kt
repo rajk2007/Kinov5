@@ -1424,7 +1424,6 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                     mainPluginsLoadedEvent.invoke(false)
                 }
 
-/*
                 ioSafe {
                     if (settingsManager.getBoolean(
                             getString(R.string.auto_update_plugins_key),
@@ -1452,7 +1451,6 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         )
                     }
                 }
-*/
 
                 ioSafe {
                     PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllLocalPlugins(
