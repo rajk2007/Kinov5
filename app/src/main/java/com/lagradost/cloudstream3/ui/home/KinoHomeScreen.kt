@@ -371,31 +371,49 @@ fun HeroBanner(
                 if (movie.vote_average != null) {
                     Text("⭐ ${movie.vote_average}", color = Color(0xFFF5C518), fontSize = 14.sp)
                 }
-                Text(movie.media_type?.replaceFirstChar { it.uppercase() } ?: "Movie", color = Color.Gray, fontSize = 14.sp)
-            }
-        }
-        
-        // Premium Auto-Scroll Indicator Dots
-        Row(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            repeat(movies.size) { index ->
-                val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
-                Box(
-                    Modifier
-                        .padding(horizontal = 4.dp)
-                        .clip(CircleShape)
-                        .background(color)
-                        .size(8.dp)
-                )
+                Text(getGenreName(movie.genre_ids?.firstOrNull()), color = Color.Gray, fontSize = 14.sp)
             }
         }
                 }
             }
         }
+    }
+
+    // Premium Auto-Scroll Indicator Dots (outside the pager, constant position)
+    Row(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        repeat(movies.size) { index ->
+            val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
+            Box(
+                Modifier
+                    .padding(horizontal = 4.dp)
+                    .clip(CircleShape)
+                    .background(color)
+                    .size(8.dp)
+            )
+        }
+    }
+}
+
+fun getGenreName(genreId: Int?): String {
+    return when (genreId) {
+        28 -> "Action"
+        12 -> "Adventure"
+        16 -> "Animation"
+        35 -> "Comedy"
+        80 -> "Crime"
+        18 -> "Drama"
+        27 -> "Horror"
+        9648 -> "Mystery"
+        10749 -> "Romance"
+        878 -> "Sci-Fi"
+        53 -> "Thriller"
+        10752 -> "War"
+        else -> "Movie"
     }
 }
 

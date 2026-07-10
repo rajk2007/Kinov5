@@ -32,6 +32,8 @@ class KinoHomeFragment : Fragment() {
             setContent {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
+                        android.widget.Toast.makeText(context, "Searching for sources...", android.widget.Toast.LENGTH_SHORT).show()
+
                         lifecycleScope.launch(Dispatchers.IO) {
                             val result = findFirstProviderResult(movie.displayTitle())
                             withContext(Dispatchers.Main) {

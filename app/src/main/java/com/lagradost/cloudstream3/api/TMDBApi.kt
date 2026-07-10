@@ -89,7 +89,8 @@ data class MovieResult(
     val vote_average: Double? = null,
     val release_date: String? = null,
     val first_air_date: String? = null,
-    val media_type: String? = null
+    val media_type: String? = null,
+    val genre_ids: List<Int>? = null
 ) {
     fun displayTitle(): String = title ?: name ?: "Unknown"
 }
