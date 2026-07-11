@@ -309,12 +309,14 @@ fun HeroBanner(
         }
     }
 
+    // ROOT BOX
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 16.dp)
             .height(320.dp) // Reduced height for better ratio
     ) {
+        // HORIZONTAL PAGER (Child 1)
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize()
@@ -377,24 +379,24 @@ fun HeroBanner(
                 }
             }
         }
-    }
 
-    // Premium Auto-Scroll Indicator Dots (outside the pager, constant position)
-    Row(
-        Modifier
-            .align(Alignment.BottomCenter)
-            .padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        repeat(movies.size) { index ->
-            val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
-            Box(
-                Modifier
-                    .padding(horizontal = 4.dp)
-                    .clip(CircleShape)
-                    .background(color)
-                    .size(8.dp)
-            )
+        // INDICATOR DOTS (Child 2 - direct child of Box, so .align works)
+        Row(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            repeat(movies.size) { index ->
+                val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
+                Box(
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .size(8.dp)
+                )
+            }
         }
     }
 }
