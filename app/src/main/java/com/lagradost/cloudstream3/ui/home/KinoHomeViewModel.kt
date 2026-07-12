@@ -15,6 +15,7 @@ import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.LoadResponse
 import kotlinx.coroutines.Dispatchers
 import com.lagradost.cloudstream3.ui.search.KinoSearchResult
+import kotlin.math.max
 
 class KinoHomeViewModel : ViewModel() {
     private val tmdbApi = TMDBApi.create()
@@ -99,25 +100,42 @@ class KinoHomeViewModel : ViewModel() {
 
     init { loadData() }
 
+    private fun <T> interleave(list1: List<T>, list2: List<T>): List<T> {
+        val result = mutableListOf<T>()
+        val maxSize = max(list1.size, list2.size)
+        for (i in 0 until maxSize) {
+            if (i < list1.size) result.add(list1[i])
+            if (i < list2.size) result.add(list2[i])
+        }
+        return result
+    }
+
     private fun loadData() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
-                // Merge popular Hindi movies into trending, ensuring no duplicates, max 20 items
-                val standardTrending = tmdbApi.getTrending(TMDBApi.API_KEY).results
+                val standardTrending = try { tmdbApi.getTrending(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
                 val hindiTrending = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results } catch (e: Exception) { emptyList() }
-                _trendingMovies.value = (hindiTrending.take(8) + standardTrending)
+
+                // Interleave Hindi and Standard, remove duplicates, keep 20
+                val mixedTrending = interleave(hindiTrending, standardTrending)
                     .distinctBy { it.id }
                     .take(20)
+                _trendingMovies.value = mixedTrending
+
                 _popularMovies.value = tmdbApi.getPopular(TMDBApi.API_KEY).results
                 _topRatedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
-                // Merge recently released Hindi movies into now playing, ensuring no duplicates, max 20 items
-                val standardNowPlaying = tmdbApi.getNowPlaying(TMDBApi.API_KEY).results
+
+                val standardNowPlaying = try { tmdbApi.getNowPlaying(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
                 val recentHindi = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "release_date.desc").results } catch (e: Exception) { emptyList() }
-                _nowPlaying.value = (recentHindi.take(8) + standardNowPlaying)
+
+                // Interleave Hindi and Standard, remove duplicates, keep 20
+                val mixedNowPlaying = interleave(recentHindi, standardNowPlaying)
                     .distinctBy { it.id }
                     .take(20)
+                _nowPlaying.value = mixedNowPlaying
+
                 _upcoming.value = tmdbApi.getUpcoming(TMDBApi.API_KEY).results
                 _popularTV.value = tmdbApi.getPopularTV(TMDBApi.API_KEY).results
                 _topRatedTV.value = tmdbApi.getTopRatedTV(TMDBApi.API_KEY).results
@@ -155,7 +173,7 @@ class KinoHomeViewModel : ViewModel() {
                 try {
                     val repo = APIRepository(cricifyApi)
                     val liveMap = mutableMapOf<String, MutableList<KinoSearchResult>>()
-                    
+
                     // Define sports and their search terms
                     val sports = mapOf(
                         "Cricket" to listOf("cricket", "ipl", "bbl", "psl"),
@@ -164,7 +182,7 @@ class KinoHomeViewModel : ViewModel() {
                         "Tennis" to listOf("tennis", "atp", "wta"),
                         "Live Now" to listOf("live") // Catch-all for other live events
                     )
-                    
+
                     sports.forEach { (sportName, terms) ->
                         val sportList = mutableListOf<KinoSearchResult>()
                         terms.forEach { term ->
@@ -193,7 +211,7 @@ class KinoHomeViewModel : ViewModel() {
                             liveMap[sportName] = sportList
                         }
                     }
-                    
+
                     _liveEvents.value = liveMap
                 } catch (e: Exception) {
                     e.printStackTrace()
