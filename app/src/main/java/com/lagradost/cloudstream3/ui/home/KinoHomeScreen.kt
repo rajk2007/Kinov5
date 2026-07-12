@@ -155,7 +155,7 @@ fun KinoHomeScreen(
                                 MovieSection("Comedy", viewModel.comedyMovies.collectAsState().value, onMovieClick)
                                 MovieSection("Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
                             }
-                            "TV Shows" -> {
+                            "Series" -> {
                                 MovieSection("Popular TV", viewModel.popularTV.collectAsState().value, onMovieClick)
                                 MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, onMovieClick)
                                 MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, onMovieClick)
@@ -166,7 +166,7 @@ fun KinoHomeScreen(
                                 MovieSection("Trending Anime", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
                                 MovieSection("Action Anime", viewModel.actionAnimeTv.collectAsState().value, onMovieClick)
                             }
-                            "Hindi Dubbed" -> {
+                            "Hindi" -> {
                                 MovieSection("Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
                                 MovieSection("Popular Hindi", viewModel.popularHindiMovies.collectAsState().value, onMovieClick)
                                 MovieSection("Top Rated Hindi", viewModel.topRatedHindiMovies.collectAsState().value, onMovieClick)

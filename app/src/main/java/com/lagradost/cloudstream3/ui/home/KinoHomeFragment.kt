@@ -11,11 +11,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.Navigation
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.lagradost.cloudstream3.APIHolder
+import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.ui.result.ResultFragment
+import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,10 +48,22 @@ class KinoHomeFragment : Fragment() {
                                     val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
                                     navController.navigate(R.id.navigation_results_phone, bundle)
                                 } else {
-                                    com.lagradost.cloudstream3.MainActivity.nextSearchQuery = movie.displayTitle()
+                                    MainActivity.nextSearchQuery = movie.displayTitle()
                                     activity?.findViewById<BottomNavigationView>(R.id.nav_view)?.selectedItemId = R.id.navigation_search
                                 }
                             }
+                        }
+                    },
+                    onLiveClick = { liveEvent ->
+                        // Open Cricify details page directly
+                        lifecycleScope.launch(Dispatchers.Main) {
+                            val bundle = ResultFragment.newInstance(
+                                url = liveEvent.url,
+                                apiName = liveEvent.apiName,
+                                name = liveEvent.name
+                            )
+                            val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
+                            navController.navigate(R.id.navigation_results_phone, bundle)
                         }
                     },
                     onSearchClick = {
