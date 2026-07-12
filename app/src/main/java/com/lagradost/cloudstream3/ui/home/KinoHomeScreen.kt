@@ -69,7 +69,7 @@ fun KinoHomeScreen(
         }
     }
 
-    val pagerState = rememberPagerState(pageCount = { trending.take(5).size })
+    val pagerState = rememberPagerState(pageCount = { trending.take(7).size })
     val currentMovie = if (trending.isNotEmpty() && pagerState.pageCount > 0) trending[pagerState.currentPage % trending.size] else null
 
     Surface(
@@ -123,7 +123,7 @@ fun KinoHomeScreen(
                         when (selectedCategory) {
                             "All" -> {
                                 if (trending.isNotEmpty()) {
-                                    HeroBanner(movies = trending.take(5), onMovieClick = onMovieClick, pagerState = pagerState)
+                                    HeroBanner(movies = trending.take(7), onMovieClick = onMovieClick, pagerState = pagerState)
                                 }
                                 MovieSection("🔥 Trending Now", trending, onMovieClick)
 

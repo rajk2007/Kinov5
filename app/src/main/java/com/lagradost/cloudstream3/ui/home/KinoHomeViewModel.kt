@@ -104,10 +104,20 @@ class KinoHomeViewModel : ViewModel() {
             _isLoading.value = true
             _error.value = null
             try {
-                _trendingMovies.value = tmdbApi.getTrending(TMDBApi.API_KEY).results
+                // Merge popular Hindi movies into trending, ensuring no duplicates, max 20 items
+                val standardTrending = tmdbApi.getTrending(TMDBApi.API_KEY).results
+                val hindiTrending = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results } catch (e: Exception) { emptyList() }
+                _trendingMovies.value = (hindiTrending.take(8) + standardTrending)
+                    .distinctBy { it.id }
+                    .take(20)
                 _popularMovies.value = tmdbApi.getPopular(TMDBApi.API_KEY).results
                 _topRatedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
-                _nowPlaying.value = tmdbApi.getNowPlaying(TMDBApi.API_KEY).results
+                // Merge recently released Hindi movies into now playing, ensuring no duplicates, max 20 items
+                val standardNowPlaying = tmdbApi.getNowPlaying(TMDBApi.API_KEY).results
+                val recentHindi = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "release_date.desc").results } catch (e: Exception) { emptyList() }
+                _nowPlaying.value = (recentHindi.take(8) + standardNowPlaying)
+                    .distinctBy { it.id }
+                    .take(20)
                 _upcoming.value = tmdbApi.getUpcoming(TMDBApi.API_KEY).results
                 _popularTV.value = tmdbApi.getPopularTV(TMDBApi.API_KEY).results
                 _topRatedTV.value = tmdbApi.getTopRatedTV(TMDBApi.API_KEY).results
