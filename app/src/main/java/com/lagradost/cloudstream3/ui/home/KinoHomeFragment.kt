@@ -34,8 +34,6 @@ class KinoHomeFragment : Fragment() {
             setContent {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
-                        android.widget.Toast.makeText(context, "Searching for sources...", android.widget.Toast.LENGTH_SHORT).show()
-
                         lifecycleScope.launch(Dispatchers.IO) {
                             val result = findFirstProviderResult(movie.displayTitle())
                             withContext(Dispatchers.Main) {
@@ -87,7 +85,7 @@ class KinoHomeFragment : Fragment() {
         for (api in providers) {
             try {
                 val repo = APIRepository(api)
-                val resource = withTimeoutOrNull(4000L) { repo.search(query, page = 1) }
+                val resource = withTimeoutOrNull(1500L) { repo.search(query, page = 1) }
                 if (resource is Resource.Success) {
                     return resource.value.items.firstOrNull()
                 }

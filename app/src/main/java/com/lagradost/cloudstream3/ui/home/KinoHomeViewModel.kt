@@ -16,6 +16,17 @@ import com.lagradost.cloudstream3.LoadResponse
 import kotlinx.coroutines.Dispatchers
 import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 import kotlin.math.max
+import com.lagradost.cloudstream3.CloudStreamApp
+import com.lagradost.cloudstream3.utils.AppUtils.toJson
+import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import java.io.File
+
+data class HomeCache(
+    val trending: List<MovieResult>,
+    val popular: List<MovieResult>,
+    val topRated: List<MovieResult>,
+    val nowPlaying: List<MovieResult>
+)
 
 class KinoHomeViewModel : ViewModel() {
     private val tmdbApi = TMDBApi.create()
@@ -110,10 +121,43 @@ class KinoHomeViewModel : ViewModel() {
         return result
     }
 
+    private fun saveCache(data: HomeCache) {
+        try {
+            val context = CloudStreamApp.context ?: return
+            val file = File(context.filesDir, "home_cache.json")
+            file.writeText(data.toJson())
+        } catch (e: Exception) {
+            logError(e)
+        }
+    }
+
+    private fun loadCache(): HomeCache? {
+        return try {
+            val context = CloudStreamApp.context ?: return null
+            val file = File(context.filesDir, "home_cache.json")
+            if (file.exists()) {
+                tryParseJson<HomeCache>(file.readText())
+            } else null
+        } catch (e: Exception) {
+            logError(e)
+            null
+        }
+    }
+
     private fun loadData() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             _error.value = null
+
+            // 1. Try to load from cache first (instant offline load)
+            val cached = loadCache()
+            if (cached != null) {
+                _trendingMovies.value = cached.trending
+                _popularMovies.value = cached.popular
+                _topRatedMovies.value = cached.topRated
+                _nowPlaying.value = cached.nowPlaying
+            }
+
             try {
                 val standardTrending = try { tmdbApi.getTrending(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
                 val hindiTrending = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results } catch (e: Exception) { emptyList() }
@@ -122,10 +166,9 @@ class KinoHomeViewModel : ViewModel() {
                 val mixedTrending = interleave(hindiTrending, standardTrending)
                     .distinctBy { it.id }
                     .take(20)
-                _trendingMovies.value = mixedTrending
 
-                _popularMovies.value = tmdbApi.getPopular(TMDBApi.API_KEY).results
-                _topRatedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
+                val popular = tmdbApi.getPopular(TMDBApi.API_KEY).results
+                val topRated = tmdbApi.getTopRated(TMDBApi.API_KEY).results
 
                 val standardNowPlaying = try { tmdbApi.getNowPlaying(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
                 val recentHindi = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "release_date.desc").results } catch (e: Exception) { emptyList() }
@@ -134,6 +177,15 @@ class KinoHomeViewModel : ViewModel() {
                 val mixedNowPlaying = interleave(recentHindi, standardNowPlaying)
                     .distinctBy { it.id }
                     .take(20)
+
+                // 3. Save to cache file
+                val cacheData = HomeCache(mixedTrending, popular, topRated, mixedNowPlaying)
+                saveCache(cacheData)
+
+                // 4. Update UI with fresh data
+                _trendingMovies.value = mixedTrending
+                _popularMovies.value = popular
+                _topRatedMovies.value = topRated
                 _nowPlaying.value = mixedNowPlaying
 
                 _upcoming.value = tmdbApi.getUpcoming(TMDBApi.API_KEY).results
@@ -157,7 +209,10 @@ class KinoHomeViewModel : ViewModel() {
                 _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
             } catch (e: Exception) {
                 logError(e)
-                _error.value = e.message ?: "Unknown error"
+                // If network fails and no cache, show error
+                if (cached == null) {
+                    _error.value = "No internet connection"
+                }
             } finally {
                 _isLoading.value = false
             }
