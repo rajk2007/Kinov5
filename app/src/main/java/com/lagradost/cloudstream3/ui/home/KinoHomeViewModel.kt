@@ -22,10 +22,14 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import java.io.File
 
 data class HomeCache(
-    val trending: List<MovieResult>,
-    val popular: List<MovieResult>,
-    val topRated: List<MovieResult>,
-    val nowPlaying: List<MovieResult>
+    val trending: List<MovieResult>, val popular: List<MovieResult>, val topRated: List<MovieResult>,
+    val nowPlaying: List<MovieResult>, val upcoming: List<MovieResult>, val popularTV: List<MovieResult>,
+    val topRatedTV: List<MovieResult>, val trendingTv: List<MovieResult>, val hindiDubbedMovies: List<MovieResult>,
+    val animeSpotlightTv: List<MovieResult>, val kDramaSpotlightTv: List<MovieResult>, val hiddenGemsMovies: List<MovieResult>,
+    val actionAdventureMovies: List<MovieResult>, val comedyMovies: List<MovieResult>, val thrillerHorrorMovies: List<MovieResult>,
+    val familyKidsMovies: List<MovieResult>, val internationalHitsMovies: List<MovieResult>, val trendingAnimeThisWeekTv: List<MovieResult>,
+    val criticallyAcclaimedMovies: List<MovieResult>, val popularHindiMovies: List<MovieResult>, val topRatedHindiMovies: List<MovieResult>,
+    val popularKoreanTv: List<MovieResult>, val actionAnimeTv: List<MovieResult>
 )
 
 class KinoHomeViewModel : ViewModel() {
@@ -109,6 +113,9 @@ class KinoHomeViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _liveEventsError = MutableStateFlow(false)
+    val liveEventsError: StateFlow<Boolean> = _liveEventsError
+
     init { loadData() }
 
     private fun <T> interleave(list1: List<T>, list2: List<T>): List<T> {
@@ -156,6 +163,25 @@ class KinoHomeViewModel : ViewModel() {
                 _popularMovies.value = cached.popular
                 _topRatedMovies.value = cached.topRated
                 _nowPlaying.value = cached.nowPlaying
+                _upcoming.value = cached.upcoming
+                _popularTV.value = cached.popularTV
+                _topRatedTV.value = cached.topRatedTV
+                _trendingTv.value = cached.trendingTv
+                _hindiDubbedMovies.value = cached.hindiDubbedMovies
+                _animeSpotlightTv.value = cached.animeSpotlightTv
+                _kDramaSpotlightTv.value = cached.kDramaSpotlightTv
+                _hiddenGemsMovies.value = cached.hiddenGemsMovies
+                _actionAdventureMovies.value = cached.actionAdventureMovies
+                _comedyMovies.value = cached.comedyMovies
+                _thrillerHorrorMovies.value = cached.thrillerHorrorMovies
+                _familyKidsMovies.value = cached.familyKidsMovies
+                _internationalHitsMovies.value = cached.internationalHitsMovies
+                _trendingAnimeThisWeekTv.value = cached.trendingAnimeThisWeekTv
+                _criticallyAcclaimedMovies.value = cached.criticallyAcclaimedMovies
+                _popularHindiMovies.value = cached.popularHindiMovies
+                _topRatedHindiMovies.value = cached.topRatedHindiMovies
+                _popularKoreanTv.value = cached.popularKoreanTv
+                _actionAnimeTv.value = cached.actionAnimeTv
             }
 
             try {
@@ -179,7 +205,31 @@ class KinoHomeViewModel : ViewModel() {
                     .take(20)
 
                 // 3. Save to cache file
-                val cacheData = HomeCache(mixedTrending, popular, topRated, mixedNowPlaying)
+                val cacheData = HomeCache(
+                    trending = mixedTrending,
+                    popular = popular,
+                    topRated = topRated,
+                    nowPlaying = mixedNowPlaying,
+                    upcoming = tmdbApi.getUpcoming(TMDBApi.API_KEY).results,
+                    popularTV = tmdbApi.getPopularTV(TMDBApi.API_KEY).results,
+                    topRatedTV = tmdbApi.getTopRatedTV(TMDBApi.API_KEY).results,
+                    trendingTv = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results,
+                    hindiDubbedMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi").results,
+                    animeSpotlightTv = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16").results,
+                    kDramaSpotlightTv = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko").results,
+                    hiddenGemsMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, sortBy = "vote_average.desc", voteCountGte = 200).results,
+                    actionAdventureMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "28").results,
+                    comedyMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "35").results,
+                    thrillerHorrorMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "27").results,
+                    familyKidsMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "10751").results,
+                    internationalHitsMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "ja").results,
+                    trendingAnimeThisWeekTv = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results,
+                    criticallyAcclaimedMovies = tmdbApi.getTopRated(TMDBApi.API_KEY).results,
+                    popularHindiMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results,
+                    topRatedHindiMovies = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "vote_average.desc").results,
+                    popularKoreanTv = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko", sortBy = "popularity.desc").results,
+                    actionAnimeTv = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
+                )
                 saveCache(cacheData)
 
                 // 4. Update UI with fresh data
@@ -188,25 +238,25 @@ class KinoHomeViewModel : ViewModel() {
                 _topRatedMovies.value = topRated
                 _nowPlaying.value = mixedNowPlaying
 
-                _upcoming.value = tmdbApi.getUpcoming(TMDBApi.API_KEY).results
-                _popularTV.value = tmdbApi.getPopularTV(TMDBApi.API_KEY).results
-                _topRatedTV.value = tmdbApi.getTopRatedTV(TMDBApi.API_KEY).results
-                _trendingTv.value = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results
-                _hindiDubbedMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi").results
-                _animeSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16").results
-                _kDramaSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko").results
-                _hiddenGemsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, sortBy = "vote_average.desc", voteCountGte = 200).results
-                _actionAdventureMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "28").results
-                _comedyMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "35").results
-                _thrillerHorrorMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "27").results
-                _familyKidsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "10751").results
-                _internationalHitsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "ja").results
-                _trendingAnimeThisWeekTv.value = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results
-                _criticallyAcclaimedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
-                _popularHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results
-                _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "vote_average.desc").results
-                _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko", sortBy = "popularity.desc").results
-                _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
+                _upcoming.value = cacheData.upcoming
+                _popularTV.value = cacheData.popularTV
+                _topRatedTV.value = cacheData.topRatedTV
+                _trendingTv.value = cacheData.trendingTv
+                _hindiDubbedMovies.value = cacheData.hindiDubbedMovies
+                _animeSpotlightTv.value = cacheData.animeSpotlightTv
+                _kDramaSpotlightTv.value = cacheData.kDramaSpotlightTv
+                _hiddenGemsMovies.value = cacheData.hiddenGemsMovies
+                _actionAdventureMovies.value = cacheData.actionAdventureMovies
+                _comedyMovies.value = cacheData.comedyMovies
+                _thrillerHorrorMovies.value = cacheData.thrillerHorrorMovies
+                _familyKidsMovies.value = cacheData.familyKidsMovies
+                _internationalHitsMovies.value = cacheData.internationalHitsMovies
+                _trendingAnimeThisWeekTv.value = cacheData.trendingAnimeThisWeekTv
+                _criticallyAcclaimedMovies.value = cacheData.criticallyAcclaimedMovies
+                _popularHindiMovies.value = cacheData.popularHindiMovies
+                _topRatedHindiMovies.value = cacheData.topRatedHindiMovies
+                _popularKoreanTv.value = cacheData.popularKoreanTv
+                _actionAnimeTv.value = cacheData.actionAnimeTv
             } catch (e: Exception) {
                 logError(e)
                 // If network fails and no cache, show error
@@ -223,6 +273,7 @@ class KinoHomeViewModel : ViewModel() {
 
     fun loadLiveEvents() {
         viewModelScope.launch(Dispatchers.IO) {
+            _liveEventsError.value = false
             val cricifyApi = APIHolder.apis.find { it.name.lowercase().contains("cricify") }
             if (cricifyApi != null) {
                 try {
@@ -270,7 +321,10 @@ class KinoHomeViewModel : ViewModel() {
                     _liveEvents.value = liveMap
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    _liveEventsError.value = true
                 }
+            } else {
+                _liveEventsError.value = true
             }
         }
     }

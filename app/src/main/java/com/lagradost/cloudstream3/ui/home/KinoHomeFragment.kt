@@ -46,6 +46,7 @@ class KinoHomeFragment : Fragment() {
                                     val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
                                     navController.navigate(R.id.navigation_results_phone, bundle)
                                 } else {
+                                    // No Toast, just navigate to search with the movie title
                                     MainActivity.nextSearchQuery = movie.displayTitle()
                                     activity?.findViewById<BottomNavigationView>(R.id.nav_view)?.selectedItemId = R.id.navigation_search
                                 }
@@ -74,7 +75,6 @@ class KinoHomeFragment : Fragment() {
 
     private suspend fun findFirstProviderResult(query: String): SearchResponse? {
         if (APIHolder.apis.isEmpty()) return null
-
         val targetProviders = listOf("moviebox", "castle", "netmirror", "netflix", "pikashow")
         val providers = APIHolder.apis.filter { api ->
             val nameLower = api.name.lowercase()
@@ -82,15 +82,26 @@ class KinoHomeFragment : Fragment() {
             targetProviders.any { nameLower.contains(it) || classLower.contains(it) }
         }
 
+        // Try 1: Exact title with 8s timeout
         for (api in providers) {
             try {
                 val repo = APIRepository(api)
-                val resource = withTimeoutOrNull(1500L) { repo.search(query, page = 1) }
-                if (resource is Resource.Success) {
-                    return resource.value.items.firstOrNull()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+                val resource = withTimeoutOrNull(8000L) { repo.search(query, page = 1) }
+                if (resource is Resource.Success) return resource.value.items.firstOrNull()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+
+        // Try 2: Cleaned title (remove "The", "A", punctuation) with 8s timeout
+        val cleanedQuery = query.replace(Regex("^[Tt]he\\s+"), "").replace(Regex("^[Aa]n?\\s+"), "")
+            .replace(Regex("[:\\-–—]"), " ").replace(Regex("\\s+"), " ").trim()
+
+        if (cleanedQuery != query && cleanedQuery.isNotBlank()) {
+            for (api in providers) {
+                try {
+                    val repo = APIRepository(api)
+                    val resource = withTimeoutOrNull(8000L) { repo.search(cleanedQuery, page = 1) }
+                    if (resource is Resource.Success) return resource.value.items.firstOrNull()
+                } catch (e: Exception) { e.printStackTrace() }
             }
         }
         return null

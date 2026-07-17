@@ -82,7 +82,7 @@ class KinoSearchViewModel : ViewModel() {
                 launch(Dispatchers.IO) {
                     try {
                         val repo = APIRepository(api)
-                        val resource = withTimeoutOrNull(6000L) { repo.search(query, page = 1) }
+                        val resource = withTimeoutOrNull(8000L) { repo.search(query, page = 1) }
                         if (resource is Resource.Success) {
                             val mapped = resource.value.items.map { response ->
                                 KinoSearchResult(

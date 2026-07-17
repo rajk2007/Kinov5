@@ -204,7 +204,17 @@ fun KinoHomeScreen(
 
                 // When selectedCategory == "Live", show grouped live events
                 if (selectedCategory == "Live") {
-                    if (liveEventsMap.isEmpty()) {
+                    val liveEventsError by viewModel.liveEventsError.collectAsState()
+                    if (liveEventsError) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No live events available. Check your internet connection.", color = Color.White)
+                            }
+                        }
+                    } else if (liveEventsMap.isEmpty()) {
                         item {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(32.dp),
