@@ -59,6 +59,28 @@ fun KinoHomeScreen(
     val topRated by viewModel.topRatedMovies.collectAsState()
     val liveEventsMap by viewModel.liveEvents.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+
+    // State collections moved outside LazyColumn
+    val nowPlaying by viewModel.nowPlaying.collectAsState()
+    val hindiDubbedMovies by viewModel.hindiDubbedMovies.collectAsState()
+    val animeSpotlightTv by viewModel.animeSpotlightTv.collectAsState()
+    val kDramaSpotlightTv by viewModel.kDramaSpotlightTv.collectAsState()
+    val hiddenGemsMovies by viewModel.hiddenGemsMovies.collectAsState()
+    val popularTV by viewModel.popularTV.collectAsState()
+    val criticallyAcclaimedMovies by viewModel.criticallyAcclaimedMovies.collectAsState()
+    val actionAdventureMovies by viewModel.actionAdventureMovies.collectAsState()
+    val comedyMovies by viewModel.comedyMovies.collectAsState()
+    val thrillerHorrorMovies by viewModel.thrillerHorrorMovies.collectAsState()
+    val familyKidsMovies by viewModel.familyKidsMovies.collectAsState()
+    val internationalHitsMovies by viewModel.internationalHitsMovies.collectAsState()
+    val trendingAnimeThisWeekTv by viewModel.trendingAnimeThisWeekTv.collectAsState()
+    val topRatedTV by viewModel.topRatedTV.collectAsState()
+    val trendingTv by viewModel.trendingTv.collectAsState()
+    val actionAnimeTv by viewModel.actionAnimeTv.collectAsState()
+    val popularHindiMovies by viewModel.popularHindiMovies.collectAsState()
+    val topRatedHindiMovies by viewModel.topRatedHindiMovies.collectAsState()
+    val popularKoreanTv by viewModel.popularKoreanTv.collectAsState()
+    val liveEventsError by viewModel.liveEventsError.collectAsState()
     
     val categories = listOf("All", "Live", "Movies", "Series", "Anime", "Hindi")
     var selectedCategory by remember { mutableStateOf(categories[0]) }
@@ -127,70 +149,70 @@ fun KinoHomeScreen(
                                 }
                                 MovieSection("🔥 Trending Now", trending, onMovieClick)
 
-                                MovieSection("🆕 New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
-                                MovieSection("🇮🇳 Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🌸 Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick)
-                                MovieSection("🇰🇷 K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
+                                MovieSection("🆕 New Releases", nowPlaying, onMovieClick)
+                                MovieSection("🇮🇳 Hindi Dubbed For You", hindiDubbedMovies, onMovieClick)
+                                MovieSection("🌸 Anime Spotlight", animeSpotlightTv, onMovieClick)
+                                MovieSection("🇰🇷 K-Drama Spotlight", kDramaSpotlightTv, onMovieClick)
                                 MovieSection("❤️ Recommended For You", popular, onMovieClick)
-                                MovieSection("💎 Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value, onMovieClick)
+                                MovieSection("💎 Hidden Gems", hiddenGemsMovies, onMovieClick)
                                 MovieSection("🎥 Popular Movies", popular, onMovieClick)
-                                MovieSection("📺 Popular TV Shows", viewModel.popularTV.collectAsState().value, onMovieClick)
+                                MovieSection("📺 Popular TV Shows", popularTV, onMovieClick)
                                 MovieSection("🍿 Weekend Picks", popular, onMovieClick)
-                                MovieSection("⭐ Critically Acclaimed", viewModel.criticallyAcclaimedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🎭 Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
-                                MovieSection("😂 Comedy Picks", viewModel.comedyMovies.collectAsState().value, onMovieClick)
-                                MovieSection("😱 Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
-                                MovieSection("👨‍👩‍👧 Family & Kids", viewModel.familyKidsMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🌍 International Hits", viewModel.internationalHitsMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
+                                MovieSection("⭐ Critically Acclaimed", criticallyAcclaimedMovies, onMovieClick)
+                                MovieSection("🎭 Action & Adventure", actionAdventureMovies, onMovieClick)
+                                MovieSection("😂 Comedy Picks", comedyMovies, onMovieClick)
+                                MovieSection("😱 Thriller & Horror", thrillerHorrorMovies, onMovieClick)
+                                MovieSection("👨‍👩‍👧 Family & Kids", familyKidsMovies, onMovieClick)
+                                MovieSection("🌍 International Hits", internationalHitsMovies, onMovieClick)
+                                MovieSection("🎌 Trending Anime This Week", trendingAnimeThisWeekTv, onMovieClick)
                             }
                             "Live" -> {
                                 // Handled in a separate logic below to avoid nesting item inside item
                             }
                             "Movies" -> {
-                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
+                                MovieSection("New Releases", nowPlaying, onMovieClick)
                                 MovieSection("Popular Movies", popular, onMovieClick)
                                 MovieSection("Top Rated", topRated, onMovieClick)
-                                MovieSection("Action", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Comedy", viewModel.comedyMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Action", actionAdventureMovies, onMovieClick)
+                                MovieSection("Comedy", comedyMovies, onMovieClick)
+                                MovieSection("Horror", thrillerHorrorMovies, onMovieClick)
                             }
                             "Series" -> {
-                                MovieSection("Popular TV", viewModel.popularTV.collectAsState().value, onMovieClick)
-                                MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, onMovieClick)
-                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, onMovieClick)
-                                MovieSection("K-Drama", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
+                                MovieSection("Popular TV", popularTV, onMovieClick)
+                                MovieSection("Top Rated TV", topRatedTV, onMovieClick)
+                                MovieSection("Trending TV", trendingTv, onMovieClick)
+                                MovieSection("K-Drama", kDramaSpotlightTv, onMovieClick)
                             }
                             "Anime" -> {
-                                MovieSection("Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick)
-                                MovieSection("Trending Anime", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
-                                MovieSection("Action Anime", viewModel.actionAnimeTv.collectAsState().value, onMovieClick)
+                                MovieSection("Anime Spotlight", animeSpotlightTv, onMovieClick)
+                                MovieSection("Trending Anime", trendingAnimeThisWeekTv, onMovieClick)
+                                MovieSection("Action Anime", actionAnimeTv, onMovieClick)
                             }
                             "Hindi" -> {
-                                MovieSection("Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Popular Hindi", viewModel.popularHindiMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Top Rated Hindi", viewModel.topRatedHindiMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Hindi Dubbed For You", hindiDubbedMovies, onMovieClick)
+                                MovieSection("Popular Hindi", popularHindiMovies, onMovieClick)
+                                MovieSection("Top Rated Hindi", topRatedHindiMovies, onMovieClick)
                             }
                             "K-Drama" -> {
-                                MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
-                                MovieSection("Popular Korean TV", viewModel.popularKoreanTv.collectAsState().value, onMovieClick)
+                                MovieSection("K-Drama Spotlight", kDramaSpotlightTv, onMovieClick)
+                                MovieSection("Popular Korean TV", popularKoreanTv, onMovieClick)
                             }
                             "Trending" -> {
                                 MovieSection("Trending Now", trending, onMovieClick)
-                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, onMovieClick)
+                                MovieSection("Trending TV", trendingTv, onMovieClick)
                             }
                             "New" -> {
-                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
+                                MovieSection("New Releases", nowPlaying, onMovieClick)
                             }
                             "Top Rated" -> {
-                                MovieSection("Critically Acclaimed", viewModel.criticallyAcclaimedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Critically Acclaimed", criticallyAcclaimedMovies, onMovieClick)
+                                MovieSection("Hidden Gems", hiddenGemsMovies, onMovieClick)
                             }
                             "Genres" -> {
-                                MovieSection("Action", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Comedy", viewModel.comedyMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Family", viewModel.familyKidsMovies.collectAsState().value, onMovieClick)
+                                MovieSection("Action", actionAdventureMovies, onMovieClick)
+                                MovieSection("Comedy", comedyMovies, onMovieClick)
+                                MovieSection("Horror", thrillerHorrorMovies, onMovieClick)
+                                MovieSection("Family", familyKidsMovies, onMovieClick)
                             }
                             "My List" -> {
                                 MovieSection("Watchlist", emptyList(), onMovieClick)
@@ -204,7 +226,6 @@ fun KinoHomeScreen(
 
                 // When selectedCategory == "Live", show grouped live events
                 if (selectedCategory == "Live") {
-                    val liveEventsError by viewModel.liveEventsError.collectAsState()
                     if (liveEventsError) {
                         item {
                             Box(
@@ -284,148 +305,114 @@ fun QuickDiscoveryChips(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(categories) { category ->
-            val isSelected = selectedCategory == category
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(if (isSelected) Color(0xFFE50914) else Color(0x22FFFFFF))
-                    .clickable { onCategorySelected(category) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            val isSelected = category == selectedCategory
+            Surface(
+                modifier = Modifier.clickable { onCategorySelected(category) },
+                shape = RoundedCornerShape(20.dp),
+                color = if (isSelected) Color(0xFFE50914) else Color(0xFF1A1A1A),
+                border = if (isSelected) null else BorderStroke(1.dp, Color(0xFF333333))
             ) {
                 Text(
-                    category,
-                    color = Color.White,
+                    text = category,
+                    color = if (isSelected) Color.White else Color.Gray,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                 )
             }
         }
     }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun HeroBanner(
-    movies: List<MovieResult>, 
-    onMovieClick: (MovieResult) -> Unit = {},
-    pagerState: androidx.compose.foundation.pager.PagerState = rememberPagerState(pageCount = { movies.size })
-) {
-    // Guaranteed Auto-Scroll
-    LaunchedEffect(Unit) {
-        while (movies.size > 1) {
-            delay(5000)
-            val nextPage = (pagerState.currentPage + 1) % movies.size
-            pagerState.animateScrollToPage(nextPage)
-        }
-    }
-
-    // ROOT BOX
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
-            .height(320.dp) // Reduced height for better ratio
-    ) {
-        // HORIZONTAL PAGER (Child 1)
+fun HeroBanner(movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit, pagerState: androidx.compose.foundation.pager.PagerState) {
+    Column {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
-            val movie = movies[page % movies.size]
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxSize().clickable { onMovieClick(movie) }
-            ) {
-                Box {
-                    val backdropUrl = movie.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                        ?: movie.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                        ?: ""
-
-                    AsyncImage(
-                        model = backdropUrl,
-                        contentDescription = movie.displayTitle(),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-        // Premium Gradient Overlay
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, Color(0xCC080808), Color(0xFF080808)),
-                    startY = 100f
-                )
-            )
-        )
-        
-        // Content (Text)
-        Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(24.dp)
-                .padding(bottom = 24.dp) // Extra padding so it doesn't mix with dots
-        ) {
-            Text(
-                movie.displayTitle(),
-                color = Color.White,
-                fontSize = 26.sp, // Reduced from 32.sp to 26.sp
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
-            
-            // Metadata Row (Year, Rating, Genre)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .fillMaxWidth()
+                .height(450.dp)
+        ) { page ->
+            val movie = movies[page]
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { onMovieClick(movie) }
             ) {
-                if (movie.release_date != null) {
-                    Text(movie.release_date.take(4), color = Color.Gray, fontSize = 14.sp)
+                AsyncImage(
+                    model = "https://image.tmdb.org/t/p/original${movie.poster_path}",
+                    contentDescription = movie.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color(0xFF080808)),
+                                startY = 300f
+                            )
+                        )
+                )
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        movie.title ?: movie.name ?: "",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            color = Color(0xFFE50914),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "TOP 10",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Number 1 in India Today",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
-                if (movie.vote_average != null) {
-                    Text("⭐ ${movie.vote_average}", color = Color(0xFFF5C518), fontSize = 14.sp)
-                }
-                Text(getGenreName(movie.genre_ids?.firstOrNull()), color = Color.Gray, fontSize = 14.sp)
             }
         }
-                }
-            }
-        }
-
-        // INDICATOR DOTS (Child 2 - direct child of Box, so .align works)
+        
+        // Pager Indicator
         Row(
             Modifier
-                .align(Alignment.BottomCenter)
+                .height(20.dp)
+                .fillMaxWidth()
                 .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            repeat(movies.size) { index ->
-                val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
+            repeat(movies.size) { iteration ->
+                val color = if (pagerState.currentPage == iteration) Color(0xFFE50914) else Color.Gray
                 Box(
-                    Modifier
-                        .padding(horizontal = 4.dp)
+                    modifier = Modifier
+                        .padding(2.dp)
                         .clip(CircleShape)
                         .background(color)
-                        .size(8.dp)
+                        .size(6.dp)
                 )
             }
         }
-    }
-}
-
-fun getGenreName(genreId: Int?): String {
-    return when (genreId) {
-        28 -> "Action"
-        12 -> "Adventure"
-        16 -> "Animation"
-        35 -> "Comedy"
-        80 -> "Crime"
-        18 -> "Drama"
-        27 -> "Horror"
-        9648 -> "Mystery"
-        10749 -> "Romance"
-        878 -> "Sci-Fi"
-        53 -> "Thriller"
-        10752 -> "War"
-        else -> "Movie"
     }
 }
 
@@ -433,17 +420,17 @@ fun getGenreName(genreId: Int?): String {
 fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit) {
     if (movies.isEmpty()) return
     
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+    Column(modifier = Modifier.padding(vertical = 12.dp)) {
         Text(
             title,
             color = Color.White,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+            modifier = Modifier.padding(start = 16.dp, bottom = 12.dp)
         )
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(movies) { movie ->
                 MovieCard(movie, onMovieClick)
@@ -453,48 +440,9 @@ fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieR
 }
 
 @Composable
-fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit) {
-    if (movies.isEmpty()) return
-
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(movies.size) { index ->
-                Box(modifier = Modifier.width(140.dp)) {
-                    Text(
-                        text = (index + 1).toString(),
-                        fontSize = 100.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(x = (-10).dp, y = 10.dp)
-                            .graphicsLayer(alpha = 0.5f)
-                    )
-                    MovieCard(
-                        movie = movies[index],
-                        onClick = onMovieClick,
-                        modifier = Modifier.align(Alignment.CenterEnd)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit, modifier: Modifier = Modifier) {
+fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .width(110.dp)
             .clickable { onClick(movie) }
     ) {
