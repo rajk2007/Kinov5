@@ -483,10 +483,19 @@ fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieR
 
 @Composable
 fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit, modifier: Modifier = Modifier) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(targetValue = if (isPressed) 0.85f else 1f, label = "scale")
+
     Column(
         modifier = modifier
             .width(110.dp)
-            .clickable { onClick(movie) }
+            .scale(scale)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = { onClick(movie) }
+            )
     ) {
         AsyncImage(
             model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
