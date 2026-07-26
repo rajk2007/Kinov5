@@ -21,14 +21,17 @@ class KinoLibraryFragment : Fragment() {
             setContent {
                 KinoLibraryScreen(
                     onItemClick = { title ->
-                        val navController = findNavController()
-                        when (title) {
-                            "Downloads" -> navController.navigate(R.id.navigation_downloads)
-                            "Continue Watching" -> navController.navigate(R.id.navigation_download_queue)
-                            "History" -> navController.navigate(R.id.navigation_download_queue)
-                            "Watchlist" -> navController.navigate(R.id.navigation_downloads)
-                            "Liked" -> navController.navigate(R.id.navigation_downloads)
+                        if (title == "Downloads") {
+                            findNavController().navigate(R.id.navigation_downloads)
                         }
+                    },
+                    onMediaClick = { media ->
+                        val bundle = Bundle().apply {
+                            putString("url", media.url)
+                            putString("apiName", media.apiName)
+                            putString("name", media.name)
+                        }
+                        findNavController().navigate(R.id.navigation_results_phone, bundle)
                     }
                 )
             }

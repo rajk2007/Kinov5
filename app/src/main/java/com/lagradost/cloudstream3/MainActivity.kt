@@ -1267,11 +1267,8 @@ private fun autoInstallRepositories() {
         try {
             val currentPath = settingsManager.getString(getString(R.string.download_path_key), null)
             if (currentPath.isNullOrBlank()) {
-                // Use app-specific external storage which doesn't require SAF permissions
-                val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOWNLOADS
-                ).absolutePath + "/Kino"
-                java.io.File(downloadDir).mkdirs()
+                val downloadDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)?.apply { mkdirs() }?.absolutePath
+                    ?: java.io.File(filesDir, "downloads").apply { mkdirs() }.absolutePath
                 settingsManager.edit().putString(getString(R.string.download_path_key), downloadDir).apply()
             }
         } catch (e: Exception) {
