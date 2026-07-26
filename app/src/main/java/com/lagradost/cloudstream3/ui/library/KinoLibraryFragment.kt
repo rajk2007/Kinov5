@@ -24,13 +24,8 @@ class KinoLibraryFragment : Fragment() {
                         val navController = findNavController()
                         when (title) {
                             "Downloads" -> navController.navigate(R.id.navigation_downloads)
-                            "Continue Watching" -> navController.navigate(R.id.navigation_downloads) // Map to downloads or a custom history fragment
-                            "History" -> {
-                                // navigation_history does not exist in mobile_navigation.xml, 
-                                // using navigation_downloads as fallback or if there's a better alternative.
-                                // The user suggested to check exact ID.
-                                navController.navigate(R.id.navigation_downloads)
-                            }
+                            "Continue Watching" -> navController.navigate(R.id.navigation_download_queue)
+                            "History" -> navController.navigate(R.id.navigation_download_queue)
                             "Watchlist" -> navController.navigate(R.id.navigation_downloads)
                             "Liked" -> navController.navigate(R.id.navigation_downloads)
                         }
