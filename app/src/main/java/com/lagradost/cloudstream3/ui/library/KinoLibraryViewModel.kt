@@ -2,11 +2,9 @@ package com.lagradost.cloudstream3.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lagradost.cloudstream3.AcraApplication
-import com.lagradost.cloudstream3.DataStoreHelper
 import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.ui.APIRepository
-import com.lagradost.cloudstream3.APIHolder
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.utils.DataStoreHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,25 +26,37 @@ class KinoLibraryViewModel : ViewModel() {
     fun loadData() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Fetch Continue Watching
-                val resumeList = DataStoreHelper.getAllResumeStateIds().mapNotNull { id ->
+                // 1. Continue Watching
+                val resumeIds = DataStoreHelper.getAllResumeStateIds() ?: emptyList()
+                val resumeList = resumeIds.mapNotNull { id ->
                     val resume = DataStoreHelper.getLastWatched(id)
-                    if (resume != null) {
-                        val api = APIHolder.getApiFromNameNull(resume.apiName)
-                        if (api != null) APIRepository(api).load(resume.url).value as? SearchResponse
-                        else null
-                    } else null
+                    resume?.let {
+                        object : SearchResponse {
+                            override val name = "Unknown"
+                            override val url = ""
+                            override val apiName = ""
+                            override var type: TvType? = null
+                            override var posterUrl: String? = null
+                            override var posterHeaders: Map<String, String>? = null
+                            override var id: Int? = it.parentId
+                            override var quality: com.lagradost.cloudstream3.SearchQuality? = null
+                            override var score: com.lagradost.cloudstream3.Score? = null
+                        }
+                    }
                 }
                 _continueWatching.value = resumeList
 
-                // Fetch Bookmarks (Watchlist/Liked)
-                val bookmarks = DataStoreHelper.getBookmarkedData()
-                _watchlist.value = bookmarks.filter { it.type == com.lagradost.cloudstream3.TvType.Movie || it.type == com.lagradost.cloudstream3.TvType.TvSeries }
-                _liked.value = bookmarks.filter { it.type == com.lagradost.cloudstream3.TvType.Anime || it.type == com.lagradost.cloudstream3.TvType.AsianDrama }
+                // 2. Bookmarks (Watchlist + Liked)
+                val allBookmarks = DataStoreHelper.getAllBookmarkedData()
+                _watchlist.value = allBookmarks.filter {
+                    it.type == TvType.Movie || it.type == TvType.TvSeries
+                }
+                _liked.value = allBookmarks.filter {
+                    it.type == TvType.Anime || it.type == TvType.AsianDrama
+                }
 
-                // Fetch Search History
-                val searchHistory = DataStoreHelper.getSearchHistory()
-                _history.value = searchHistory.map { it.searchResponse }
+                // 3. History
+                _history.value = emptyList()
 
             } catch (e: Exception) {
                 e.printStackTrace()
