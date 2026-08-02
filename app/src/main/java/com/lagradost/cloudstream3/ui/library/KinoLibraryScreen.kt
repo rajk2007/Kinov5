@@ -18,13 +18,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
-import com.lagradost.cloudstream3.SearchResponse
 
 @Composable
 fun KinoLibraryScreen(
     viewModel: KinoLibraryViewModel = viewModel(),
     onDownloadsClick: () -> Unit = {},
-    onMediaClick: (SearchResponse) -> Unit = {}
+    onMediaClick: (KinoLibraryItem) -> Unit = {}
 ) {
     val continueWatching by viewModel.continueWatching.collectAsState()
     val history by viewModel.history.collectAsState()
@@ -109,9 +108,9 @@ fun KinoLibraryScreen(
 @Composable
 fun LibrarySectionRow(
     title: String,
-    items: List<SearchResponse>,
+    items: List<KinoLibraryItem>,
     onHeaderClick: (() -> Unit)? = null,
-    onMediaClick: (SearchResponse) -> Unit = {},
+    onMediaClick: (KinoLibraryItem) -> Unit = {},
     showHeaderOnly: Boolean = false
 ) {
     Column(modifier = Modifier.padding(vertical = 12.dp)) {
@@ -166,7 +165,7 @@ fun LibrarySectionRow(
 }
 
 @Composable
-fun MediaPosterCard(media: SearchResponse, onClick: () -> Unit) {
+fun MediaPosterCard(media: KinoLibraryItem, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .width(120.dp)
