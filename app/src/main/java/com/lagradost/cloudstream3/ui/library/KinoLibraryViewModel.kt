@@ -3,7 +3,6 @@ package com.lagradost.cloudstream3.ui.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.utils.DataStoreHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,31 +31,30 @@ class KinoLibraryViewModel : ViewModel() {
                     val resume = DataStoreHelper.getLastWatched(id)
                     resume?.let {
                         object : SearchResponse {
-                            override val name = "Unknown"
-                            override val url = ""
-                            override val apiName = ""
-                            override var type: TvType? = null
-                            override var posterUrl: String? = null
-                            override var posterHeaders: Map<String, String>? = null
-                            override var id: Int? = it.parentId
-                            override var quality: com.lagradost.cloudstream3.SearchQuality? = null
-                            override var score: com.lagradost.cloudstream3.Score? = null
+                            override val name = it.name ?: return@let null
+                            override val url = it.url ?: return@let null
+                            override val apiName = it.apiName ?: return@let null
+                            override var type = it.type
+                            override var posterUrl = it.posterUrl
+                            override var posterHeaders = null
+                            override var id = it.parentId
+                            override var quality = null
+                            override var score = null
                         }
                     }
                 }
                 _continueWatching.value = resumeList
 
-                // 2. Bookmarks (Watchlist + Liked)
+                // 2. Watchlist
                 val allBookmarks = DataStoreHelper.getAllBookmarkedData()
-                _watchlist.value = allBookmarks.filter {
-                    it.type == TvType.Movie || it.type == TvType.TvSeries
-                }
-                _liked.value = allBookmarks.filter {
-                    it.type == TvType.Anime || it.type == TvType.AsianDrama
-                }
+                _watchlist.value = allBookmarks
 
-                // 3. History
-                _history.value = emptyList()
+                // 3. Liked (Favorites)
+                val allFavorites = DataStoreHelper.getAllFavorites()
+                _liked.value = allFavorites
+
+                // 4. History (Recently bookmarked)
+                _history.value = allBookmarks.sortedByDescending { it.bookmarkedTime }
 
             } catch (e: Exception) {
                 e.printStackTrace()

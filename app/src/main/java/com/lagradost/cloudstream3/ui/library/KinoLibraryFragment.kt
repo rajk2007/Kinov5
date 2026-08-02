@@ -20,10 +20,8 @@ class KinoLibraryFragment : Fragment() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 KinoLibraryScreen(
-                    onItemClick = { title ->
-                        if (title == "Downloads") {
-                            findNavController().navigate(R.id.navigation_downloads)
-                        }
+                    onDownloadsClick = {
+                        findNavController().navigate(R.id.navigation_downloads)
                     },
                     onMediaClick = { media ->
                         val bundle = Bundle().apply {
