@@ -60,47 +60,43 @@ fun KinoLibraryScreen(
         }
 
         // Continue Watching
-        if (continueWatching.isNotEmpty()) {
-            item {
-                LibrarySectionRow(
-                    title = "Continue Watching",
-                    items = continueWatching,
-                    onMediaClick = onMediaClick
-                )
-            }
+        item {
+            LibrarySectionRow(
+                title = "Continue Watching",
+                items = continueWatching,
+                onMediaClick = onMediaClick,
+                emptyText = if (continueWatching.isEmpty()) "No watch history yet" else null
+            )
         }
 
         // Watchlist
-        if (watchlist.isNotEmpty()) {
-            item {
-                LibrarySectionRow(
-                    title = "Watchlist",
-                    items = watchlist,
-                    onMediaClick = onMediaClick
-                )
-            }
+        item {
+            LibrarySectionRow(
+                title = "Watchlist",
+                items = watchlist,
+                onMediaClick = onMediaClick,
+                emptyText = if (watchlist.isEmpty()) "No saved items yet" else null
+            )
         }
 
         // Liked
-        if (liked.isNotEmpty()) {
-            item {
-                LibrarySectionRow(
-                    title = "Liked",
-                    items = liked,
-                    onMediaClick = onMediaClick
-                )
-            }
+        item {
+            LibrarySectionRow(
+                title = "Liked",
+                items = liked,
+                onMediaClick = onMediaClick,
+                emptyText = if (liked.isEmpty()) "No favorites yet" else null
+            )
         }
 
         // History
-        if (history.isNotEmpty()) {
-            item {
-                LibrarySectionRow(
-                    title = "History",
-                    items = history,
-                    onMediaClick = onMediaClick
-                )
-            }
+        item {
+            LibrarySectionRow(
+                title = "History",
+                items = history,
+                onMediaClick = onMediaClick,
+                emptyText = if (history.isEmpty()) "No history yet" else null
+            )
         }
     }
 }
@@ -111,7 +107,8 @@ fun LibrarySectionRow(
     items: List<KinoLibraryItem>,
     onHeaderClick: (() -> Unit)? = null,
     onMediaClick: (KinoLibraryItem) -> Unit = {},
-    showHeaderOnly: Boolean = false
+    showHeaderOnly: Boolean = false,
+    emptyText: String? = null
 ) {
     Column(modifier = Modifier.padding(vertical = 12.dp)) {
         // Section header
@@ -137,12 +134,21 @@ fun LibrarySectionRow(
         Spacer(modifier = Modifier.height(12.dp))
 
         if (!showHeaderOnly) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp)
-            ) {
-                items(items) { media ->
-                    MediaPosterCard(media = media, onClick = { onMediaClick(media) })
+            if (items.isEmpty() && emptyText != null) {
+                Text(
+                    text = emptyText,
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            } else {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) {
+                    items(items) { media ->
+                        MediaPosterCard(media = media, onClick = { onMediaClick(media) })
+                    }
                 }
             }
         } else {

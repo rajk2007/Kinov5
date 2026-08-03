@@ -32,59 +32,50 @@ class KinoLibraryViewModel : ViewModel() {
     fun loadData() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // 1. Continue Watching
+                // 1. Continue Watching — use ResumeWatching directly
                 val resumeIds = DataStoreHelper.getAllResumeStateIds() ?: emptyList()
                 val resumeList = resumeIds.mapNotNull { id ->
                     val resume = DataStoreHelper.getLastWatched(id)
-                    if (resume != null) {
-                        // Use reflection-safe access or fallbacks
-                        // Fetching from BookmarkedData because ResumeWatching lacks metadata fields
-                        val metadata = DataStoreHelper.getBookmarkedData(resume.parentId)
-                        val name = try { metadata?.name } catch (e: Exception) { null }
-                        val url = try { metadata?.url } catch (e: Exception) { null }
-                        val apiName = try { metadata?.apiName } catch (e: Exception) { null }
-                        val posterUrl = try { metadata?.posterUrl } catch (e: Exception) { null }
-                        
-                        if (!name.isNullOrBlank() && !url.isNullOrBlank() && !apiName.isNullOrBlank()) {
-                            KinoLibraryItem(name = name!!, url = url!!, apiName = apiName!!, posterUrl = posterUrl)
-                        } else null
+                    if (resume != null && !resume.name.isNullOrBlank() && !resume.url.isNullOrBlank()) {
+                        KinoLibraryItem(
+                            name = resume.name!!,
+                            url = resume.url!!,
+                            apiName = resume.apiName ?: "",
+                            posterUrl = resume.posterUrl
+                        )
                     } else null
                 }
                 _continueWatching.value = resumeList
 
-                // 2. Watchlist & History (Bookmarks)
+                // 2. Watchlist — BookmarkedData extends SearchResponse, access directly
                 val allBookmarks = DataStoreHelper.getAllBookmarkedData()
-                val mappedBookmarks = allBookmarks.map {
-                    // Try to get properties, fallback to safe values
-                    // Use safe cast to SearchResponse to handle potential unresolved reference errors during compilation
-                    val searchRes = it as? com.lagradost.cloudstream3.SearchResponse
-                    val name = try { searchRes?.name } catch (e: Exception) { "Bookmarked Item ${it.id ?: ""}" }
-                    val url = try { searchRes?.url } catch (e: Exception) { "" }
-                    val apiName = try { searchRes?.apiName } catch (e: Exception) { "" }
-                    val posterUrl = try { searchRes?.posterUrl } catch (e: Exception) { null }
+                _watchlist.value = allBookmarks.map {
                     KinoLibraryItem(
-                        name = name ?: "Bookmarked Item ${it.id ?: ""}", 
-                        url = url ?: "", 
-                        apiName = apiName ?: "", 
-                        posterUrl = posterUrl
+                        name = it.name,
+                        url = it.url,
+                        apiName = it.apiName,
+                        posterUrl = it.posterUrl
                     )
                 }
-                _watchlist.value = mappedBookmarks
-                _history.value = mappedBookmarks // Use bookmarks as history for now
 
-                // 3. Liked (Favorites)
+                // 3. History — same bookmarks, sorted by most recent
+                _history.value = allBookmarks.sortedByDescending { it.bookmarkedTime }.map {
+                    KinoLibraryItem(
+                        name = it.name,
+                        url = it.url,
+                        apiName = it.apiName,
+                        posterUrl = it.posterUrl
+                    )
+                }
+
+                // 4. Liked — FavoritesData extends SearchResponse
                 val allFavorites = DataStoreHelper.getAllFavorites()
                 _liked.value = allFavorites.map {
-                    val searchRes = it as? com.lagradost.cloudstream3.SearchResponse
-                    val name = try { searchRes?.name } catch (e: Exception) { "Liked Item ${it.id ?: ""}" }
-                    val url = try { searchRes?.url } catch (e: Exception) { "" }
-                    val apiName = try { searchRes?.apiName } catch (e: Exception) { "" }
-                    val posterUrl = try { searchRes?.posterUrl } catch (e: Exception) { null }
                     KinoLibraryItem(
-                        name = name ?: "Liked Item ${it.id ?: ""}", 
-                        url = url ?: "", 
-                        apiName = apiName ?: "", 
-                        posterUrl = posterUrl
+                        name = it.name,
+                        url = it.url,
+                        apiName = it.apiName,
+                        posterUrl = it.posterUrl
                     )
                 }
 
