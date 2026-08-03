@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+// Explicitly define the data class used for the UI
 data class KinoLibraryItem(
     val name: String,
     val url: String,
@@ -42,25 +43,40 @@ class KinoLibraryViewModel : ViewModel() {
                             apiName = resume.apiName!!,
                             posterUrl = resume.posterUrl
                         )
-                    } else {
-                        null
-                    }
+                    } else null
                 }
                 _continueWatching.value = resumeList
 
-                // 2. Watchlist & History (from Bookmarks)
+                // 2. Watchlist (all bookmarks)
                 val allBookmarks = DataStoreHelper.getAllBookmarkedData()
                 _watchlist.value = allBookmarks.map {
-                    KinoLibraryItem(name = it.name, url = it.url, apiName = it.apiName, posterUrl = it.posterUrl)
-                }
-                _history.value = allBookmarks.sortedByDescending { it.bookmarkedTime }.map {
-                    KinoLibraryItem(name = it.name, url = it.url, apiName = it.apiName, posterUrl = it.posterUrl)
+                    KinoLibraryItem(
+                        name = it.name,
+                        url = it.url,
+                        apiName = it.apiName,
+                        posterUrl = it.posterUrl
+                    )
                 }
 
-                // 3. Liked (from Favorites)
+                // 3. History (bookmarks sorted by time)
+                _history.value = allBookmarks.sortedByDescending { it.bookmarkedTime }.map {
+                    KinoLibraryItem(
+                        name = it.name,
+                        url = it.url,
+                        apiName = it.apiName,
+                        posterUrl = it.posterUrl
+                    )
+                }
+
+                // 4. Liked (favorites)
                 val allFavorites = DataStoreHelper.getAllFavorites()
                 _liked.value = allFavorites.map {
-                    KinoLibraryItem(name = it.name, url = it.url, apiName = it.apiName, posterUrl = it.posterUrl)
+                    KinoLibraryItem(
+                        name = it.name,
+                        url = it.url,
+                        apiName = it.apiName,
+                        posterUrl = it.posterUrl
+                    )
                 }
 
             } catch (e: Exception) {
