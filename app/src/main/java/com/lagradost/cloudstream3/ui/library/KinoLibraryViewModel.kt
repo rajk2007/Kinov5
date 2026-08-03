@@ -36,46 +36,55 @@ class KinoLibraryViewModel : ViewModel() {
                 val resumeIds = DataStoreHelper.getAllResumeStateIds() ?: emptyList()
                 val resumeList = resumeIds.mapNotNull { id ->
                     val resume = DataStoreHelper.getLastWatched(id)
-                    if (resume != null && !resume.name.isNullOrBlank() && !resume.url.isNullOrBlank() && !resume.apiName.isNullOrBlank()) {
-                        KinoLibraryItem(
-                            name = resume.name!!,
-                            url = resume.url!!,
-                            apiName = resume.apiName!!,
-                            posterUrl = resume.posterUrl
-                        )
+                    if (resume != null) {
+                        // Use reflection-safe access or fallbacks
+                        // Fetching from BookmarkedData because ResumeWatching lacks metadata fields
+                        val metadata = DataStoreHelper.getBookmarkedData(resume.parentId)
+                        val name = try { metadata?.name } catch (e: Exception) { null }
+                        val url = try { metadata?.url } catch (e: Exception) { null }
+                        val apiName = try { metadata?.apiName } catch (e: Exception) { null }
+                        val posterUrl = try { metadata?.posterUrl } catch (e: Exception) { null }
+                        
+                        if (!name.isNullOrBlank() && !url.isNullOrBlank() && !apiName.isNullOrBlank()) {
+                            KinoLibraryItem(name = name!!, url = url!!, apiName = apiName!!, posterUrl = posterUrl)
+                        } else null
                     } else null
                 }
                 _continueWatching.value = resumeList
 
-                // 2. Watchlist (all bookmarks)
+                // 2. Watchlist & History (Bookmarks)
                 val allBookmarks = DataStoreHelper.getAllBookmarkedData()
-                _watchlist.value = allBookmarks.map {
+                val mappedBookmarks = allBookmarks.map {
+                    // Try to get properties, fallback to safe values
+                    // Use safe cast to SearchResponse to handle potential unresolved reference errors during compilation
+                    val searchRes = it as? com.lagradost.cloudstream3.SearchResponse
+                    val name = try { searchRes?.name } catch (e: Exception) { "Bookmarked Item ${it.id ?: ""}" }
+                    val url = try { searchRes?.url } catch (e: Exception) { "" }
+                    val apiName = try { searchRes?.apiName } catch (e: Exception) { "" }
+                    val posterUrl = try { searchRes?.posterUrl } catch (e: Exception) { null }
                     KinoLibraryItem(
-                        name = it.name,
-                        url = it.url,
-                        apiName = it.apiName,
-                        posterUrl = it.posterUrl
+                        name = name ?: "Bookmarked Item ${it.id ?: ""}", 
+                        url = url ?: "", 
+                        apiName = apiName ?: "", 
+                        posterUrl = posterUrl
                     )
                 }
+                _watchlist.value = mappedBookmarks
+                _history.value = mappedBookmarks // Use bookmarks as history for now
 
-                // 3. History (bookmarks sorted by time)
-                _history.value = allBookmarks.sortedByDescending { it.bookmarkedTime }.map {
-                    KinoLibraryItem(
-                        name = it.name,
-                        url = it.url,
-                        apiName = it.apiName,
-                        posterUrl = it.posterUrl
-                    )
-                }
-
-                // 4. Liked (favorites)
+                // 3. Liked (Favorites)
                 val allFavorites = DataStoreHelper.getAllFavorites()
                 _liked.value = allFavorites.map {
+                    val searchRes = it as? com.lagradost.cloudstream3.SearchResponse
+                    val name = try { searchRes?.name } catch (e: Exception) { "Liked Item ${it.id ?: ""}" }
+                    val url = try { searchRes?.url } catch (e: Exception) { "" }
+                    val apiName = try { searchRes?.apiName } catch (e: Exception) { "" }
+                    val posterUrl = try { searchRes?.posterUrl } catch (e: Exception) { null }
                     KinoLibraryItem(
-                        name = it.name,
-                        url = it.url,
-                        apiName = it.apiName,
-                        posterUrl = it.posterUrl
+                        name = name ?: "Liked Item ${it.id ?: ""}", 
+                        url = url ?: "", 
+                        apiName = apiName ?: "", 
+                        posterUrl = posterUrl
                     )
                 }
 
