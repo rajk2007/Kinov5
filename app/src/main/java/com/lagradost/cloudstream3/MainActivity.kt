@@ -1267,6 +1267,7 @@ private fun autoInstallRepositories() {
         try {
             val currentPath = settingsManager.getString(getString(R.string.download_path_key), null)
             if (currentPath.isNullOrBlank()) {
+                // Use app-specific external storage - NO permissions needed on any Android version
                 val downloadDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)?.apply { mkdirs() }?.absolutePath
                     ?: java.io.File(filesDir, "downloads").apply { mkdirs() }.absolutePath
                 settingsManager.edit().putString(getString(R.string.download_path_key), downloadDir).apply()
