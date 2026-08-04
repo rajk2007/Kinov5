@@ -2,7 +2,10 @@ package com.lagradost.cloudstream3.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.utils.DataStoreHelper
+import com.lagradost.cloudstream3.utils.DataStoreHelper.BookmarkedData
+import com.lagradost.cloudstream3.utils.DataStoreHelper.FavoritesData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,16 +35,17 @@ class KinoLibraryViewModel : ViewModel() {
     fun loadData() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // 1. Continue Watching — use ResumeWatching directly
+                // 1. Continue Watching — use getBookmarkedData to get metadata
                 val resumeIds = DataStoreHelper.getAllResumeStateIds() ?: emptyList()
                 val resumeList = resumeIds.mapNotNull { id ->
-                    val resume = DataStoreHelper.getLastWatched(id)
-                    if (resume != null && !resume.name.isNullOrBlank() && !resume.url.isNullOrBlank()) {
+                    val data = DataStoreHelper.getBookmarkedData(id)
+                    if (data != null) {
+                        val res = data as SearchResponse
                         KinoLibraryItem(
-                            name = resume.name!!,
-                            url = resume.url!!,
-                            apiName = resume.apiName ?: "",
-                            posterUrl = resume.posterUrl
+                            name = res.name,
+                            url = res.url,
+                            apiName = res.apiName,
+                            posterUrl = res.posterUrl
                         )
                     } else null
                 }
@@ -49,33 +53,36 @@ class KinoLibraryViewModel : ViewModel() {
 
                 // 2. Watchlist — BookmarkedData extends SearchResponse, access directly
                 val allBookmarks = DataStoreHelper.getAllBookmarkedData()
-                _watchlist.value = allBookmarks.map {
+                _watchlist.value = allBookmarks.map { bookmark ->
+                    val res = bookmark as SearchResponse
                     KinoLibraryItem(
-                        name = it.name,
-                        url = it.url,
-                        apiName = it.apiName,
-                        posterUrl = it.posterUrl
+                        name = res.name,
+                        url = res.url,
+                        apiName = res.apiName,
+                        posterUrl = res.posterUrl
                     )
                 }
 
                 // 3. History — same bookmarks, sorted by most recent
-                _history.value = allBookmarks.sortedByDescending { it.bookmarkedTime }.map {
+                _history.value = allBookmarks.sortedByDescending { it.bookmarkedTime }.map { bookmark ->
+                    val res = bookmark as SearchResponse
                     KinoLibraryItem(
-                        name = it.name,
-                        url = it.url,
-                        apiName = it.apiName,
-                        posterUrl = it.posterUrl
+                        name = res.name,
+                        url = res.url,
+                        apiName = res.apiName,
+                        posterUrl = res.posterUrl
                     )
                 }
 
                 // 4. Liked — FavoritesData extends SearchResponse
                 val allFavorites = DataStoreHelper.getAllFavorites()
-                _liked.value = allFavorites.map {
+                _liked.value = allFavorites.map { favorite ->
+                    val res = favorite as SearchResponse
                     KinoLibraryItem(
-                        name = it.name,
-                        url = it.url,
-                        apiName = it.apiName,
-                        posterUrl = it.posterUrl
+                        name = res.name,
+                        url = res.url,
+                        apiName = res.apiName,
+                        posterUrl = res.posterUrl
                     )
                 }
 
