@@ -1263,8 +1263,8 @@ private fun autoInstallRepositories() {
         @OptIn(UnsafeSSL::class)
         insecureApp.initClient(this, ignoreSSL = true)
 
-        val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
         try {
+            val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
             val currentPath = settingsManager.getString(getString(R.string.download_path_key), null)
             if (currentPath.isNullOrBlank()) {
                 // Use app-specific external storage - NO permissions needed on any Android version
