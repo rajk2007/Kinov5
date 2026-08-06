@@ -1259,17 +1259,18 @@ private fun autoInstallRepositories() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
+
         app.initClient(this, ignoreSSL = false)
         @OptIn(UnsafeSSL::class)
         insecureApp.initClient(this, ignoreSSL = true)
 
         try {
-            val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
             val currentPath = settingsManager.getString(getString(R.string.download_path_key), null)
             if (currentPath.isNullOrBlank()) {
-                // Use app-specific external storage - NO permissions needed on any Android version
                 val downloadDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)?.apply { mkdirs() }?.absolutePath
-                    ?: java.io.File(filesDir, "downloads").apply { mkdirs() }.absolutePath
+                    ?: java.io.File(filesDir, "downloads").apply { mkdirs() }?.absolutePath
                 settingsManager.edit().putString(getString(R.string.download_path_key), downloadDir).apply()
             }
         } catch (e: Exception) {
@@ -1296,7 +1297,6 @@ private fun autoInstallRepositories() {
         enableEdgeToEdgeCompat()
         setNavigationBarColorCompat(R.attr.primaryGrayBackground)
         updateLocale()
-        super.onCreate(savedInstanceState)
         autoInstallRepositories()
 
         setKey(HAS_DONE_SETUP_KEY, true)

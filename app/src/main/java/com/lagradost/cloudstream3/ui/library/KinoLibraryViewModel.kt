@@ -2,9 +2,9 @@ package com.lagradost.cloudstream3.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.ui.WatchType
 import com.lagradost.cloudstream3.utils.DataStoreHelper
+import com.lagradost.cloudstream3.utils.DownloadObjects
+import com.lagradost.cloudstream3.ui.result.ResultViewModel2.Companion.WatchType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,11 +21,11 @@ class KinoLibraryViewModel : ViewModel() {
     private val _continueWatching = MutableStateFlow<List<KinoLibraryItem>>(emptyList())
     val continueWatching: StateFlow<List<KinoLibraryItem>> = _continueWatching
 
-    private val _history = MutableStateFlow<List<KinoLibraryItem>>(emptyList())
-    val history: StateFlow<List<KinoLibraryItem>> = _history
-
     private val _watchlist = MutableStateFlow<List<KinoLibraryItem>>(emptyList())
     val watchlist: StateFlow<List<KinoLibraryItem>> = _watchlist
+
+    private val _history = MutableStateFlow<List<KinoLibraryItem>>(emptyList())
+    val history: StateFlow<List<KinoLibraryItem>> = _history
 
     private val _liked = MutableStateFlow<List<KinoLibraryItem>>(emptyList())
     val liked: StateFlow<List<KinoLibraryItem>> = _liked
@@ -33,10 +33,10 @@ class KinoLibraryViewModel : ViewModel() {
     fun loadData() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // 1. Continue Watching — from resume data
+                // 1. Continue Watching
                 val resumeIds = DataStoreHelper.getAllResumeStateIds() ?: emptyList()
                 _continueWatching.value = resumeIds.mapNotNull { id ->
-                    val resume = DataStoreHelper.getLastWatched(id)
+                    val resume: DownloadObjects.ResumeWatching? = DataStoreHelper.getLastWatched(id)
                     if (resume != null && !resume.name.isNullOrBlank() && !resume.url.isNullOrBlank()) {
                         KinoLibraryItem(
                             name = resume.name!!,
@@ -47,31 +47,28 @@ class KinoLibraryViewModel : ViewModel() {
                     } else null
                 }
 
-                // 2. Get all bookmarks and filter by watch status
+                // 2. Watchlist + History (from bookmarks filtered by status)
                 val allBookmarks = DataStoreHelper.getAllBookmarkedData()
-                
-                // Watchlist = Watching + PlanToWatch
+
                 _watchlist.value = allBookmarks.filter {
-                    val status = DataStoreHelper.getResultWatchState(it.id)
-                    status == WatchType.Watching || status == WatchType.PlanToWatch
+                    it.id != null && DataStoreHelper.getResultWatchState(it.id!!) in listOf(
+                        WatchType.Watching,
+                        WatchType.PlanToWatch
+                    )
                 }.map {
-                    val res = it as SearchResponse
-                    KinoLibraryItem(name = res.name, url = res.url, apiName = res.apiName, posterUrl = res.posterUrl)
+                    KinoLibraryItem(name = it.name, url = it.url, apiName = it.apiName, posterUrl = it.posterUrl)
                 }
 
-                // History = Completed
                 _history.value = allBookmarks.filter {
-                    DataStoreHelper.getResultWatchState(it.id) == WatchType.Completed
+                    it.id != null && DataStoreHelper.getResultWatchState(it.id!!) == WatchType.Completed
                 }.map {
-                    val res = it as SearchResponse
-                    KinoLibraryItem(name = res.name, url = res.url, apiName = res.apiName, posterUrl = res.posterUrl)
+                    KinoLibraryItem(name = it.name, url = it.url, apiName = it.apiName, posterUrl = it.posterUrl)
                 }
 
-                // 3. Liked = Favorites (separate system)
+                // 3. Liked (favorites)
                 val allFavorites = DataStoreHelper.getAllFavorites()
                 _liked.value = allFavorites.map {
-                    val res = it as SearchResponse
-                    KinoLibraryItem(name = res.name, url = res.url, apiName = res.apiName, posterUrl = res.posterUrl)
+                    KinoLibraryItem(name = it.name, url = it.url, apiName = it.apiName, posterUrl = it.posterUrl)
                 }
 
             } catch (e: Exception) {
