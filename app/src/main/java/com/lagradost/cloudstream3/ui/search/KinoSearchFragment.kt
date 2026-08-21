@@ -9,7 +9,6 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.navigation.Navigation
 import com.lagradost.cloudstream3.R
-import com.lagradost.cloudstream3.ui.result.ResultFragment
 
 class KinoSearchFragment : Fragment() {
     override fun onCreateView(
@@ -32,12 +31,11 @@ class KinoSearchFragment : Fragment() {
                 KinoSearchScreen(
                     initialQuery = initialQuery,
                     onResultClick = { result ->
-                        // Open ResultFragment with correct Bundle keys
-                        val bundle = ResultFragment.newInstance(
-                            url = result.url,
-                            apiName = result.apiName,
-                            name = result.name
-                        )
+                        val bundle = Bundle().apply {
+                            putString("url", result.url)
+                            putString("apiName", result.apiName)
+                            putString("name", result.name)
+                        }
                         val navController = Navigation.findNavController(
                             requireActivity(),
                             R.id.nav_host_fragment

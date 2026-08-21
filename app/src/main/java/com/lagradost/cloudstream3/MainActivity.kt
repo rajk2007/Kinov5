@@ -1264,17 +1264,6 @@ private fun autoInstallRepositories() {
         insecureApp.initClient(this, ignoreSSL = true)
 
         val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
-        try {
-            val currentPath = settingsManager.getString(getString(R.string.download_path_key), null)
-            if (currentPath.isNullOrBlank()) {
-                val downloadDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)?.apply { mkdirs() }?.absolutePath
-                    ?: java.io.File(filesDir, "downloads").apply { mkdirs() }.absolutePath
-                settingsManager.edit().putString(getString(R.string.download_path_key), downloadDir).apply()
-            }
-        } catch (e: Exception) {
-            logError(e)
-        }
-
         if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.Q) {
             if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {

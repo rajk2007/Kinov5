@@ -40,11 +40,11 @@ class KinoHomeFragment : Fragment() {
                             val result = findFirstProviderResult(movie.displayTitle())
                             withContext(Dispatchers.Main) {
                                 if (result != null) {
-                                    val bundle = ResultFragment.newInstance(
-                                        url = result.url,
-                                        apiName = result.apiName,
-                                        name = result.name
-                                    )
+                                    val bundle = Bundle().apply {
+                                        putString("url", result.url)
+                                        putString("apiName", result.apiName)
+                                        putString("name", result.name)
+                                    }
                                     val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
                                     navController.navigate(R.id.navigation_results_phone, bundle)
                                 } else {
@@ -77,7 +77,7 @@ class KinoHomeFragment : Fragment() {
     private suspend fun findFirstProviderResult(query: String): SearchResponse? {
         if (APIHolder.apis.isEmpty()) return null
 
-        val targetProviders = listOf("moviebox", "castle", "netmirror", "netflix", "pikashow")
+        val targetProviders = listOf("moviebox")
         val providers = APIHolder.apis.filter { api ->
             val nameLower = api.name.lowercase()
             val classLower = api::class.java.simpleName.lowercase()

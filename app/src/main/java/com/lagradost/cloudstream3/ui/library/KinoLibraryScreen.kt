@@ -19,13 +19,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
-import com.lagradost.cloudstream3.SearchResponse
 
 @Composable
 fun KinoLibraryScreen(
     viewModel: KinoLibraryViewModel = viewModel(),
     onItemClick: (String) -> Unit,
-    onMediaClick: (SearchResponse) -> Unit
+    onMediaClick: (KinoLibraryItem) -> Unit
 ) {
     val continueWatching by viewModel.continueWatching.collectAsState()
     val history by viewModel.history.collectAsState()

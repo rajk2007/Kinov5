@@ -27,6 +27,7 @@
 
     <application
         android:name=".CloudStreamApp"
+        android:requestLegacyExternalStorage="true"
         android:allowBackup="true"
         android:banner="@drawable/banner"
         android:fullBackupContent="@xml/backup_rules"
