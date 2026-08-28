@@ -265,15 +265,7 @@ private fun OuroborosStatus(networkState: KinoHomeViewModel.NetworkState) {
 
 @Composable
 fun Header(onSearchClick: () -> Unit = {}) {
-    val context = LocalContext.current
-    val fullName = remember {
-        context.getSharedPreferences("kino_prefs", android.content.Context.MODE_PRIVATE)
-            .getString("user_name", null)
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-    }
-    val firstName = fullName?.split(" ")?.firstOrNull() ?: fullName
-    val headerTitle = firstName?.let { "Hello $it" } ?: "KINO"
+    val headerTitle = "KINO"
 
     Row(
         modifier = Modifier

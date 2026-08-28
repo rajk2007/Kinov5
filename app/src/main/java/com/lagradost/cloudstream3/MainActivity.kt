@@ -111,6 +111,7 @@ import com.lagradost.cloudstream3.ui.WatchType
 import com.lagradost.cloudstream3.ui.account.AccountHelper.showAccountSelectLinear
 import com.lagradost.cloudstream3.ui.download.DOWNLOAD_NAVIGATE_TO
 import com.lagradost.cloudstream3.ui.home.HomeViewModel
+import com.rajk2007.kino.ui.intro.IntroScreen
 import com.lagradost.cloudstream3.ui.library.LibraryViewModel
 import com.lagradost.cloudstream3.ui.player.BasicLink
 import com.lagradost.cloudstream3.ui.player.GeneratorPlayer
@@ -1400,22 +1401,20 @@ private fun autoInstallRepositories() {
             )
         }
 
-        if (getSharedPreferences("kino_prefs", MODE_PRIVATE)
-                .getString("user_name", null).isNullOrBlank()) {
-            val contentRoot = findViewById<ViewGroup>(android.R.id.content)
-            val onboardingView = ComposeView(this).apply {
-                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            }
-            onboardingView.setContent {
-                com.rajk2007.kino.ui.onboarding.OnboardingScreen(
-                    onComplete = { contentRoot.removeView(onboardingView) }
-                )
-            }
-            contentRoot.addView(
-                onboardingView,
-                ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            )
+        val contentRoot = findViewById<ViewGroup>(android.R.id.content)
+        val introView = ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         }
+        introView.setContent {
+            IntroScreen(onFinished = { contentRoot.removeView(introView) })
+        }
+        contentRoot.addView(
+            introView,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
 
         // overscan
         val padding = settingsManager.getInt(getString(R.string.overscan_key), 0).toPx
