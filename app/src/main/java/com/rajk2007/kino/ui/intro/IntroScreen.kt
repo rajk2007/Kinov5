@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -85,7 +87,8 @@ fun IntroScreen(onFinished: () -> Unit) {
             contentDescription = "Kino",
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .size(300.dp)
+                .fillMaxWidth(0.68f)
+                .aspectRatio(1f)
                 .shadow(
                     elevation = 28.dp,
                     shape = CircleShape,

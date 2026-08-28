@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,7 +48,7 @@ fun KinoSearchScreen(
     val trending by viewModel.trending.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val categories = listOf("Movies" to "M", "TV Shows" to "TV", "Anime" to "A", "K-Drama" to "K", "Sports" to "S")
+    val categories = listOf("Movies", "TV Shows", "Anime", "K-Drama")
 
     LaunchedEffect(initialQuery) {
         if (initialQuery.isNotBlank()) {
@@ -75,7 +74,7 @@ fun KinoSearchScreen(
             value = query,
             onValueChange = { viewModel.query.value = it },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("What do you want to watch?", color = Color(0xFF777A82)) },
+            placeholder = { Text("What to watch?", color = Color(0xFF777A82), maxLines = 1) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color(0xFFB6B8BF)) },
             trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { viewModel.query.value = "" }) { Text("Clear", color = Color(0xFFB6B8BF)) } },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -90,7 +89,8 @@ fun KinoSearchScreen(
                 unfocusedIndicatorColor = Color.Transparent
             ),
             shape = RoundedCornerShape(20.dp),
-            singleLine = true
+            singleLine = true,
+            maxLines = 1
         )
         Spacer(Modifier.height(24.dp))
 
@@ -117,15 +117,16 @@ fun KinoSearchScreen(
                 item {
                     Text("Browse Categories", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(14.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                        items(categories) { (name, icon) ->
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { viewModel.query.value = name; viewModel.submitQuery() }) {
-                                Box(Modifier.size(56.dp).clip(CircleShape).background(SearchSurface), contentAlignment = Alignment.Center) {
-                                    Text(icon, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(categories) { name ->
+                            SearchCategoryChip(
+                                name = name,
+                                selected = query.equals(name, ignoreCase = true),
+                                onClick = {
+                                    viewModel.query.value = name
+                                    viewModel.submitQuery()
                                 }
-                                Spacer(Modifier.height(7.dp))
-                                Text(name, color = Color(0xFFB9BBC2), fontSize = 12.sp)
-                            }
+                            )
                         }
                     }
                 }
@@ -157,6 +158,19 @@ private fun SectionHeading(title: String, action: String, onAction: () -> Unit) 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         TextButton(onClick = onAction) { Text(action, color = SearchAccent, fontSize = 13.sp) }
+    }
+}
+
+@Composable
+private fun SearchCategoryChip(name: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) SearchAccent else Color.Black)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 11.dp)
+    ) {
+        Text(name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
     }
 }
 
