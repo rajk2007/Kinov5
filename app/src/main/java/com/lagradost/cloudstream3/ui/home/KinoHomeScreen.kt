@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.ui.home
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +34,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,6 +61,7 @@ fun KinoHomeScreen(
     val topRated by viewModel.topRatedMovies.collectAsState()
     val liveEventsMap by viewModel.liveEvents.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val networkState by viewModel.networkState.collectAsState()
     
     val categories = listOf("All", "Live", "Movies", "Series", "Anime", "Hindi")
     var selectedCategory by remember { mutableStateOf(categories[0]) }
@@ -118,6 +121,12 @@ fun KinoHomeScreen(
                     }
                 }
                 
+                if (networkState != KinoHomeViewModel.NetworkState.Online && !isLoading) {
+                    item {
+                        OuroborosStatus(networkState)
+                    }
+                }
+
                 item {
                     Column {
                         when (selectedCategory) {
@@ -231,15 +240,40 @@ fun KinoHomeScreen(
 }
 
 @Composable
+private fun OuroborosStatus(networkState: KinoHomeViewModel.NetworkState) {
+    val message = when (networkState) {
+        KinoHomeViewModel.NetworkState.Slow -> "Ouroboros is trying to catch its talent."
+        KinoHomeViewModel.NetworkState.Offline -> "Ouroboros has caught its talent."
+        else -> return
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp)
+            .background(Color(0xFF141414), RoundedCornerShape(20.dp))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            painter = painterResource(com.lagradost.cloudstream3.R.drawable.ic_ouroboros),
+            contentDescription = "Ouroboros network status",
+            modifier = Modifier.size(92.dp),
+            contentScale = ContentScale.Fit
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(message, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
 fun Header(onSearchClick: () -> Unit = {}) {
     val context = LocalContext.current
-    val userName = remember {
+    val fullName = remember {
         context.getSharedPreferences("kino_prefs", android.content.Context.MODE_PRIVATE)
             .getString("user_name", null)
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
     }
-    val headerTitle = userName?.let { "$it's Cinema" } ?: "KINO"
+    val firstName = fullName?.split(" ")?.firstOrNull() ?: fullName
+    val headerTitle = firstName?.let { "Hello $it" } ?: "KINO"
 
     Row(
         modifier = Modifier

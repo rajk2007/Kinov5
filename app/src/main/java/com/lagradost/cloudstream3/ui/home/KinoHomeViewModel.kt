@@ -1,7 +1,12 @@
 package com.lagradost.cloudstream3.ui.home
 
+import android.content.Context
+import android.net.ConnectivityManager
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.api.TMDBApi
 import com.lagradost.cloudstream3.mvvm.logError
@@ -18,7 +23,12 @@ import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 import kotlin.math.max
 
 class KinoHomeViewModel : ViewModel() {
+    enum class NetworkState { Loading, Online, Slow, Offline }
+
     private val tmdbApi = TMDBApi.create()
+    private val cachePreferences by lazy {
+        CloudStreamApp.context?.getSharedPreferences("kino_home_cache", Context.MODE_PRIVATE)
+    }
 
     private val _trendingMovies = MutableStateFlow<List<MovieResult>>(emptyList())
     val trendingMovies: StateFlow<List<MovieResult>> = _trendingMovies.asStateFlow()
@@ -98,6 +108,9 @@ class KinoHomeViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _networkState = MutableStateFlow(NetworkState.Loading)
+    val networkState: StateFlow<NetworkState> = _networkState.asStateFlow()
+
     init { loadData() }
 
     private fun <T> interleave(list1: List<T>, list2: List<T>): List<T> {
@@ -114,6 +127,7 @@ class KinoHomeViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
+            _networkState.value = NetworkState.Loading
             try {
                 val standardTrending = try { tmdbApi.getTrending(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
                 val hindiTrending = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results } catch (e: Exception) { emptyList() }
@@ -155,14 +169,144 @@ class KinoHomeViewModel : ViewModel() {
                 _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "vote_average.desc").results
                 _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko", sortBy = "popularity.desc").results
                 _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
+                saveHomeCache()
+                _networkState.value = NetworkState.Online
                 linkMovieBoxResults()
             } catch (e: Exception) {
                 logError(e)
                 _error.value = e.message ?: "Unknown error"
+                restoreHomeCache()
+                _networkState.value = if (isNetworkAvailable()) NetworkState.Slow else NetworkState.Offline
             } finally {
                 _isLoading.value = false
             }
         }
+    }
+
+    private fun currentHomeLists(): Map<String, List<MovieResult>> = linkedMapOf(
+        "trending" to _trendingMovies.value,
+        "popular" to _popularMovies.value,
+        "topRated" to _topRatedMovies.value,
+        "nowPlaying" to _nowPlaying.value,
+        "upcoming" to _upcoming.value,
+        "popularTV" to _popularTV.value,
+        "topRatedTV" to _topRatedTV.value,
+        "trendingTv" to _trendingTv.value,
+        "hindiDubbedMovies" to _hindiDubbedMovies.value,
+        "animeSpotlightTv" to _animeSpotlightTv.value,
+        "kDramaSpotlightTv" to _kDramaSpotlightTv.value,
+        "hiddenGemsMovies" to _hiddenGemsMovies.value,
+        "actionAdventureMovies" to _actionAdventureMovies.value,
+        "comedyMovies" to _comedyMovies.value,
+        "thrillerHorrorMovies" to _thrillerHorrorMovies.value,
+        "familyKidsMovies" to _familyKidsMovies.value,
+        "internationalHitsMovies" to _internationalHitsMovies.value,
+        "trendingAnimeThisWeekTv" to _trendingAnimeThisWeekTv.value,
+        "criticallyAcclaimedMovies" to _criticallyAcclaimedMovies.value,
+        "popularHindiMovies" to _popularHindiMovies.value,
+        "topRatedHindiMovies" to _topRatedHindiMovies.value,
+        "popularKoreanTv" to _popularKoreanTv.value,
+        "actionAnimeTv" to _actionAnimeTv.value
+    )
+
+    private fun movieToJson(movie: MovieResult): JSONObject = JSONObject().apply {
+        put("id", movie.id)
+        put("title", movie.title)
+        put("name", movie.name)
+        put("poster_path", movie.poster_path)
+        put("backdrop_path", movie.backdrop_path)
+        put("overview", movie.overview)
+        put("vote_average", movie.vote_average)
+        put("release_date", movie.release_date)
+        put("first_air_date", movie.first_air_date)
+        put("media_type", movie.media_type)
+        put("genre_ids", JSONArray(movie.genre_ids ?: emptyList<Int>()))
+        put("providerUrl", movie.providerUrl)
+        put("providerApiName", movie.providerApiName)
+    }
+
+    private fun jsonToMovie(json: JSONObject): MovieResult = MovieResult(
+        id = json.optInt("id"),
+        title = json.optString("title").takeIf { it.isNotEmpty() },
+        name = json.optString("name").takeIf { it.isNotEmpty() },
+        poster_path = json.optString("poster_path").takeIf { it.isNotEmpty() },
+        backdrop_path = json.optString("backdrop_path").takeIf { it.isNotEmpty() },
+        overview = json.optString("overview").takeIf { it.isNotEmpty() },
+        vote_average = if (json.isNull("vote_average")) null else json.optDouble("vote_average"),
+        release_date = json.optString("release_date").takeIf { it.isNotEmpty() },
+        first_air_date = json.optString("first_air_date").takeIf { it.isNotEmpty() },
+        media_type = json.optString("media_type").takeIf { it.isNotEmpty() },
+        genre_ids = json.optJSONArray("genre_ids")?.let { array ->
+            List(array.length()) { index -> array.optInt(index) }
+        },
+        providerUrl = json.optString("providerUrl").takeIf { it.isNotEmpty() },
+        providerApiName = json.optString("providerApiName").takeIf { it.isNotEmpty() }
+    )
+
+    private fun saveHomeCache() {
+        val root = JSONObject()
+        currentHomeLists().forEach { (key, movies) ->
+            root.put(key, JSONArray().apply { movies.forEach { put(movieToJson(it)) } })
+        }
+        cachePreferences?.edit()?.putString("home_data", root.toString())?.apply()
+    }
+
+    private fun restoreHomeCache() {
+        val root = cachePreferences?.getString("home_data", null)?.let {
+            runCatching { JSONObject(it) }.getOrNull()
+        } ?: return
+
+        fun restore(key: String, setter: (List<MovieResult>) -> Unit) {
+            val array = root.optJSONArray(key) ?: return
+            setter(List(array.length()) { index -> jsonToMovie(array.getJSONObject(index)) })
+        }
+        restore("trending") { _trendingMovies.value = it }
+        restore("popular") { _popularMovies.value = it }
+        restore("topRated") { _topRatedMovies.value = it }
+        restore("nowPlaying") { _nowPlaying.value = it }
+        restore("upcoming") { _upcoming.value = it }
+        restore("popularTV") { _popularTV.value = it }
+        restore("topRatedTV") { _topRatedTV.value = it }
+        restore("trendingTv") { _trendingTv.value = it }
+        restore("hindiDubbedMovies") { _hindiDubbedMovies.value = it }
+        restore("animeSpotlightTv") { _animeSpotlightTv.value = it }
+        restore("kDramaSpotlightTv") { _kDramaSpotlightTv.value = it }
+        restore("hiddenGemsMovies") { _hiddenGemsMovies.value = it }
+        restore("actionAdventureMovies") { _actionAdventureMovies.value = it }
+        restore("comedyMovies") { _comedyMovies.value = it }
+        restore("thrillerHorrorMovies") { _thrillerHorrorMovies.value = it }
+        restore("familyKidsMovies") { _familyKidsMovies.value = it }
+        restore("internationalHitsMovies") { _internationalHitsMovies.value = it }
+        restore("trendingAnimeThisWeekTv") { _trendingAnimeThisWeekTv.value = it }
+        restore("criticallyAcclaimedMovies") { _criticallyAcclaimedMovies.value = it }
+        restore("popularHindiMovies") { _popularHindiMovies.value = it }
+        restore("topRatedHindiMovies") { _topRatedHindiMovies.value = it }
+        restore("popularKoreanTv") { _popularKoreanTv.value = it }
+        restore("actionAnimeTv") { _actionAnimeTv.value = it }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val context = CloudStreamApp.context ?: return false
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        return manager.activeNetwork?.let { manager.getNetworkCapabilities(it) != null } == true
+    }
+
+    private fun movieBoxMatchScore(movie: MovieResult, candidateName: String): Int? {
+        val movieTitle = movie.displayTitle().lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        val candidateTitle = candidateName.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        if (movieTitle.isBlank() || candidateTitle.isBlank()) return null
+
+        val movieYear = movie.release_date?.take(4)?.toIntOrNull()
+        val candidateHasYear = movieYear?.toString()?.let { candidateTitle.contains(it) } == true
+        val movieWords = movieTitle.split(" ").filter { it.length > 1 }.toSet()
+        val candidateWords = candidateTitle.split(" ").filter { it.length > 1 }.toSet()
+        val overlap = movieWords.intersect(candidateWords).size
+        val containsTitle = candidateTitle.contains(movieTitle) || movieTitle.contains(candidateTitle)
+        val minimumOverlap = if (movieWords.size <= 2) movieWords.size else 2
+        if (!containsTitle && overlap < minimumOverlap) return null
+
+        return (if (containsTitle) 100 else 0) + overlap * 10 + if (candidateHasYear) 20 else 0
     }
 
     private fun linkMovieBoxResults() {
@@ -177,9 +321,17 @@ class KinoHomeViewModel : ViewModel() {
                         if (index >= 10) return@mapIndexed movie
                         try {
                             val searchRes = repo.search(movie.displayTitle(), page = 1)
-                            if (searchRes is Resource.Success && searchRes.value.items.isNotEmpty()) {
-                                val match = searchRes.value.items.first()
-                                movie.copy(providerUrl = match.url, providerApiName = match.apiName)
+                            if (searchRes is Resource.Success) {
+                                val match = searchRes.value.items
+                                    .take(5)
+                                    .mapNotNull { candidate ->
+                                        movieBoxMatchScore(movie, candidate.name)?.let { score -> score to candidate }
+                                    }
+                                    .maxByOrNull { it.first }
+                                    ?.second
+                                if (match != null) {
+                                    movie.copy(providerUrl = match.url, providerApiName = match.apiName)
+                                } else movie
                             } else movie
                         } catch (e: Exception) {
                             movie

@@ -1,11 +1,10 @@
 package com.rajk2007.kino.ui.onboarding
 
 import android.content.Context
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
@@ -33,13 +31,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.R
@@ -50,63 +51,61 @@ fun OnboardingScreen(onComplete: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var phase by remember { mutableIntStateOf(0) }
     var name by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        phase = 1
+        delay(1500)
+        phase = 2
+        delay(1000)
+        phase = 3
+    }
+
+    val logoAlpha by animateFloatAsState(
+        targetValue = when (phase) {
+            0 -> 0f
+            1 -> 1f
+            else -> 0f
+        },
+        animationSpec = if (phase == 1) tween(1500) else tween(1000),
+        label = "berserk_mark_alpha"
+    )
     val logoScale by animateFloatAsState(
-        targetValue = if (phase == 0) 1.5f else 1f,
+        targetValue = if (phase >= 1) 1.08f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
         ),
-        label = "kino_logo_scale"
+        label = "berserk_mark_scale"
     )
 
-    LaunchedEffect(Unit) {
-        delay(2000)
-        phase = 1
-        delay(500)
-        phase = 2
-        delay(500)
-        phase = 3
-    }
-
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
+        modifier = Modifier.fillMaxSize().background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
         if (phase < 3) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(
-                    painter = painterResource(R.drawable.ic_kino_logo),
-                    contentDescription = "Kino logo",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(180.dp).scale(logoScale)
-                )
-                AnimatedVisibility(visible = phase >= 1, enter = fadeIn()) {
-                    Text("By", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 18.dp))
-                }
-                AnimatedVisibility(visible = phase >= 2, enter = fadeIn()) {
-                    Text(
-                        "R Karmakar",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
+            Image(
+                painter = painterResource(R.drawable.ic_berserk_mark),
+                contentDescription = "Berserk mark",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(220.dp)
+                    .graphicsLayer(alpha = logoAlpha)
+                    .scale(logoScale)
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(Color(0x99B00018), Color.Transparent)
+                            ),
+                            radius = size.minDimension * 0.7f
+                        )
+                    }
+            )
         } else {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_kino_logo),
-                    contentDescription = "Kino logo",
-                    modifier = Modifier.size(120.dp)
-                )
-                Spacer(modifier = Modifier.height(36.dp))
                 Text(
                     "Welcome to Kino",
                     color = Color.White,
