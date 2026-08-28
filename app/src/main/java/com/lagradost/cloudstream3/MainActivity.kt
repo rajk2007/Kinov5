@@ -199,6 +199,7 @@ import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.lagradost.cloudstream3.AutoDownloadMode
 import com.lagradost.cloudstream3.amap
