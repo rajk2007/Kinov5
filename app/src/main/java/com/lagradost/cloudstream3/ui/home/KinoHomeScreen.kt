@@ -232,6 +232,15 @@ fun KinoHomeScreen(
 
 @Composable
 fun Header(onSearchClick: () -> Unit = {}) {
+    val context = LocalContext.current
+    val userName = remember {
+        context.getSharedPreferences("kino_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("user_name", null)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+    val headerTitle = userName?.let { "$it's Cinema" } ?: "KINO"
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -241,7 +250,7 @@ fun Header(onSearchClick: () -> Unit = {}) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("KINO", color = Color(0xFFE50914), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        Text(headerTitle, color = Color(0xFFE50914), fontSize = 32.sp, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = onSearchClick,

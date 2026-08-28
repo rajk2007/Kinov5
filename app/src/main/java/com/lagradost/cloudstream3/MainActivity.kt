@@ -40,6 +40,8 @@ import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.core.view.marginStart
 import androidx.fragment.app.FragmentActivity
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
@@ -1395,6 +1397,23 @@ private fun autoInstallRepositories() {
                 widthResId = R.dimen.nav_rail_view_width,
                 padRight = false,
                 padTop = false
+            )
+        }
+
+        if (getSharedPreferences("kino_prefs", MODE_PRIVATE)
+                .getString("user_name", null).isNullOrBlank()) {
+            val contentRoot = findViewById<ViewGroup>(android.R.id.content)
+            val onboardingView = ComposeView(this).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            }
+            onboardingView.setContent {
+                com.rajk2007.kino.ui.onboarding.OnboardingScreen(
+                    onComplete = { contentRoot.removeView(onboardingView) }
+                )
+            }
+            contentRoot.addView(
+                onboardingView,
+                ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             )
         }
 

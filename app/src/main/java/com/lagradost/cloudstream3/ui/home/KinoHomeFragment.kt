@@ -34,22 +34,30 @@ class KinoHomeFragment : Fragment() {
             setContent {
                 KinoHomeScreen(
                     onMovieClick = { movie ->
-                        android.widget.Toast.makeText(context, "Searching for sources...", android.widget.Toast.LENGTH_SHORT).show()
-
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            val result = findFirstProviderResult(movie.displayTitle())
-                            withContext(Dispatchers.Main) {
-                                if (result != null) {
-                                    val bundle = ResultFragment.newInstance(
-                                        url = result.url,
-                                        apiName = result.apiName,
-                                        name = result.name
-                                    )
-                                    val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
-                                    navController.navigate(R.id.navigation_results_phone, bundle)
-                                } else {
-                                    MainActivity.nextSearchQuery = movie.displayTitle()
-                                    activity?.findViewById<BottomNavigationView>(R.id.nav_view)?.selectedItemId = R.id.navigation_search
+                        if (!movie.providerUrl.isNullOrBlank() && !movie.providerApiName.isNullOrBlank()) {
+                            val bundle = ResultFragment.newInstance(
+                                url = movie.providerUrl!!,
+                                apiName = movie.providerApiName!!,
+                                name = movie.displayTitle()
+                            )
+                            val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
+                            navController.navigate(R.id.navigation_results_phone, bundle)
+                        } else {
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                val result = findFirstProviderResult(movie.displayTitle())
+                                withContext(Dispatchers.Main) {
+                                    if (result != null) {
+                                        val bundle = ResultFragment.newInstance(
+                                            url = result.url,
+                                            apiName = result.apiName,
+                                            name = result.name
+                                        )
+                                        val navController = Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
+                                        navController.navigate(R.id.navigation_results_phone, bundle)
+                                    } else {
+                                        MainActivity.nextSearchQuery = movie.displayTitle()
+                                        activity?.findViewById<BottomNavigationView>(R.id.nav_view)?.selectedItemId = R.id.navigation_search
+                                    }
                                 }
                             }
                         }

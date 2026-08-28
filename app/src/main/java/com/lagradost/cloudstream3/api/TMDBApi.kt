@@ -90,7 +90,9 @@ data class MovieResult(
     val release_date: String? = null,
     val first_air_date: String? = null,
     val media_type: String? = null,
-    val genre_ids: List<Int>? = null
+    val genre_ids: List<Int>? = null,
+    val providerUrl: String? = null,
+    val providerApiName: String? = null
 ) {
     fun displayTitle(): String = title ?: name ?: "Unknown"
 }

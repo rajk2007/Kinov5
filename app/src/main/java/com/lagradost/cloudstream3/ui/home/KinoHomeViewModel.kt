@@ -155,11 +155,43 @@ class KinoHomeViewModel : ViewModel() {
                 _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "vote_average.desc").results
                 _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko", sortBy = "popularity.desc").results
                 _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
+                linkMovieBoxResults()
             } catch (e: Exception) {
                 logError(e)
                 _error.value = e.message ?: "Unknown error"
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    private fun linkMovieBoxResults() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val movieBoxApi = APIHolder.apis.find { it.name.equals("MovieBox", ignoreCase = true) }
+                    ?: return@launch
+                val repo = APIRepository(movieBoxApi)
+
+                suspend fun linkMovies(movies: List<MovieResult>): List<MovieResult> {
+                    return movies.mapIndexed { index, movie ->
+                        if (index >= 10) return@mapIndexed movie
+                        try {
+                            val searchRes = repo.search(movie.displayTitle(), page = 1)
+                            if (searchRes is Resource.Success && searchRes.value.items.isNotEmpty()) {
+                                val match = searchRes.value.items.first()
+                                movie.copy(providerUrl = match.url, providerApiName = match.apiName)
+                            } else movie
+                        } catch (e: Exception) {
+                            movie
+                        }
+                    }
+                }
+
+                _trendingMovies.value = linkMovies(_trendingMovies.value)
+                _popularMovies.value = linkMovies(_popularMovies.value)
+                _topRatedMovies.value = linkMovies(_topRatedMovies.value)
+            } catch (e: Exception) {
+                logError(e)
             }
         }
     }
