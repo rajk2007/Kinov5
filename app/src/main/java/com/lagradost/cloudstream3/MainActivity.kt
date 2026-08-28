@@ -43,6 +43,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -1299,7 +1300,6 @@ private fun autoInstallRepositories() {
         setNavigationBarColorCompat(R.attr.primaryGrayBackground)
         updateLocale()
         super.onCreate(savedInstanceState)
-        autoInstallRepositories()
 
         setKey(HAS_DONE_SETUP_KEY, true)
         try {
@@ -1415,6 +1415,11 @@ private fun autoInstallRepositories() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+
+        // Keep provider installation off the startup path so the intro can render immediately.
+        lifecycleScope.launch(Dispatchers.IO) {
+            autoInstallRepositories()
+        }
 
         // overscan
         val padding = settingsManager.getInt(getString(R.string.overscan_key), 0).toPx

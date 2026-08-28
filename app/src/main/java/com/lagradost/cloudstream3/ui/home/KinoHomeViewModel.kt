@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.mvvm.Resource
@@ -128,6 +129,8 @@ class KinoHomeViewModel : ViewModel() {
             _isLoading.value = true
             _error.value = null
             _networkState.value = NetworkState.Loading
+            // Show the last complete home immediately while the network refresh runs.
+            restoreHomeCache()
             try {
                 val standardTrending = try { tmdbApi.getTrending(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
                 val hindiTrending = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results } catch (e: Exception) { emptyList() }
@@ -169,7 +172,7 @@ class KinoHomeViewModel : ViewModel() {
                 _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "vote_average.desc").results
                 _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko", sortBy = "popularity.desc").results
                 _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
-                saveHomeCache()
+                withContext(Dispatchers.IO) { saveHomeCache() }
                 _networkState.value = NetworkState.Online
                 linkMovieBoxResults()
             } catch (e: Exception) {
@@ -342,6 +345,7 @@ class KinoHomeViewModel : ViewModel() {
                 _trendingMovies.value = linkMovies(_trendingMovies.value)
                 _popularMovies.value = linkMovies(_popularMovies.value)
                 _topRatedMovies.value = linkMovies(_topRatedMovies.value)
+                withContext(Dispatchers.IO) { saveHomeCache() }
             } catch (e: Exception) {
                 logError(e)
             }
