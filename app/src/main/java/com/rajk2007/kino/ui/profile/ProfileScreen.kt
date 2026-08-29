@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +46,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Divider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -87,9 +90,6 @@ private val avatarColors = listOf(Color(0xFFB71C1C), Color(0xFF0D47A1), Color(0x
 fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
     val context = LocalContext.current
     val profilePrefs = remember { context.getSharedPreferences(PROFILE_PREFS, Context.MODE_PRIVATE) }
-    val settingsPrefs = remember { PreferenceManager.getDefaultSharedPreferences(context) }
-    val nsfwKey = remember { context.getString(R.string.enable_nsfw_on_providers_key) }
-
     var isLoggedIn by remember { mutableStateOf(profilePrefs.getBoolean(IS_LOGGED_IN, false)) }
     var name by remember { mutableStateOf(profilePrefs.getString(USER_NAME, null)) }
     var avatarIndex by remember { mutableStateOf(profilePrefs.getInt(AVATAR_INDEX, 0).coerceIn(avatarIcons.indices)) }
@@ -98,7 +98,6 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             profilePrefs.edit().putInt("guest_number", it).apply()
         }
     }
-    var nsfwEnabled by remember { mutableStateOf(settingsPrefs.getBoolean(nsfwKey, false)) }
     var autoplay by remember { mutableStateOf(profilePrefs.getBoolean(AUTOPLAY, true)) }
     var skipIntro by remember { mutableStateOf(profilePrefs.getBoolean(SKIP_INTRO, true)) }
     var downloadMobileData by remember { mutableStateOf(profilePrefs.getBoolean(DOWNLOAD_MOBILE_DATA, false)) }
@@ -107,6 +106,7 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
     var showAccountSheet by remember { mutableStateOf(false) }
     var showPremium by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var policy by remember { mutableStateOf<Policy?>(null) }
 
     fun saveProfile(nameValue: String, avatarValue: Int) {
         name = nameValue
@@ -134,14 +134,6 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
                 ExplorePremiumCard(isPremium = isPremium, onClick = { showPremium = true })
             }
             item {
-                ProfileSection(title = "CONTENT SETTINGS", icon = Icons.Default.Settings) {
-                    ProfileSwitchRow("18+ Content", nsfwEnabled, "Show NSFW providers in Home and Search") { enabled ->
-                        nsfwEnabled = enabled
-                        settingsPrefs.edit().putBoolean(nsfwKey, enabled).apply()
-                    }
-                }
-            }
-            item {
                 ProfileSection(title = "PLAYBACK SETTINGS", icon = Icons.Default.PlayArrow) {
                     ProfileSwitchRow("Autoplay next episode", autoplay) { enabled ->
                         autoplay = enabled
@@ -163,9 +155,10 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             }
             item {
                 ProfileSection(title = "APP PREFERENCES", icon = Icons.Default.Settings) {
+                    SupportRow(Icons.Default.Settings, "App Language") { showToast(context, "App Language") }
                     SupportRow(Icons.Default.Info, "Help Center") { openHelpCenter(context) }
-                    SupportRow(Icons.Default.Info, "Terms and Conditions") { showToast(context, "Terms and Conditions") }
-                    SupportRow(Icons.Default.Info, "Privacy Policy") { showToast(context, "Privacy Policy") }
+                    SupportRow(Icons.Default.Info, "Terms and Conditions") { policy = Policy.Terms }
+                    SupportRow(Icons.Default.Info, "Privacy Policy") { policy = Policy.Privacy }
                 }
             }
             item {
@@ -201,6 +194,9 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
         if (showAbout) {
             AboutKinoSheet(onDismiss = { showAbout = false })
         }
+        policy?.let { selectedPolicy ->
+            PolicyDialog(policy = selectedPolicy, onDismiss = { policy = null })
+        }
     }
 }
 
@@ -209,22 +205,30 @@ private fun showToast(context: Context, item: String) {
 }
 
 private fun openHelpCenter(context: Context) {
-    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:kino.official.in@gmail.com"))
-        .putExtra(Intent.EXTRA_SUBJECT, "Kino Help Center")
-    runCatching { context.startActivity(intent) }
-        .onFailure { Toast.makeText(context, "Unable to open email", Toast.LENGTH_SHORT).show() }
+    val gmailIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:kino.official.in@gmail.com"))
+        .putExtra(Intent.EXTRA_SUBJECT, "KINO App Support")
+        .setPackage("com.google.android.gm")
+    val fallbackIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:kino.official.in@gmail.com"))
+        .putExtra(Intent.EXTRA_SUBJECT, "KINO App Support")
+    runCatching {
+        if (gmailIntent.resolveActivity(context.packageManager) != null) context.startActivity(gmailIntent)
+        else context.startActivity(fallbackIntent)
+    }.onFailure { Toast.makeText(context, "Unable to open email", Toast.LENGTH_SHORT).show() }
 }
 
 @Composable
 private fun ProfileHeader(displayName: String, avatarIndex: Int, isLoggedIn: Boolean, onSwitchAccount: () -> Unit, onEdit: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.verticalGradient(listOf(Color(0xFFE50914), Color(0xFF5A070B), ProfileBackground))), contentAlignment = Alignment.BottomCenter) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 22.dp)) {
+    Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.verticalGradient(listOf(Color(0xFFE50914), Color(0xFF5A070B), ProfileBackground)))) {
+        Row(Modifier.fillMaxWidth().padding(start = 38.dp, end = 28.dp, top = 98.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(96.dp).clip(CircleShape).background(avatarColors[avatarIndex]).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
                 Icon(avatarIcons[avatarIndex], contentDescription = "Edit profile", tint = Color.White, modifier = Modifier.size(54.dp))
             }
-            Text(displayName, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-            Text(if (isLoggedIn) "Manage your Kino account" else "Your private Kino profile", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp))
-            OutlinedButton(onClick = onSwitchAccount, modifier = Modifier.padding(top = 10.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)) { Text("Switch Account", fontWeight = FontWeight.SemiBold) }
+            Column(Modifier.padding(start = 24.dp).weight(1f)) {
+                Text(displayName, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                Text("Welcome to Kino", color = Color.White.copy(alpha = 0.72f), fontSize = 15.sp, modifier = Modifier.padding(top = 5.dp))
+                OutlinedButton(onClick = onSwitchAccount, modifier = Modifier.padding(top = 16.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileAccent)) { Text("Switch Account", fontWeight = FontWeight.SemiBold) }
+            }
+            Text("✎", color = Color.White, fontSize = 25.sp, modifier = Modifier.padding(bottom = 42.dp).clickable(onClick = onEdit))
         }
     }
 }
@@ -282,7 +286,7 @@ private fun ProfileEditorDialog(isLoggedIn: Boolean, initialName: String, initia
         title = { Text(if (isLoggedIn) "Edit Profile" else "Welcome to Kino", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                OutlinedTextField(value = enteredName, onValueChange = { enteredName = it }, singleLine = true, label = { Text("Your name") })
+                OutlinedTextField(value = enteredName, onValueChange = { enteredName = it }, singleLine = true, label = { Text("Email or Name") })
                 Text("Choose an avatar", color = ProfileMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 18.dp, bottom = 10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     avatarIcons.forEachIndexed { index, icon ->
@@ -336,6 +340,19 @@ private fun PremiumSheet(onDismiss: () -> Unit, onBuyPremium: () -> Unit) {
             Button(onClick = onBuyPremium, modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 18.dp), colors = ButtonDefaults.buttonColors(containerColor = ProfileAccent)) { Text("Buy Premium") }
         }
     }
+}
+
+private enum class Policy { Terms, Privacy }
+
+@Composable
+private fun PolicyDialog(policy: Policy, onDismiss: () -> Unit) {
+    val title = if (policy == Policy.Terms) "Terms and Conditions" else "Privacy Policy"
+    val body = if (policy == Policy.Terms) {
+        "Kino provides a streaming interface for discovering and watching content from available providers. You agree to use the app lawfully, respect copyright and provider terms, and keep your account information accurate. Content availability may change without notice. Kino is not responsible for third-party provider material or interruptions. You must not reverse engineer, abuse, or attempt to disrupt the app or its services."
+    } else {
+        "Kino stores only the information needed to provide profile features, such as the name or email you choose to save on this device and your app preferences. Provider requests may be processed by third-party services according to their own policies. We do not sell your personal information. You may clear locally stored profile information through the app or device settings."
+    }
+    AlertDialog(onDismissRequest = onDismiss, containerColor = ProfileSurface, title = { Text(title, color = Color.White, fontWeight = FontWeight.Bold) }, text = { Text(body, color = Color(0xFFE2E2E2), fontSize = 14.sp, modifier = Modifier.verticalScroll(rememberScrollState())) }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = ProfileGold) } })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
