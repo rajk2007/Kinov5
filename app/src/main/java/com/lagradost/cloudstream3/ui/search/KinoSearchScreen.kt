@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,7 @@ fun KinoSearchScreen(
     onExploreAllResults: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
     val trending by viewModel.trending.collectAsState()
@@ -78,7 +80,10 @@ fun KinoSearchScreen(
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color(0xFFB6B8BF)) },
             trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { viewModel.query.value = "" }) { Text("Clear", color = Color(0xFFB6B8BF)) } },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { viewModel.submitQuery() }),
+            keyboardActions = KeyboardActions(onSearch = {
+                keyboardController?.hide()
+                viewModel.submitQuery()
+            }),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = SearchSurface,
                 unfocusedContainerColor = SearchSurface,
