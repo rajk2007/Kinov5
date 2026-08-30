@@ -98,14 +98,24 @@ private const val DOWNLOAD_MOBILE_DATA = "download_mobile_data"
 private const val IS_PREMIUM = "is_premium"
 private const val ACCOUNTS_LIST = "accounts_list"
 private const val ACTIVE_ACCOUNT_INDEX = "active_account_index"
-private const val GUEST_AVATAR_INDEX = "guest_avatar_index"
-private const val APP_LANGUAGE = "app_language"
 
 private data class ProfileAccount(val name: String, val avatarIndex: Int)
 
 private val avatarIcons = listOf(Icons.Default.Person, Icons.Default.AccountCircle, Icons.Default.Face, Icons.Default.Star, Icons.Default.Favorite, Icons.Default.Home, Icons.Default.Search, Icons.Default.Info, Icons.Default.Settings, Icons.Default.PlayArrow, Icons.Default.Edit, Icons.Default.ArrowForward)
-private val avatarColors = listOf(Color(0xFFE50914), Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFF6A1B9A), Color(0xFFC2185B), Color(0xFFEF6C00), Color(0xFF00838F), Color(0xFF4527A0), Color(0xFF546E7A), Color(0xFF5D4037), Color(0xFFAD1457), Color(0xFF283593))
-private val supportedLanguages = listOf("English", "Hindi", "Tamil", "Telugu", "Japanese", "Korean")
+private val avatarBrushes = listOf(
+    Brush.linearGradient(listOf(Color(0xFFE50914), Color(0xFF430006))),
+    Brush.linearGradient(listOf(Color(0xFFB71C1C), Color(0xFF080808))),
+    Brush.linearGradient(listOf(Color(0xFF252525), Color(0xFF050505))),
+    Brush.linearGradient(listOf(Color(0xFFEF5350), Color(0xFF160000))),
+    Brush.linearGradient(listOf(Color(0xFF9E9E9E), Color(0xFF111111))),
+    Brush.linearGradient(listOf(Color(0xFF5A5A5A), Color(0xFF080808))),
+    Brush.linearGradient(listOf(Color(0xFFB71C1C), Color(0xFF151515))),
+    Brush.linearGradient(listOf(Color(0xFF303030), Color(0xFFE50914))),
+    Brush.linearGradient(listOf(Color(0xFFF57C00), Color(0xFF211000))),
+    Brush.linearGradient(listOf(Color(0xFFD81B60), Color(0xFF250010))),
+    Brush.linearGradient(listOf(Color(0xFF1565C0), Color(0xFF050C2E))),
+    Brush.linearGradient(listOf(Color(0xFF6A1B9A), Color(0xFF12001F)))
+)
 
 private fun loadAccounts(prefs: android.content.SharedPreferences): List<ProfileAccount> {
     val saved = prefs.getString(ACCOUNTS_LIST, null)
@@ -143,12 +153,10 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
         }
     }
     var guestAvatarIndex by remember {
-        mutableStateOf(profilePrefs.getInt(GUEST_AVATAR_INDEX, -1).takeIf { it in avatarIcons.indices } ?: Random.nextInt(avatarIcons.size).also {
-            profilePrefs.edit().putInt(GUEST_AVATAR_INDEX, it).apply()
+        mutableStateOf(profilePrefs.getInt(AVATAR_INDEX, -1).takeIf { it in avatarIcons.indices } ?: Random.nextInt(avatarIcons.size).also {
+            profilePrefs.edit().putInt(AVATAR_INDEX, it).apply()
         })
     }
-    var appLanguage by remember { mutableStateOf(profilePrefs.getString(APP_LANGUAGE, "English") ?: "English") }
-    var showLanguageDialog by remember { mutableStateOf(false) }
     var legalPage by remember { mutableStateOf<LegalPage?>(null) }
     var nsfwEnabled by remember { mutableStateOf(settingsPrefs.getBoolean(nsfwKey, false)) }
     var autoplay by remember { mutableStateOf(profilePrefs.getBoolean(AUTOPLAY, true)) }
@@ -219,7 +227,6 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             }
             item {
                 ProfileSection(title = "APP PREFERENCES", icon = Icons.Default.Settings) {
-                    SupportRow(Icons.Default.Settings, "App Language", appLanguage) { showLanguageDialog = true }
                     SupportRow(Icons.Default.Info, "Help Center") { openHelpCenter(context) }
                     SupportRow(Icons.Default.Info, "Terms and Conditions") { legalPage = LegalPage.Terms }
                     SupportRow(Icons.Default.Info, "Privacy Policy") { legalPage = LegalPage.Privacy }
@@ -252,7 +259,7 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
                         saveAccounts(profilePrefs, accounts, activeAccountIndex)
                     } else {
                         guestAvatarIndex = selected
-                        profilePrefs.edit().putInt(GUEST_AVATAR_INDEX, selected).apply()
+                        profilePrefs.edit().putInt(AVATAR_INDEX, selected).apply()
                     }
                     showAvatarSheet = false
                 },
@@ -275,9 +282,6 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
                 profilePrefs.edit().putBoolean(IS_PREMIUM, true).apply()
                 showPremium = false
             })
-        }
-        if (showLanguageDialog) {
-            LanguageDialog(selectedLanguage = appLanguage, onSelect = { selected -> appLanguage = selected; profilePrefs.edit().putString(APP_LANGUAGE, selected).apply(); showLanguageDialog = false }, onDismiss = { showLanguageDialog = false })
         }
         legalPage?.let { page ->
             Dialog(onDismissRequest = { legalPage = null }) {
@@ -315,7 +319,7 @@ private fun openHelpCenter(context: Context) {
 private fun ProfileHeader(displayName: String, avatarIndex: Int, isLoggedIn: Boolean, onSwitchAccount: () -> Unit, onEdit: () -> Unit) {
     Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.verticalGradient(listOf(Color(0xFFE50914), Color(0xFF080808))))) {
         Row(Modifier.fillMaxWidth().padding(start = 38.dp, end = 28.dp, top = 98.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(108.dp).clip(CircleShape).background(avatarColors[avatarIndex]).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(108.dp).clip(CircleShape).background(avatarBrushes[avatarIndex]).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
                 Icon(avatarIcons[avatarIndex], contentDescription = "Edit profile", tint = Color.White, modifier = Modifier.size(54.dp))
             }
             Column(Modifier.padding(start = 24.dp).weight(1f)) {
@@ -388,7 +392,7 @@ private fun ProfileEditorDialog(isLoggedIn: Boolean, initialName: String, initia
                 Text("Choose an avatar", color = ProfileMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 18.dp, bottom = 10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     avatarIcons.forEachIndexed { index, icon ->
-                        Box(Modifier.size(42.dp).clip(CircleShape).background(if (index == selectedAvatar) ProfileAccent else avatarColors[index]).clickable { selectedAvatar = index }, contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(42.dp).clip(CircleShape).background(avatarBrushes[index]).border(if (index == selectedAvatar) 2.dp else 0.dp, if (index == selectedAvatar) ProfileAccent else Color.Transparent, CircleShape).clickable { selectedAvatar = index }, contentAlignment = Alignment.Center) {
                             Icon(icon, contentDescription = "Avatar ${index + 1}", tint = Color.White, modifier = Modifier.size(25.dp))
                         }
                     }
@@ -410,7 +414,7 @@ private fun AvatarSelectionSheet(selectedAvatar: Int, onSelectAvatar: (Int) -> U
             Text("Pick a vector avatar for your Kino profile.", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 18.dp))
             LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().height(250.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(avatarIcons.indices.toList()) { index ->
-                    Box(Modifier.size(78.dp).clip(CircleShape).background(avatarColors[index]).border(if (index == selectedAvatar) 3.dp else 0.dp, if (index == selectedAvatar) ProfileGold else Color.Transparent, CircleShape).clickable { onSelectAvatar(index) }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(78.dp).clip(CircleShape).background(avatarBrushes[index]).border(if (index == selectedAvatar) 3.dp else 0.dp, if (index == selectedAvatar) ProfileGold else Color.Transparent, CircleShape).clickable { onSelectAvatar(index) }, contentAlignment = Alignment.Center) {
                         Icon(avatarIcons[index], contentDescription = "Avatar ${index + 1}", tint = Color.White, modifier = Modifier.size(42.dp))
                     }
                 }
@@ -421,18 +425,6 @@ private fun AvatarSelectionSheet(selectedAvatar: Int, onSelectAvatar: (Int) -> U
 }
 
 private enum class LegalPage { Terms, Privacy }
-
-@Composable
-private fun LanguageDialog(selectedLanguage: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, containerColor = ProfileSurface, title = { Text("App Language", color = Color.White, fontWeight = FontWeight.Bold) }, text = {
-        Column { supportedLanguages.forEach { language ->
-            Row(Modifier.fillMaxWidth().clickable { onSelect(language) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(language, color = Color.White, modifier = Modifier.weight(1f))
-                if (language == selectedLanguage) Text("✓", color = ProfileAccent, fontWeight = FontWeight.Bold)
-            }
-        } }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = ProfileGold) } })
-}
 
 @Composable
 private fun ExplorePremiumCard(isPremium: Boolean, onClick: () -> Unit) {
@@ -458,7 +450,7 @@ private fun AccountSwitcherSheet(accounts: List<ProfileAccount>, activeIndex: In
                 Text("Select an account to continue.", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 7.dp, bottom = 12.dp))
                 accounts.forEachIndexed { index, account ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (index == activeIndex) Color(0xFF3A1114) else Color.Transparent).clickable { onSelectAccount(index) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(40.dp).clip(CircleShape).background(avatarColors[account.avatarIndex]), contentAlignment = Alignment.Center) { Icon(avatarIcons[account.avatarIndex], contentDescription = null, tint = Color.White) }
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(avatarBrushes[account.avatarIndex]), contentAlignment = Alignment.Center) { Icon(avatarIcons[account.avatarIndex], contentDescription = null, tint = Color.White) }
                         Text(account.name, color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 12.dp))
                     }
                 }
