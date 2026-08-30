@@ -46,6 +46,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -64,7 +65,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.preference.PreferenceManager
+import org.json.JSONArray
+import org.json.JSONObject
 import com.lagradost.cloudstream3.R
 import kotlin.random.Random
 
@@ -81,18 +83,42 @@ private const val AUTOPLAY = "autoplay"
 private const val SKIP_INTRO = "skip_intro"
 private const val DOWNLOAD_MOBILE_DATA = "download_mobile_data"
 private const val IS_PREMIUM = "is_premium"
+private const val ACCOUNTS_LIST = "accounts_list"
+private const val ACTIVE_ACCOUNT_INDEX = "active_account_index"
+
+private data class ProfileAccount(val name: String, val avatarIndex: Int)
 
 private val avatarIcons = listOf(Icons.Default.Person, Icons.Default.AccountCircle, Icons.Default.Face, Icons.Default.Info, Icons.Default.Settings)
 private val avatarColors = listOf(Color(0xFFB71C1C), Color(0xFF0D47A1), Color(0xFF6A1B9A), Color(0xFF00695C), Color(0xFFEF6C00))
+
+private fun loadAccounts(prefs: android.content.SharedPreferences): List<ProfileAccount> {
+    val saved = prefs.getString(ACCOUNTS_LIST, null)
+    if (!saved.isNullOrBlank()) return runCatching {
+        val json = JSONArray(saved)
+        List(json.length()) { index ->
+            val item = json.getJSONObject(index)
+            ProfileAccount(item.optString("name"), item.optInt("avatarIndex", 0).coerceIn(avatarIcons.indices))
+        }.filter { it.name.isNotBlank() }
+    }.getOrDefault(emptyList())
+    val legacyName = prefs.getString(USER_NAME, null)
+    return if (prefs.getBoolean(IS_LOGGED_IN, false) && !legacyName.isNullOrBlank()) listOf(ProfileAccount(legacyName, prefs.getInt(AVATAR_INDEX, 0).coerceIn(avatarIcons.indices))) else emptyList()
+}
+
+private fun saveAccounts(prefs: android.content.SharedPreferences, accounts: List<ProfileAccount>, activeIndex: Int) {
+    val json = JSONArray()
+    accounts.forEach { account -> json.put(JSONObject().put("name", account.name).put("avatarIndex", account.avatarIndex)) }
+    prefs.edit().putString(ACCOUNTS_LIST, json.toString()).putInt(ACTIVE_ACCOUNT_INDEX, activeIndex).putBoolean(IS_LOGGED_IN, accounts.isNotEmpty()).apply()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
     val context = LocalContext.current
     val profilePrefs = remember { context.getSharedPreferences(PROFILE_PREFS, Context.MODE_PRIVATE) }
-    var isLoggedIn by remember { mutableStateOf(profilePrefs.getBoolean(IS_LOGGED_IN, false)) }
-    var name by remember { mutableStateOf(profilePrefs.getString(USER_NAME, null)) }
-    var avatarIndex by remember { mutableStateOf(profilePrefs.getInt(AVATAR_INDEX, 0).coerceIn(avatarIcons.indices)) }
+    var accounts by remember { mutableStateOf(loadAccounts(profilePrefs)) }
+    var activeAccountIndex by remember { mutableStateOf(profilePrefs.getInt(ACTIVE_ACCOUNT_INDEX, 0).coerceIn(0, maxOf(accounts.lastIndex, 0))) }
+    val activeAccount = accounts.getOrNull(activeAccountIndex)
+    val isLoggedIn = activeAccount != null
     val guestNumber = remember {
         profilePrefs.getInt("guest_number", 0).takeIf { it in 1000..9999 } ?: Random.nextInt(1000, 10000).also {
             profilePrefs.edit().putInt("guest_number", it).apply()
@@ -103,16 +129,18 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
     var downloadMobileData by remember { mutableStateOf(profilePrefs.getBoolean(DOWNLOAD_MOBILE_DATA, false)) }
     var isPremium by remember { mutableStateOf(profilePrefs.getBoolean(IS_PREMIUM, false)) }
     var showProfileEditor by remember { mutableStateOf(false) }
+    var editorAddsAccount by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
     var showPremium by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var policy by remember { mutableStateOf<Policy?>(null) }
 
-    fun saveProfile(nameValue: String, avatarValue: Int) {
-        name = nameValue
-        avatarIndex = avatarValue
-        isLoggedIn = true
-        profilePrefs.edit().putString(USER_NAME, nameValue).putInt(AVATAR_INDEX, avatarValue).putBoolean(IS_LOGGED_IN, true).apply()
+    fun saveProfile(nameValue: String, avatarValue: Int, addAccount: Boolean) {
+        val updated = if (addAccount || accounts.isEmpty()) accounts + ProfileAccount(nameValue, avatarValue) else accounts.mapIndexed { index, account -> if (index == activeAccountIndex) ProfileAccount(nameValue, avatarValue) else account }
+        accounts = updated
+        if (addAccount || accounts.size == 1) activeAccountIndex = updated.lastIndex
+        profilePrefs.edit().putString(USER_NAME, nameValue).putInt(AVATAR_INDEX, avatarValue).apply()
+        saveAccounts(profilePrefs, updated, activeAccountIndex)
     }
 
     Box(Modifier.fillMaxSize().background(ProfileBackground)) {
@@ -123,11 +151,11 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
         ) {
             item {
                 ProfileHeader(
-                    displayName = if (isLoggedIn) name.orEmpty() else "Guest#$guestNumber",
-                    avatarIndex = avatarIndex,
+                    displayName = activeAccount?.name ?: "Guest#$guestNumber",
+                    avatarIndex = activeAccount?.avatarIndex ?: 0,
                     isLoggedIn = isLoggedIn,
-                    onSwitchAccount = { if (isLoggedIn) showAccountSheet = true else showProfileEditor = true },
-                    onEdit = { showProfileEditor = true }
+                    onSwitchAccount = { if (isLoggedIn) showAccountSheet = true else { editorAddsAccount = true; showProfileEditor = true } },
+                    onEdit = { editorAddsAccount = false; showProfileEditor = true }
                 )
             }
             item {
@@ -169,19 +197,23 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
         if (showProfileEditor) {
             ProfileEditorDialog(
                 isLoggedIn = isLoggedIn,
-                initialName = name.orEmpty(),
-                initialAvatar = avatarIndex,
+                initialName = if (editorAddsAccount) "" else (activeAccount?.name ?: ""),
+                initialAvatar = activeAccount?.avatarIndex ?: 0,
                 onDismiss = { showProfileEditor = false },
                 onSave = { newName, newAvatar ->
-                    saveProfile(newName, newAvatar)
+                    saveProfile(newName, newAvatar, editorAddsAccount)
                     showProfileEditor = false
+                    editorAddsAccount = false
                 }
             )
         }
         if (showAccountSheet) {
             AccountSwitcherSheet(
-                onDismiss = { showAccountSheet = false },
-                onSelectAccount = { showAccountSheet = false; showProfileEditor = true }
+                accounts = accounts,
+                activeIndex = activeAccountIndex,
+                onSelectAccount = { index -> activeAccountIndex = index; saveAccounts(profilePrefs, accounts, index); showAccountSheet = false },
+                onAddAccount = { showAccountSheet = false; editorAddsAccount = true; showProfileEditor = true },
+                onDismiss = { showAccountSheet = false }
             )
         }
         if (showPremium) {
@@ -286,7 +318,7 @@ private fun ProfileEditorDialog(isLoggedIn: Boolean, initialName: String, initia
         title = { Text(if (isLoggedIn) "Edit Profile" else "Welcome to Kino", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                OutlinedTextField(value = enteredName, onValueChange = { enteredName = it }, singleLine = true, label = { Text("Email or Name") })
+                OutlinedTextField(value = enteredName, onValueChange = { enteredName = it }, singleLine = true, label = { Text("Email or Name") }, colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, cursorColor = ProfileAccent, focusedContainerColor = Color(0xFF1A1A1A), unfocusedContainerColor = Color(0xFF1A1A1A)))
                 Text("Choose an avatar", color = ProfileMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 18.dp, bottom = 10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     avatarIcons.forEachIndexed { index, icon ->
@@ -316,13 +348,22 @@ private fun ExplorePremiumCard(isPremium: Boolean, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AccountSwitcherSheet(onDismiss: () -> Unit, onSelectAccount: () -> Unit) {
+private fun AccountSwitcherSheet(accounts: List<ProfileAccount>, activeIndex: Int, onSelectAccount: (Int) -> Unit, onAddAccount: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Color(0xFF171719), dragHandle = { BottomSheetDefaults.DragHandle(color = ProfileMuted) }) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 26.dp, vertical = 12.dp)) {
             Text("Switch Account", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("Choose how you want to manage your Kino profile.", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 7.dp, bottom = 20.dp))
-            Button(onClick = onSelectAccount, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = ProfileAccent)) { Text("Switch Account") }
-            OutlinedButton(onClick = onSelectAccount, modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 20.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)) { Text("Add another account") }
+            if (accounts.size == 1) {
+                Text("Only one account exists. Add another?", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 7.dp, bottom = 18.dp))
+            } else {
+                Text("Select an account to continue.", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 7.dp, bottom = 12.dp))
+                accounts.forEachIndexed { index, account ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (index == activeIndex) Color(0xFF3A1114) else Color.Transparent).clickable { onSelectAccount(index) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(avatarColors[account.avatarIndex]), contentAlignment = Alignment.Center) { Icon(avatarIcons[account.avatarIndex], contentDescription = null, tint = Color.White) }
+                        Text(account.name, color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
+            }
+            Button(onClick = onAddAccount, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp), colors = ButtonDefaults.buttonColors(containerColor = ProfileAccent)) { Text(if (accounts.size == 1) "Add Account" else "Add another account") }
         }
     }
 }
