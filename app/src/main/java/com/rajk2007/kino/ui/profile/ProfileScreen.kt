@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Edit
@@ -41,6 +42,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material3.Surface
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -96,11 +99,13 @@ private const val IS_PREMIUM = "is_premium"
 private const val ACCOUNTS_LIST = "accounts_list"
 private const val ACTIVE_ACCOUNT_INDEX = "active_account_index"
 private const val GUEST_AVATAR_INDEX = "guest_avatar_index"
+private const val APP_LANGUAGE = "app_language"
 
 private data class ProfileAccount(val name: String, val avatarIndex: Int)
 
-private val avatarIcons = listOf(Icons.Default.Person, Icons.Default.AccountCircle, Icons.Default.Face, Icons.Default.Star, Icons.Default.Favorite, Icons.Default.AccountCircle, Icons.Default.Home, Icons.Default.Search, Icons.Default.Info, Icons.Default.Settings)
-private val avatarColors = listOf(Color(0xFFE50914), Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFF6A1B9A), Color(0xFFC2185B), Color(0xFFEF6C00), Color(0xFF00838F), Color(0xFF4527A0), Color(0xFF546E7A), Color(0xFF5D4037))
+private val avatarIcons = listOf(Icons.Default.Person, Icons.Default.AccountCircle, Icons.Default.Face, Icons.Default.Star, Icons.Default.Favorite, Icons.Default.Home, Icons.Default.Search, Icons.Default.Info, Icons.Default.Settings, Icons.Default.PlayArrow, Icons.Default.Edit, Icons.Default.ArrowForward)
+private val avatarColors = listOf(Color(0xFFE50914), Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFF6A1B9A), Color(0xFFC2185B), Color(0xFFEF6C00), Color(0xFF00838F), Color(0xFF4527A0), Color(0xFF546E7A), Color(0xFF5D4037), Color(0xFFAD1457), Color(0xFF283593))
+private val supportedLanguages = listOf("English", "Hindi", "Tamil", "Telugu", "Japanese", "Korean")
 
 private fun loadAccounts(prefs: android.content.SharedPreferences): List<ProfileAccount> {
     val saved = prefs.getString(ACCOUNTS_LIST, null)
@@ -142,6 +147,9 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             profilePrefs.edit().putInt(GUEST_AVATAR_INDEX, it).apply()
         })
     }
+    var appLanguage by remember { mutableStateOf(profilePrefs.getString(APP_LANGUAGE, "English") ?: "English") }
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var legalPage by remember { mutableStateOf<LegalPage?>(null) }
     var nsfwEnabled by remember { mutableStateOf(settingsPrefs.getBoolean(nsfwKey, false)) }
     var autoplay by remember { mutableStateOf(profilePrefs.getBoolean(AUTOPLAY, true)) }
     var skipIntro by remember { mutableStateOf(profilePrefs.getBoolean(SKIP_INTRO, true)) }
@@ -211,10 +219,10 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             }
             item {
                 ProfileSection(title = "APP PREFERENCES", icon = Icons.Default.Settings) {
-                    SupportRow(Icons.Default.Settings, "App Language") { showToast(context, "App Language") }
+                    SupportRow(Icons.Default.Settings, "App Language", appLanguage) { showLanguageDialog = true }
                     SupportRow(Icons.Default.Info, "Help Center") { openHelpCenter(context) }
-                    SupportRow(Icons.Default.Info, "Terms and Conditions") { policy = Policy.Terms }
-                    SupportRow(Icons.Default.Info, "Privacy Policy") { policy = Policy.Privacy }
+                    SupportRow(Icons.Default.Info, "Terms and Conditions") { legalPage = LegalPage.Terms }
+                    SupportRow(Icons.Default.Info, "Privacy Policy") { legalPage = LegalPage.Privacy }
                 }
             }
             item {
@@ -268,6 +276,16 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
                 showPremium = false
             })
         }
+        if (showLanguageDialog) {
+            LanguageDialog(selectedLanguage = appLanguage, onSelect = { selected -> appLanguage = selected; profilePrefs.edit().putString(APP_LANGUAGE, selected).apply(); showLanguageDialog = false }, onDismiss = { showLanguageDialog = false })
+        }
+        legalPage?.let { page ->
+            Dialog(onDismissRequest = { legalPage = null }) {
+                Surface(Modifier.fillMaxSize(), color = ProfileBackground) {
+                    if (page == LegalPage.Terms) TermsScreen(onBack = { legalPage = null }) else PrivacyPolicyScreen(onBack = { legalPage = null })
+                }
+            }
+        }
         if (showAbout) {
             AboutKinoSheet(onDismiss = { showAbout = false })
         }
@@ -312,7 +330,7 @@ private fun ProfileHeader(displayName: String, avatarIndex: Int, isLoggedIn: Boo
 
 @Composable
 private fun ProfileSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).clip(RoundedCornerShape(18.dp)).background(ProfileSurface).border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(18.dp)).padding(horizontal = 17.dp, vertical = 16.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).clip(RoundedCornerShape(18.dp)).background(Brush.verticalGradient(listOf(Color(0xFF1A1A1A), Color(0xFF101010)))).border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(18.dp)).padding(horizontal = 17.dp, vertical = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
             Icon(icon, contentDescription = null, tint = ProfileAccent, modifier = Modifier.size(19.dp))
             Text(title, color = Color(0xFFB5B5BA), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 9.dp))
@@ -333,10 +351,13 @@ private fun ProfileSwitchRow(title: String, checked: Boolean, subtitle: String? 
 }
 
 @Composable
-private fun SupportRow(icon: ImageVector, title: String, onClick: () -> Unit) {
+private fun SupportRow(icon: ImageVector, title: String, subtitle: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = ProfileAccent, modifier = Modifier.size(20.dp))
-        Text(title, color = Color(0xFFF1F1F1), fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, color = Color(0xFFF1F1F1), fontSize = 15.sp)
+            subtitle?.let { Text(it, color = ProfileMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp)) }
+        }
         Icon(Icons.Default.ArrowForward, contentDescription = "Open", tint = Color.White, modifier = Modifier.size(22.dp))
     }
 }
@@ -385,7 +406,8 @@ private fun AvatarSelectionSheet(selectedAvatar: Int, onSelectAvatar: (Int) -> U
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Color(0xFF171719), dragHandle = { BottomSheetDefaults.DragHandle(color = ProfileMuted) }) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
             Text("Choose Your Avatar", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("Pick a vector avatar for your Kino profile.", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, bottom = 18.dp))
+            Text("PERSONAL  •  CINEMATIC  •  STYLED  •  COLORFUL", color = ProfileAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp, bottom = 7.dp))
+            Text("Pick a vector avatar for your Kino profile.", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 18.dp))
             LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().height(250.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(avatarIcons.indices.toList()) { index ->
                     Box(Modifier.size(78.dp).clip(CircleShape).background(avatarColors[index]).border(if (index == selectedAvatar) 3.dp else 0.dp, if (index == selectedAvatar) ProfileGold else Color.Transparent, CircleShape).clickable { onSelectAvatar(index) }, contentAlignment = Alignment.Center) {
@@ -398,9 +420,23 @@ private fun AvatarSelectionSheet(selectedAvatar: Int, onSelectAvatar: (Int) -> U
     }
 }
 
+private enum class LegalPage { Terms, Privacy }
+
+@Composable
+private fun LanguageDialog(selectedLanguage: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, containerColor = ProfileSurface, title = { Text("App Language", color = Color.White, fontWeight = FontWeight.Bold) }, text = {
+        Column { supportedLanguages.forEach { language ->
+            Row(Modifier.fillMaxWidth().clickable { onSelect(language) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(language, color = Color.White, modifier = Modifier.weight(1f))
+                if (language == selectedLanguage) Text("✓", color = ProfileAccent, fontWeight = FontWeight.Bold)
+            }
+        } }
+    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = ProfileGold) } })
+}
+
 @Composable
 private fun ExplorePremiumCard(isPremium: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp).clip(RoundedCornerShape(18.dp)).background(Brush.horizontalGradient(listOf(Color(0xFF4A090D), Color(0xFF211012)))).clickable(onClick = onClick).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp).clip(RoundedCornerShape(18.dp)).background(Brush.horizontalGradient(listOf(Color(0xFF4A090D), Color(0xFF211012)))).border(1.dp, Color(0x44E50914), RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("★", color = ProfileGold, fontSize = 27.sp)
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Text(if (isPremium) "Premium Member" else "Explore Kino Premium", color = ProfileGold, fontSize = 17.sp, fontWeight = FontWeight.Bold)
