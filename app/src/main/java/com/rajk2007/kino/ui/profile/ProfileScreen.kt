@@ -6,6 +6,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -47,6 +49,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.preference.PreferenceManager
 import androidx.compose.material3.Divider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -71,7 +74,7 @@ import com.lagradost.cloudstream3.R
 import kotlin.random.Random
 
 private val ProfileBackground = Color(0xFF080808)
-private val ProfileSurface = Color(0xFF151517)
+private val ProfileSurface = Color(0xFF141414)
 private val ProfileMuted = Color(0xFF96969B)
 private val ProfileAccent = Color(0xFFE50914)
 private val ProfileGold = Color(0xFFFFD86B)
@@ -115,6 +118,8 @@ private fun saveAccounts(prefs: android.content.SharedPreferences, accounts: Lis
 fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
     val context = LocalContext.current
     val profilePrefs = remember { context.getSharedPreferences(PROFILE_PREFS, Context.MODE_PRIVATE) }
+    val settingsPrefs = remember { PreferenceManager.getDefaultSharedPreferences(context) }
+    val nsfwKey = remember { context.getString(R.string.enable_nsfw_on_providers_key) }
     var accounts by remember { mutableStateOf(loadAccounts(profilePrefs)) }
     var activeAccountIndex by remember { mutableStateOf(profilePrefs.getInt(ACTIVE_ACCOUNT_INDEX, 0).coerceIn(0, maxOf(accounts.lastIndex, 0))) }
     val activeAccount = accounts.getOrNull(activeAccountIndex)
@@ -124,6 +129,7 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             profilePrefs.edit().putInt("guest_number", it).apply()
         }
     }
+    var nsfwEnabled by remember { mutableStateOf(settingsPrefs.getBoolean(nsfwKey, false)) }
     var autoplay by remember { mutableStateOf(profilePrefs.getBoolean(AUTOPLAY, true)) }
     var skipIntro by remember { mutableStateOf(profilePrefs.getBoolean(SKIP_INTRO, true)) }
     var downloadMobileData by remember { mutableStateOf(profilePrefs.getBoolean(DOWNLOAD_MOBILE_DATA, false)) }
@@ -147,7 +153,7 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
                 ProfileHeader(
@@ -160,6 +166,14 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             }
             item {
                 ExplorePremiumCard(isPremium = isPremium, onClick = { showPremium = true })
+            }
+            item {
+                ProfileSection(title = "CONTENT SETTINGS", icon = Icons.Default.Settings) {
+                    ProfileSwitchRow("18+ Content", nsfwEnabled, "Turn on to play mature titles and scenes") { enabled ->
+                        nsfwEnabled = enabled
+                        settingsPrefs.edit().putBoolean(nsfwKey, enabled).apply()
+                    }
+                }
             }
             item {
                 ProfileSection(title = "PLAYBACK SETTINGS", icon = Icons.Default.PlayArrow) {
@@ -250,24 +264,24 @@ private fun openHelpCenter(context: Context) {
 
 @Composable
 private fun ProfileHeader(displayName: String, avatarIndex: Int, isLoggedIn: Boolean, onSwitchAccount: () -> Unit, onEdit: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.verticalGradient(listOf(Color(0xFFE50914), Color(0xFF5A070B), ProfileBackground)))) {
+    Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.verticalGradient(listOf(Color(0xFFE50914), Color(0xFF080808))))) {
         Row(Modifier.fillMaxWidth().padding(start = 38.dp, end = 28.dp, top = 98.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(96.dp).clip(CircleShape).background(avatarColors[avatarIndex]).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(108.dp).clip(CircleShape).background(avatarColors[avatarIndex]).clickable(onClick = onEdit), contentAlignment = Alignment.Center) {
                 Icon(avatarIcons[avatarIndex], contentDescription = "Edit profile", tint = Color.White, modifier = Modifier.size(54.dp))
             }
             Column(Modifier.padding(start = 24.dp).weight(1f)) {
                 Text(displayName, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 Text("Welcome to Kino", color = Color.White.copy(alpha = 0.72f), fontSize = 15.sp, modifier = Modifier.padding(top = 5.dp))
-                OutlinedButton(onClick = onSwitchAccount, modifier = Modifier.padding(top = 16.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileAccent)) { Text("Switch Account", fontWeight = FontWeight.SemiBold) }
+                OutlinedButton(onClick = onSwitchAccount, modifier = Modifier.padding(top = 16.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileAccent), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)) { Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(20.dp)); Text("Switch Account", modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.SemiBold) }
             }
-            Text("✎", color = Color.White, fontSize = 25.sp, modifier = Modifier.padding(bottom = 42.dp).clickable(onClick = onEdit))
+            Box(Modifier.size(58.dp).padding(bottom = 8.dp).clip(CircleShape).border(1.dp, ProfileAccent, CircleShape).clickable(onClick = onEdit), contentAlignment = Alignment.Center) { Icon(Icons.Default.Edit, contentDescription = "Edit profile", tint = Color.White, modifier = Modifier.size(24.dp)) }
         }
     }
 }
 
 @Composable
 private fun ProfileSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).clip(RoundedCornerShape(18.dp)).background(ProfileSurface).padding(17.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).clip(RoundedCornerShape(18.dp)).background(ProfileSurface).border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(18.dp)).padding(horizontal = 17.dp, vertical = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
             Icon(icon, contentDescription = null, tint = ProfileAccent, modifier = Modifier.size(19.dp))
             Text(title, color = Color(0xFFB5B5BA), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 9.dp))
@@ -292,7 +306,7 @@ private fun SupportRow(icon: ImageVector, title: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = ProfileAccent, modifier = Modifier.size(20.dp))
         Text(title, color = Color(0xFFF1F1F1), fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
-        Icon(Icons.Default.ArrowForward, contentDescription = "Open", tint = ProfileMuted, modifier = Modifier.size(15.dp))
+        Icon(Icons.Default.ArrowForward, contentDescription = "Open", tint = Color.White, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -304,7 +318,7 @@ private fun ProfileActionRow(icon: ImageVector, title: String, subtitle: String,
             Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             Text(subtitle, color = ProfileMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
         }
-        Icon(Icons.Default.ArrowForward, contentDescription = "Open", tint = ProfileMuted, modifier = Modifier.size(15.dp))
+        Icon(Icons.Default.ArrowForward, contentDescription = "Open", tint = Color.White, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -339,7 +353,7 @@ private fun ExplorePremiumCard(isPremium: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp).clip(RoundedCornerShape(18.dp)).background(Brush.horizontalGradient(listOf(Color(0xFF4A090D), Color(0xFF211012)))).clickable(onClick = onClick).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("★", color = ProfileGold, fontSize = 27.sp)
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(if (isPremium) "Premium Member" else "Explore Premium", color = ProfileGold, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text(if (isPremium) "Premium Member" else "Explore Kino Premium", color = ProfileGold, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(if (isPremium) "Your benefits are active" else "No ads, 1080p downloads, multi-device", color = ProfileMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
         }
         Icon(Icons.Default.ArrowForward, contentDescription = "Premium", tint = ProfileGold)
