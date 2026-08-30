@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,6 +36,10 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.BottomSheetDefaults
@@ -88,11 +95,12 @@ private const val DOWNLOAD_MOBILE_DATA = "download_mobile_data"
 private const val IS_PREMIUM = "is_premium"
 private const val ACCOUNTS_LIST = "accounts_list"
 private const val ACTIVE_ACCOUNT_INDEX = "active_account_index"
+private const val GUEST_AVATAR_INDEX = "guest_avatar_index"
 
 private data class ProfileAccount(val name: String, val avatarIndex: Int)
 
-private val avatarIcons = listOf(Icons.Default.Person, Icons.Default.AccountCircle, Icons.Default.Face, Icons.Default.Info, Icons.Default.Settings)
-private val avatarColors = listOf(Color(0xFFB71C1C), Color(0xFF0D47A1), Color(0xFF6A1B9A), Color(0xFF00695C), Color(0xFFEF6C00))
+private val avatarIcons = listOf(Icons.Default.Person, Icons.Default.AccountCircle, Icons.Default.Face, Icons.Default.Star, Icons.Default.Favorite, Icons.Default.AccountCircle, Icons.Default.Home, Icons.Default.Search, Icons.Default.Info, Icons.Default.Settings)
+private val avatarColors = listOf(Color(0xFFE50914), Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFF6A1B9A), Color(0xFFC2185B), Color(0xFFEF6C00), Color(0xFF00838F), Color(0xFF4527A0), Color(0xFF546E7A), Color(0xFF5D4037))
 
 private fun loadAccounts(prefs: android.content.SharedPreferences): List<ProfileAccount> {
     val saved = prefs.getString(ACCOUNTS_LIST, null)
@@ -129,12 +137,18 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             profilePrefs.edit().putInt("guest_number", it).apply()
         }
     }
+    var guestAvatarIndex by remember {
+        mutableStateOf(profilePrefs.getInt(GUEST_AVATAR_INDEX, -1).takeIf { it in avatarIcons.indices } ?: Random.nextInt(avatarIcons.size).also {
+            profilePrefs.edit().putInt(GUEST_AVATAR_INDEX, it).apply()
+        })
+    }
     var nsfwEnabled by remember { mutableStateOf(settingsPrefs.getBoolean(nsfwKey, false)) }
     var autoplay by remember { mutableStateOf(profilePrefs.getBoolean(AUTOPLAY, true)) }
     var skipIntro by remember { mutableStateOf(profilePrefs.getBoolean(SKIP_INTRO, true)) }
     var downloadMobileData by remember { mutableStateOf(profilePrefs.getBoolean(DOWNLOAD_MOBILE_DATA, false)) }
     var isPremium by remember { mutableStateOf(profilePrefs.getBoolean(IS_PREMIUM, false)) }
     var showProfileEditor by remember { mutableStateOf(false) }
+    var showAvatarSheet by remember { mutableStateOf(false) }
     var editorAddsAccount by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
     var showPremium by remember { mutableStateOf(false) }
@@ -158,10 +172,10 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             item {
                 ProfileHeader(
                     displayName = activeAccount?.name ?: "Guest#$guestNumber",
-                    avatarIndex = activeAccount?.avatarIndex ?: 0,
+                    avatarIndex = activeAccount?.avatarIndex ?: guestAvatarIndex,
                     isLoggedIn = isLoggedIn,
                     onSwitchAccount = { if (isLoggedIn) showAccountSheet = true else { editorAddsAccount = true; showProfileEditor = true } },
-                    onEdit = { editorAddsAccount = false; showProfileEditor = true }
+                    onEdit = { showAvatarSheet = true }
                 )
             }
             item {
@@ -212,13 +226,30 @@ fun ProfileScreen(onExtensionsClick: () -> Unit = {}) {
             ProfileEditorDialog(
                 isLoggedIn = isLoggedIn,
                 initialName = if (editorAddsAccount) "" else (activeAccount?.name ?: ""),
-                initialAvatar = activeAccount?.avatarIndex ?: 0,
+                initialAvatar = activeAccount?.avatarIndex ?: guestAvatarIndex,
                 onDismiss = { showProfileEditor = false },
                 onSave = { newName, newAvatar ->
                     saveProfile(newName, newAvatar, editorAddsAccount)
                     showProfileEditor = false
                     editorAddsAccount = false
                 }
+            )
+        }
+        if (showAvatarSheet) {
+            AvatarSelectionSheet(
+                selectedAvatar = activeAccount?.avatarIndex ?: guestAvatarIndex,
+                onSelectAvatar = { selected ->
+                    if (activeAccount != null) {
+                        accounts = accounts.mapIndexed { index, account -> if (index == activeAccountIndex) account.copy(avatarIndex = selected) else account }
+                        saveAccounts(profilePrefs, accounts, activeAccountIndex)
+                    } else {
+                        guestAvatarIndex = selected
+                        profilePrefs.edit().putInt(GUEST_AVATAR_INDEX, selected).apply()
+                    }
+                    showAvatarSheet = false
+                },
+                onEditName = { showAvatarSheet = false; editorAddsAccount = false; showProfileEditor = true },
+                onDismiss = { showAvatarSheet = false }
             )
         }
         if (showAccountSheet) {
@@ -346,6 +377,25 @@ private fun ProfileEditorDialog(isLoggedIn: Boolean, initialName: String, initia
         confirmButton = { TextButton(onClick = { if (enteredName.trim().isNotEmpty()) onSave(enteredName.trim(), selectedAvatar) }) { Text("Save", color = ProfileGold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = ProfileMuted) } }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AvatarSelectionSheet(selectedAvatar: Int, onSelectAvatar: (Int) -> Unit, onEditName: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Color(0xFF171719), dragHandle = { BottomSheetDefaults.DragHandle(color = ProfileMuted) }) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
+            Text("Choose Your Avatar", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("Pick a vector avatar for your Kino profile.", color = ProfileMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, bottom = 18.dp))
+            LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().height(250.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                items(avatarIcons.indices.toList()) { index ->
+                    Box(Modifier.size(78.dp).clip(CircleShape).background(avatarColors[index]).border(if (index == selectedAvatar) 3.dp else 0.dp, if (index == selectedAvatar) ProfileGold else Color.Transparent, CircleShape).clickable { onSelectAvatar(index) }, contentAlignment = Alignment.Center) {
+                        Icon(avatarIcons[index], contentDescription = "Avatar ${index + 1}", tint = Color.White, modifier = Modifier.size(42.dp))
+                    }
+                }
+            }
+            OutlinedButton(onClick = onEditName, modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 18.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)) { Text("Edit Profile Name") }
+        }
+    }
 }
 
 @Composable
