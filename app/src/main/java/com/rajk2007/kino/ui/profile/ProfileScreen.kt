@@ -270,11 +270,11 @@ private fun ProfileHeader(displayName: String, avatarIndex: Int, isLoggedIn: Boo
                 Icon(avatarIcons[avatarIndex], contentDescription = "Edit profile", tint = Color.White, modifier = Modifier.size(54.dp))
             }
             Column(Modifier.padding(start = 24.dp).weight(1f)) {
-                Text(displayName, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                Text(displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text("Welcome to Kino", color = Color.White.copy(alpha = 0.72f), fontSize = 15.sp, modifier = Modifier.padding(top = 5.dp))
-                OutlinedButton(onClick = onSwitchAccount, modifier = Modifier.padding(top = 16.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileAccent), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)) { Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(20.dp)); Text("Switch Account", modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.SemiBold) }
+                OutlinedButton(onClick = onSwitchAccount, modifier = Modifier.padding(top = 16.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileAccent), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) { Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp)); Text("Switch Account", modifier = Modifier.padding(start = 6.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
             }
-            Box(Modifier.size(58.dp).padding(bottom = 8.dp).clip(CircleShape).border(1.dp, ProfileAccent, CircleShape).clickable(onClick = onEdit), contentAlignment = Alignment.Center) { Icon(Icons.Default.Edit, contentDescription = "Edit profile", tint = Color.White, modifier = Modifier.size(24.dp)) }
+            Box(Modifier.size(32.dp).clip(CircleShape).border(1.dp, ProfileAccent, CircleShape).clickable(onClick = onEdit), contentAlignment = Alignment.Center) { Icon(Icons.Default.Edit, contentDescription = "Edit profile", tint = Color.White, modifier = Modifier.size(18.dp)) }
         }
     }
 }
