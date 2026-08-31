@@ -252,24 +252,24 @@ private fun ProfileHeader(
                     painter = painterResource(R.drawable.ic_intro_logo),
                     contentDescription = "Kino guest avatar",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(108.dp).clip(CircleShape)
+                    modifier = Modifier.size(100.dp).clip(CircleShape)
                 )
             } else {
-                LetterAvatar(name = name, size = 108.dp)
+                LetterAvatar(name = name, size = 100.dp)
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = name,
                         color = Color.White,
-                        fontSize = 26.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onEdit, modifier = Modifier.size(38.dp)) {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
                         Text("✎", color = Color.White, fontSize = 22.sp)
                     }
                 }
@@ -283,7 +283,7 @@ private fun ProfileHeader(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onSwitchAccount)
-                        .padding(top = 11.dp, bottom = 8.dp),
+                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Switch Account", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
@@ -305,9 +305,9 @@ private fun ProfileHeader(
         Box(
             Modifier
                 .fillMaxWidth()
-                .padding(top = 17.dp)
+                .padding(top = 9.dp)
                 .height(1.dp)
-                .background(Color(0xFF292929))
+                .background(Color(0xFF1A1A1A))
         )
     }
 }
@@ -324,31 +324,49 @@ fun LetterAvatar(name: String, size: Dp = 96.dp) {
 @Composable
 private fun ProfileSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-        Text(title, color = KinoMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 22.dp, bottom = 7.dp))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(KinoSurface)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)) {
-                Icon(icon, null, tint = KinoRed, modifier = Modifier.size(19.dp))
-                Text(title, color = Color(0xFFBDBDC2), fontSize = 11.sp, modifier = Modifier.padding(start = 9.dp))
-            }
+        Text(
+            title,
+            color = KinoMuted,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp)
+        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(KinoSurface)
+        ) {
             content()
         }
     }
 }
 
 @Composable
+private fun ProfileDivider() {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF2A2A2A)))
+}
+
+@Composable
 private fun ProfileRow(title: String, value: String, danger: Boolean = false, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = if (danger) KinoRed else Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        if (value.isNotBlank()) Text(value, color = KinoMuted, fontSize = 14.sp, modifier = Modifier.padding(end = 9.dp))
-        Icon(Icons.Default.ArrowForward, null, tint = if (danger) KinoRed else KinoMuted, modifier = Modifier.size(16.dp))
+    Column {
+        Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = if (danger) KinoRed else Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            if (value.isNotBlank()) Text(value, color = KinoMuted, fontSize = 14.sp, modifier = Modifier.padding(end = 9.dp))
+            Icon(Icons.Default.ArrowForward, null, tint = if (danger) KinoRed else KinoMuted, modifier = Modifier.size(16.dp))
+        }
+        ProfileDivider()
     }
 }
 
 @Composable
 private fun ProfileSwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Switch(checked, onCheckedChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = KinoRed, uncheckedThumbColor = Color.White, uncheckedTrackColor = Color(0xFF353539)))
+    Column {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Switch(checked, onCheckedChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = KinoRed, uncheckedThumbColor = Color.White, uncheckedTrackColor = Color(0xFF333333)))
+        }
+        ProfileDivider()
     }
 }
 
