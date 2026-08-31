@@ -23,7 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
@@ -338,7 +338,7 @@ fun ProfileHeader(
                 modifier = Modifier.weight(1f)
             )
             Icon(
-                imageVector = Icons.Default.ChevronRight,
+                imageVector = Icons.Default.KeyboardArrowRight,
                 contentDescription = "Switch Account",
                 tint = Color.Gray,
                 modifier = Modifier.size(20.dp)
@@ -366,7 +366,7 @@ fun ProfileHeader(
                 modifier = Modifier.padding(end = 8.dp)
             )
             Icon(
-                imageVector = Icons.Default.ChevronRight,
+                imageVector = Icons.Default.KeyboardArrowRight,
                 contentDescription = "Subscription",
                 tint = Color.Gray,
                 modifier = Modifier.size(20.dp)
