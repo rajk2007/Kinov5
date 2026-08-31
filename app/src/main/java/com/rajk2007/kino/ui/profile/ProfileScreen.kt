@@ -4,6 +4,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
@@ -299,28 +302,38 @@ fun ProfileHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF141414))
+                .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(12.dp))
                 .clickable { onSwitchAccount() }
-                .padding(vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Switch Account", color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Switch Account", color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
             Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
         }
-
+        Spacer(modifier = Modifier.height(8.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF141414))
+                .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(12.dp))
                 .clickable { onSubscription() }
-                .padding(vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Subscription", color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Subscription", color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
             Text(subscription, color = if (subscription == "Premium") Color(0xFFE50914) else Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
             Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
         }
 
         Spacer(modifier = Modifier.height(8.dp))
-        HorizontalDivider(color = Color(0xFF1A1A1A), thickness = 1.dp)
+        HorizontalDivider(color = Color.Black, thickness = 1.dp)
     }
 }
 
