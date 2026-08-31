@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -33,6 +35,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -53,7 +56,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,10 +117,10 @@ fun ProfileScreen() {
         ) {
             item {
                 ProfileHeader(
-                    name = displayName,
+                    profileName = displayName,
                     isGuest = isGuest,
-                    useLogo = useLogo,
-                    isPremium = isPremium,
+                    subscription = if (isPremium) "Premium" else "Free",
+                    avatar = if (isGuest && useLogo) R.drawable.ic_intro_logo else null,
                     onEdit = { showEdit = true },
                     onSwitchAccount = { showAccounts = true },
                     onSubscription = { showSubscription = true }
@@ -228,11 +230,11 @@ fun ProfileScreen() {
 }
 
 @Composable
-private fun ProfileHeader(
-    name: String,
+fun ProfileHeader(
+    profileName: String,
     isGuest: Boolean,
-    useLogo: Boolean,
-    isPremium: Boolean,
+    subscription: String,
+    avatar: Any?,
     onEdit: () -> Unit,
     onSwitchAccount: () -> Unit,
     onSubscription: () -> Unit
@@ -240,75 +242,139 @@ private fun ProfileHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color(0xFF3B060A), Color(0xFF170609), KinoBlack)))
-            .padding(start = 24.dp, end = 18.dp, top = 22.dp, bottom = 18.dp)
+            .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isGuest && useLogo) {
-                Image(
-                    painter = painterResource(R.drawable.ic_intro_logo),
-                    contentDescription = "Kino guest avatar",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(100.dp).clip(CircleShape)
-                )
-            } else {
-                LetterAvatar(name = name, size = 100.dp)
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = name,
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(Color(0x33E50914), Color.Transparent),
+                            radius = 120f
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (avatar is ImageVector) {
+                    Icon(
+                        imageVector = avatar,
+                        contentDescription = "Profile Avatar",
+                        modifier = Modifier.size(60.dp),
+                        tint = Color(0xFFE50914)
                     )
-                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                        Text("✎", color = Color.White, fontSize = 22.sp)
-                    }
+                } else if (avatar is Int) {
+                    Image(
+                        painter = painterResource(id = avatar),
+                        contentDescription = "Profile Avatar",
+                        modifier = Modifier.size(60.dp)
+                    )
+                } else {
+                    Text(
+                        text = profileName.take(1).uppercase(),
+                        color = Color.White,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.Start
+            ) {
                 Text(
-                    "Welcome to Kino",
-                    color = KinoMuted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 2.dp)
+                    text = profileName,
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onSwitchAccount)
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Switch Account", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowForward, "Switch account", tint = KinoMuted, modifier = Modifier.size(17.dp))
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onSubscription)
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Subscription", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Text(if (isPremium) "Premium" else "Free", color = if (isPremium) Color(0xFFFFD86B) else KinoMuted, fontSize = 14.sp)
-                    Icon(Icons.Default.ArrowForward, "Subscription", tint = KinoMuted, modifier = Modifier.padding(start = 7.dp).size(17.dp))
-                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Welcome to Kino",
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
+            }
+
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1A1A1A))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit Profile",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
-        Box(
-            Modifier
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 9.dp)
-                .height(1.dp)
-                .background(Color(0xFF1A1A1A))
-        )
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onSwitchAccount() }
+                .padding(vertical = 12.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Switch Account",
+                color = Color.White,
+                fontSize = 16.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Switch Account",
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onSubscription() }
+                .padding(vertical = 12.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Subscription",
+                color = Color.White,
+                fontSize = 16.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = subscription,
+                color = if (subscription == "Premium") Color(0xFFE50914) else Color.Gray,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Subscription",
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        HorizontalDivider(color = Color(0xFF1A1A1A), thickness = 1.dp)
     }
 }
 
