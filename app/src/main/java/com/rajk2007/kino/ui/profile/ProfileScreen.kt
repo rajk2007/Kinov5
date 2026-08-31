@@ -32,6 +32,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -236,35 +238,77 @@ private fun ProfileHeader(
     onSubscription: () -> Unit
 ) {
     Column(
-        Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFF3B060A), Color(0xFF170609), KinoBlack))).padding(start = 24.dp, end = 18.dp, top = 28.dp, bottom = 24.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color(0xFF3B060A), Color(0xFF170609), KinoBlack)))
+            .padding(start = 24.dp, end = 18.dp, top = 22.dp, bottom = 18.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
             if (isGuest && useLogo) {
-                Image(painterResource(R.drawable.ic_intro_logo), "Kino guest avatar", contentScale = ContentScale.Crop, modifier = Modifier.size(108.dp).clip(CircleShape))
+                Image(
+                    painter = painterResource(R.drawable.ic_intro_logo),
+                    contentDescription = "Kino guest avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(108.dp).clip(CircleShape)
+                )
             } else {
-                LetterAvatar(name, 108.dp)
+                LetterAvatar(name = name, size = 108.dp)
             }
-            Spacer(Modifier.width(18.dp))
+            Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(name, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Text("Welcome to Kino", color = KinoMuted, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
-                TextButton(onClick = onSwitchAccount, contentPadding = PaddingValues(0.dp), modifier = Modifier.padding(top = 7.dp)) {
-                    Text("Switch Account", color = Color.White, fontSize = 14.sp)
-                    Icon(Icons.Default.ArrowForward, null, tint = KinoRed, modifier = Modifier.padding(start = 6.dp).size(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = name,
+                        color = Color.White,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onEdit, modifier = Modifier.size(38.dp)) {
+                        Text("✎", color = Color.White, fontSize = 22.sp)
+                    }
+                }
+                Text(
+                    "Welcome to Kino",
+                    color = KinoMuted,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onSwitchAccount)
+                        .padding(top = 11.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Switch Account", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowForward, "Switch account", tint = KinoMuted, modifier = Modifier.size(17.dp))
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onSubscription)
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Subscription", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text(if (isPremium) "Premium" else "Free", color = if (isPremium) Color(0xFFFFD86B) else KinoMuted, fontSize = 14.sp)
+                    Icon(Icons.Default.ArrowForward, "Subscription", tint = KinoMuted, modifier = Modifier.padding(start = 7.dp).size(17.dp))
                 }
             }
-            TextButton(onClick = onEdit, contentPadding = PaddingValues(4.dp), modifier = Modifier.align(Alignment.Top)) {
-                Text("✎", color = Color.White, fontSize = 25.sp)
-            }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(14.dp)).background(Color(0x4DE50914)).clickable(onClick = onSubscription).padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Subscription", color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
-            Text(if (isPremium) "Premium" else "Free", color = if (isPremium) Color(0xFFFFD86B) else KinoMuted, fontSize = 15.sp)
-            Icon(Icons.Default.ArrowForward, null, tint = Color.White, modifier = Modifier.padding(start = 8.dp).size(17.dp))
-        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 17.dp)
+                .height(1.dp)
+                .background(Color(0xFF292929))
+        )
     }
 }
 
