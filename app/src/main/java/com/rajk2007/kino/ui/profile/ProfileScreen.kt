@@ -117,10 +117,19 @@ fun ProfileScreen() {
 
     Box(Modifier.fillMaxSize().background(KinoBlack)) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(bottom = 104.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
+            item {
+                HorizontalDivider(
+                    color = Color(0xFF1A1A1A),
+                    thickness = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             item {
                 ProfileHeader(
                     profileName = displayName,
@@ -241,7 +250,6 @@ fun ProfileHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

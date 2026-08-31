@@ -1298,6 +1298,7 @@ private fun autoInstallRepositories() {
 
         loadThemes(this)
         enableEdgeToEdgeCompat()
+        window.statusBarColor = android.graphics.Color.BLACK
         setNavigationBarColorCompat(R.attr.primaryGrayBackground)
         updateLocale()
         super.onCreate(savedInstanceState)
