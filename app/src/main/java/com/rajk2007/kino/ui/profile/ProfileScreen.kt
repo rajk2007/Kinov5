@@ -118,9 +118,7 @@ fun ProfileScreen() {
             item {
                 ProfileHeader(
                     profileName = displayName,
-                    isGuest = isGuest,
                     subscription = if (isPremium) "Premium" else "Free",
-                    avatar = if (isGuest && useLogo) R.drawable.ic_intro_logo else null,
                     onEdit = { showEdit = true },
                     onSwitchAccount = { showAccounts = true },
                     onSubscription = { showSubscription = true }
@@ -128,49 +126,45 @@ fun ProfileScreen() {
             }
             item {
                 ProfileSection("PLAYBACK", Icons.Default.PlayArrow) {
-                    ProfileSwitchRow("Autoplay next episode", autoplay) { autoplay = it }
-                    ProfileSwitchRow("Skip intros automatically", skipIntros) { skipIntros = it }
+                    ProfileSwitchRow("Autoplay next episode", Icons.Default.PlayArrow, autoplay) { autoplay = it }
+                    ProfileSwitchRow("Skip intros automatically", Icons.Default.PlayArrow, skipIntros) { skipIntros = it }
                 }
             }
             item {
                 ProfileSection("DOWNLOADS", Icons.Default.ArrowForward) {
-                    ProfileSwitchRow("Download over Wi-Fi only", wifiOnly) { wifiOnly = it }
+                    ProfileSwitchRow("Download over Wi-Fi only", Icons.Default.ArrowForward, wifiOnly) { wifiOnly = it }
                 }
             }
             item {
                 ProfileSection("PREFERENCES", Icons.Default.Settings) {
-                    ProfileRow("Subtitles/CC Language", "English") {}
-                    ProfileSwitchRow("Closed Captions", closedCaptions) { closedCaptions = it }
+                    ProfileRow("Subtitles/CC Language", "English", Icons.Default.Settings) {}
+                    ProfileSwitchRow("Closed Captions", Icons.Default.Settings, closedCaptions) { closedCaptions = it }
                 }
             }
             item {
                 ProfileSection("ACCOUNT", Icons.Default.Info) {
-                    ProfileRow("Email", email) {}
-                    ProfileRow("Password", "") {}
-                    ProfileRow("Subscription", if (isPremium) "Premium" else "Free") { showSubscription = true }
-                    ProfileRow("Notifications", "") {
+                    ProfileRow("Email", email, Icons.Default.Info) {}
+                    ProfileRow("Password", "", Icons.Default.Info) {}
+                    ProfileRow("Subscription", if (isPremium) "Premium" else "Free", Icons.Default.Info) { showSubscription = true }
+                    ProfileRow("Notifications", "", Icons.Default.Info) {
                         context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                         })
                     }
-                    ProfileRow("Log Out", "") {
+                    ProfileRow("Log Out", "", Icons.Default.ArrowForward) {
                         name = ""
                         email = ""
                         isPremium = false
                         useLogo = true
                         prefs.edit().remove(USER_NAME_KEY).remove(USER_EMAIL_KEY).putBoolean(IS_PREMIUM_KEY, false).putBoolean(USE_LOGO_KEY, true).apply()
                     }
-                    ProfileRow("Delete My Account", "", danger = true) { showDelete = true }
+                    ProfileRow("Delete My Account", "", Icons.Default.ArrowForward, danger = true) { showDelete = true }
                 }
             }
             item {
-                Column(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                        Text("Terms & Conditions", color = KinoMuted, fontSize = 12.sp, modifier = Modifier.clickable { })
-                        Text("  •  ", color = KinoMuted, fontSize = 12.sp)
-                        Text("Privacy Policy", color = KinoMuted, fontSize = 12.sp, modifier = Modifier.clickable { })
-                    }
-                    Text("Version 1.2.0", color = Color(0xFF68686C), fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Terms & Conditions • Privacy Policy", color = Color.Gray, fontSize = 12.sp)
+                    Text("Version 1.2.0", color = Color.Gray, fontSize = 12.sp)
                 }
             }
         }
@@ -232,9 +226,7 @@ fun ProfileScreen() {
 @Composable
 fun ProfileHeader(
     profileName: String,
-    isGuest: Boolean,
     subscription: String,
-    avatar: Any?,
     onEdit: () -> Unit,
     onSwitchAccount: () -> Unit,
     onSubscription: () -> Unit
@@ -242,44 +234,24 @@ fun ProfileHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp)
+            .padding(16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color(0x33E50914), Color.Transparent),
-                            radius = 120f
-                        )
-                    ),
+                modifier = Modifier.size(100.dp).clip(CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                if (avatar is ImageVector) {
-                    Icon(
-                        imageVector = avatar,
-                        contentDescription = "Profile Avatar",
-                        modifier = Modifier.size(60.dp),
-                        tint = Color(0xFFE50914)
-                    )
-                } else if (avatar is Int) {
+                if (profileName.startsWith("Guest-")) {
                     Image(
-                        painter = painterResource(id = avatar),
-                        contentDescription = "Profile Avatar",
-                        modifier = Modifier.size(60.dp)
+                        painter = painterResource(R.drawable.ic_intro_logo),
+                        contentDescription = "Kino guest avatar",
+                        modifier = Modifier.size(100.dp).clip(CircleShape)
                     )
                 } else {
-                    Text(
-                        text = profileName.take(1).uppercase(),
-                        color = Color.White,
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    LetterAvatar(profileName, 100.dp)
                 }
             }
 
@@ -292,7 +264,7 @@ fun ProfileHeader(
                 Text(
                     text = profileName,
                     color = Color.White,
-                    fontSize = 20.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -307,10 +279,7 @@ fun ProfileHeader(
 
             IconButton(
                 onClick = onEdit,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF1A1A1A))
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0xFF1A1A1A))
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
@@ -326,51 +295,24 @@ fun ProfileHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
                 .clickable { onSwitchAccount() }
-                .padding(vertical = 12.dp, horizontal = 4.dp),
+                .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Switch Account",
-                color = Color.White,
-                fontSize = 16.sp,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowRight,
-                contentDescription = "Switch Account",
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
-            )
+            Text("Switch Account", color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
         }
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
                 .clickable { onSubscription() }
-                .padding(vertical = 12.dp, horizontal = 4.dp),
+                .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Subscription",
-                color = Color.White,
-                fontSize = 16.sp,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = subscription,
-                color = if (subscription == "Premium") Color(0xFFE50914) else Color.Gray,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowRight,
-                contentDescription = "Subscription",
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
-            )
+            Text("Subscription", color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Text(subscription, color = if (subscription == "Premium") Color(0xFFE50914) else Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+            Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -395,7 +337,7 @@ private fun ProfileSection(title: String, icon: ImageVector, content: @Composabl
             color = KinoMuted,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp)
+            modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 8.dp)
         )
         Column(
             Modifier
@@ -410,26 +352,34 @@ private fun ProfileSection(title: String, icon: ImageVector, content: @Composabl
 
 @Composable
 private fun ProfileDivider() {
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF2A2A2A)))
+    HorizontalDivider(color = Color(0xFF2A2A2A), thickness = 1.dp)
 }
 
 @Composable
-private fun ProfileRow(title: String, value: String, danger: Boolean = false, onClick: () -> Unit) {
+private fun ProfileRow(title: String, value: String, icon: ImageVector, danger: Boolean = false, onClick: () -> Unit) {
     Column {
-        Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = if (danger) KinoRed else Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
-            if (value.isNotBlank()) Text(value, color = KinoMuted, fontSize = 14.sp, modifier = Modifier.padding(end = 9.dp))
-            Icon(Icons.Default.ArrowForward, null, tint = if (danger) KinoRed else KinoMuted, modifier = Modifier.size(16.dp))
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = if (danger) KinoRed else KinoRed, modifier = Modifier.size(20.dp))
+            Text(title, color = if (danger) KinoRed else Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            if (value.isNotBlank()) Text(value, color = KinoMuted, fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+            Icon(Icons.Default.KeyboardArrowRight, null, tint = if (danger) KinoRed else KinoMuted, modifier = Modifier.size(20.dp))
         }
         ProfileDivider()
     }
 }
 
 @Composable
-private fun ProfileSwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun ProfileSwitchRow(title: String, icon: ImageVector, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Column {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = KinoRed, modifier = Modifier.size(20.dp))
+            Text(title, color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
             Switch(checked, onCheckedChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = KinoRed, uncheckedThumbColor = Color.White, uncheckedTrackColor = Color(0xFF333333)))
         }
         ProfileDivider()
