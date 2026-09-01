@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -45,7 +46,11 @@ class KinoResultFragment : Fragment() {
                 callback = { link -> links.add(link) }
             )
             withContext(Dispatchers.Main) {
-                showQualitySelector(links, name, apiName, url, posterUrl)
+                if (links.isNotEmpty()) {
+                    showQualitySelector(links, name, apiName, url, posterUrl)
+                } else {
+                    Toast.makeText(requireContext(), "No links found", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

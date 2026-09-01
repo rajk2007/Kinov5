@@ -5,10 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.utils.DOWNLOAD_EPISODE_CACHE
 import com.lagradost.cloudstream3.utils.DOWNLOAD_HEADER_CACHE
 import com.lagradost.cloudstream3.utils.DataStore.getKey
 import com.lagradost.cloudstream3.utils.DataStore.getKeys
 import com.lagradost.cloudstream3.utils.DataStoreHelper
+import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
+import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.getDownloadFileInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,33 +28,42 @@ class KinoLibraryViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val resumeIds = DataStoreHelper.getAllResumeStateIds() ?: emptyList()
-                _continueWatching.value = resumeIds.mapNotNull { id ->
-                    val resume = DataStoreHelper.getLastWatched(id)
-                    val bookmark = resume?.parentId?.let { DataStoreHelper.getBookmarkedData(it) }
-                    if (resume != null && bookmark != null) {
-                        KinoLibraryItem(
-                            name = bookmark.name,
-                            url = bookmark.url,
-                            apiName = bookmark.apiName,
-                            type = bookmark.type,
-                            posterUrl = bookmark.posterUrl,
-                            episodeId = resume.episodeId
-                        )
-                    } else null
+                val resumeList = resumeIds.mapNotNull { id ->
+                    val resume = DataStoreHelper.getLastWatched(id) ?: return@mapNotNull null
+                    val headerCache = context.getKey<DownloadObjects.DownloadHeaderCached>(
+                        DOWNLOAD_HEADER_CACHE,
+                        resume.parentId.toString()
+                    ) ?: return@mapNotNull null
+                    KinoLibraryItem(
+                        name = headerCache.name,
+                        url = headerCache.url,
+                        apiName = headerCache.apiName,
+                        type = headerCache.type,
+                        posterUrl = headerCache.poster,
+                        episodeId = resume.episodeId
+                    )
                 }
+                _continueWatching.value = resumeList
 
-                _downloads.value = context.getKeys(DOWNLOAD_HEADER_CACHE).mapNotNull { key ->
-                    context.getKey<com.lagradost.cloudstream3.utils.downloader.DownloadObjects.DownloadHeaderCached>(key)
-                        ?.let { header ->
-                            KinoLibraryItem(
-                                name = header.name,
-                                url = header.url,
-                                apiName = header.apiName,
-                                type = header.type,
-                                posterUrl = header.poster
-                            )
-                        }
-                }
+                val headers = context.getKeys(DOWNLOAD_HEADER_CACHE)
+                    .mapNotNull { key -> context.getKey<DownloadObjects.DownloadHeaderCached>(key) }
+                    .associateBy { it.id }
+                val downloadedFiles = context.getKeys(DOWNLOAD_EPISODE_CACHE)
+                    .mapNotNull { key -> context.getKey<DownloadObjects.DownloadEpisodeCached>(key) }
+                    .mapNotNull { file ->
+                        val info = getDownloadFileInfo(context, file.id) ?: return@mapNotNull null
+                        if (info.fileLength <= 0L) return@mapNotNull null
+                        val header = headers[file.parentId] ?: return@mapNotNull null
+                        KinoLibraryItem(
+                            name = file.name ?: header.name,
+                            url = header.url,
+                            apiName = header.apiName,
+                            type = header.type,
+                            posterUrl = file.poster ?: header.poster,
+                            id = file.id
+                        )
+                    }
+                _downloads.value = downloadedFiles
             } catch (e: Exception) {
                 e.printStackTrace()
             }
