@@ -1,7 +1,10 @@
 package com.rajk2007.kino.ui.profile
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -68,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.R
 import kotlin.random.Random
 
@@ -76,7 +80,7 @@ private const val USER_NAME_KEY = "user_name"
 private const val USER_EMAIL_KEY = "user_email"
 private const val IS_PREMIUM_KEY = "is_premium"
 private const val GUEST_NUMBER_KEY = "guest_number"
-private const val USE_LOGO_KEY = "use_logo_avatar"
+private const val AVATAR_URI_KEY = "avatar_uri"
 
 private val KinoBlack = Color(0xFF080808)
 private val KinoSurface = Color(0xFF141414)
@@ -97,7 +101,13 @@ fun ProfileScreen() {
     var name by remember { mutableStateOf(prefs.getString(USER_NAME_KEY, "").orEmpty()) }
     var email by remember { mutableStateOf(prefs.getString(USER_EMAIL_KEY, "").orEmpty()) }
     var isPremium by remember { mutableStateOf(prefs.getBoolean(IS_PREMIUM_KEY, false)) }
-    var useLogo by remember { mutableStateOf(prefs.getBoolean(USE_LOGO_KEY, true)) }
+    var avatarUri by remember { mutableStateOf(prefs.getString(AVATAR_URI_KEY, null) ?: "") }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            avatarUri = uri.toString()
+            prefs.edit().putString(AVATAR_URI_KEY, avatarUri).apply()
+        }
+    }
     var autoplay by remember { mutableStateOf(true) }
     var skipIntros by remember { mutableStateOf(true) }
     var wifiOnly by remember { mutableStateOf(false) }
@@ -109,10 +119,9 @@ fun ProfileScreen() {
     val displayName = name.ifBlank { "Guest-$guestNumber" }
     val isGuest = email.isBlank()
 
-    fun saveProfile(newName: String, logoAvatar: Boolean) {
+    fun saveProfile(newName: String) {
         name = newName.trim()
-        useLogo = logoAvatar
-        prefs.edit().putString(USER_NAME_KEY, name).putBoolean(USE_LOGO_KEY, useLogo).apply()
+        prefs.edit().putString(USER_NAME_KEY, name).apply()
     }
 
     Box(Modifier.fillMaxSize().background(KinoBlack)) {
@@ -134,6 +143,7 @@ fun ProfileScreen() {
                 ProfileHeader(
                     profileName = displayName,
                     subscription = if (isPremium) "Premium" else "Free",
+                    avatarUri = avatarUri,
                     onEdit = { showEdit = true },
                     onSwitchAccount = { showAccounts = true },
                     onSubscription = { showSubscription = true }
@@ -170,8 +180,8 @@ fun ProfileScreen() {
                         name = ""
                         email = ""
                         isPremium = false
-                        useLogo = true
-                        prefs.edit().remove(USER_NAME_KEY).remove(USER_EMAIL_KEY).putBoolean(IS_PREMIUM_KEY, false).putBoolean(USE_LOGO_KEY, true).apply()
+                        avatarUri = ""
+                        prefs.edit().remove(USER_NAME_KEY).remove(USER_EMAIL_KEY).remove(AVATAR_URI_KEY).putBoolean(IS_PREMIUM_KEY, false).apply()
                     }
                     ProfileRow("Delete My Account", "", Icons.Default.ArrowForward, danger = true) { showDelete = true }
                 }
@@ -187,10 +197,11 @@ fun ProfileScreen() {
         if (showEdit) {
             EditProfileDialog(
                 initialName = name,
-                useLogoInitially = useLogo,
+                initialAvatarUri = avatarUri,
                 onDismiss = { showEdit = false },
-                onSave = { newName, logoAvatar ->
-                    saveProfile(newName, logoAvatar)
+                onPickAvatar = { galleryLauncher.launch("image/*") },
+                onSave = { newName ->
+                    saveProfile(newName)
                     showEdit = false
                 }
             )
@@ -242,6 +253,7 @@ fun ProfileScreen() {
 fun ProfileHeader(
     profileName: String,
     subscription: String,
+    avatarUri: String,
     onEdit: () -> Unit,
     onSwitchAccount: () -> Unit,
     onSubscription: () -> Unit
@@ -256,17 +268,21 @@ fun ProfileHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.size(100.dp).clip(CircleShape),
+                modifier = Modifier.size(90.dp).clip(CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                if (profileName.startsWith("Guest-")) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_intro_logo),
-                        contentDescription = "Kino guest avatar",
-                        modifier = Modifier.size(100.dp).clip(CircleShape)
+                if (avatarUri.isNotBlank()) {
+                    AsyncImage(
+                        model = Uri.parse(avatarUri),
+                        contentDescription = "Profile avatar",
+                        modifier = Modifier.size(90.dp).clip(CircleShape)
                     )
                 } else {
-                    LetterAvatar(profileName, 100.dp)
+                    Image(
+                        painter = painterResource(R.drawable.ic_intro_logo),
+                        contentDescription = "Kino avatar",
+                        modifier = Modifier.size(90.dp).clip(CircleShape)
+                    )
                 }
             }
 
@@ -412,21 +428,25 @@ private fun ProfileSwitchRow(title: String, icon: ImageVector, checked: Boolean,
 }
 
 @Composable
-private fun EditProfileDialog(initialName: String, useLogoInitially: Boolean, onDismiss: () -> Unit, onSave: (String, Boolean) -> Unit) {
+private fun EditProfileDialog(initialName: String, initialAvatarUri: String, onPickAvatar: () -> Unit, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var editedName by remember { mutableStateOf(initialName) }
-    var logoAvatar by remember { mutableStateOf(useLogoInitially) }
+    var selectedAvatarUri by remember(initialAvatarUri) { mutableStateOf(initialAvatarUri) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = KinoSurfaceRaised,
         title = { Text("Edit Profile", color = Color.White) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (logoAvatar) Image(painterResource(R.drawable.ic_intro_logo), "Kino avatar", modifier = Modifier.size(72.dp).clip(CircleShape)) else LetterAvatar(editedName, 72.dp)
-                TextButton(onClick = { logoAvatar = !logoAvatar }) { Text(if (logoAvatar) "Use letter avatar" else "Use KINO avatar", color = KinoRed) }
+                if (selectedAvatarUri.isNotBlank()) {
+                    AsyncImage(Uri.parse(selectedAvatarUri), "Profile avatar", modifier = Modifier.size(72.dp).clip(CircleShape))
+                } else {
+                    Image(painterResource(R.drawable.ic_intro_logo), "Kino avatar", modifier = Modifier.size(72.dp).clip(CircleShape))
+                }
+                TextButton(onClick = onPickAvatar) { Text("Change Profile Picture", color = KinoRed) }
                 TextField(value = editedName, onValueChange = { editedName = it }, singleLine = true, label = { Text("Profile name") }, colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = KinoSurface, unfocusedContainerColor = KinoSurface, focusedIndicatorColor = KinoRed, unfocusedIndicatorColor = Color.Transparent, focusedLabelColor = KinoRed, unfocusedLabelColor = KinoMuted))
             }
         },
-        confirmButton = { Button(onClick = { onSave(editedName, logoAvatar) }, colors = ButtonDefaults.buttonColors(containerColor = KinoRed)) { Text("Save") } },
+        confirmButton = { Button(onClick = { onSave(editedName) }, colors = ButtonDefaults.buttonColors(containerColor = KinoRed)) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = KinoMuted) } }
     )
 }
