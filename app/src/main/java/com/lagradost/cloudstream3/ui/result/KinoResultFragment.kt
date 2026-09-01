@@ -19,7 +19,6 @@ import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.sortUrls
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,7 +95,7 @@ class KinoResultFragment : Fragment() {
                     dialog.setContentView(ComposeView(requireContext()).apply {
                         setContent {
                             DownloadQualitySheet(
-                                links = sortUrls(links.toSet()),
+                                links = links.distinctBy { it.url },
                                 onLinkSelected = { link ->
                                     startDownload(
                                         link = link,
