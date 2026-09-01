@@ -5,11 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.utils.DOWNLOAD_EPISODE_CACHE
 import com.lagradost.cloudstream3.utils.DOWNLOAD_HEADER_CACHE
 import com.lagradost.cloudstream3.utils.DataStore.getKey
 import com.lagradost.cloudstream3.utils.DataStore.getKeys
 import com.lagradost.cloudstream3.utils.DataStoreHelper
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
+import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
+import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.getDownloadFileInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,8 +49,19 @@ class KinoLibraryViewModel : ViewModel() {
                 }
                 _continueWatching.value = resumeList
 
+                val parentsWithFiles = context.getKeys(DOWNLOAD_EPISODE_CACHE)
+                    .mapNotNull { key -> context.getKey<DownloadObjects.DownloadEpisodeCached>(key) }
+                    .mapNotNull { episode ->
+                        val info = getDownloadFileInfo(context, episode.id)
+                        episode.parentId.takeIf { info != null && info.fileLength > 1L }
+                    }
+                    .toSet()
+                val activeQueueIds = runCatching {
+                    DownloadQueueManager.queue.value.map { it.parentId }.toSet()
+                }.getOrDefault(emptySet())
                 val downloadedItems = context.getKeys(DOWNLOAD_HEADER_CACHE)
                     .mapNotNull { key -> context.getKey<DownloadObjects.DownloadHeaderCached>(key) }
+                    .filter { header -> header.id in parentsWithFiles || header.id in activeQueueIds }
                     .distinctBy { it.id }
                     .map { header ->
                         KinoLibraryItem(

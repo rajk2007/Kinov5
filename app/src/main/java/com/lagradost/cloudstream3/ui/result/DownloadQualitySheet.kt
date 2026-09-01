@@ -1,6 +1,5 @@
 package com.lagradost.cloudstream3.ui.result
 
-import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,7 +13,11 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
+import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,7 +32,9 @@ fun DownloadQualitySheet(
             Text("Choose download quality", modifier = Modifier.padding(20.dp))
             links.forEach { link ->
                 Column(
-                    modifier = Modifier.fillMaxWidth().clickable { onLinkSelected(link) }
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onLinkSelected(link) }
                         .padding(horizontal = 20.dp, vertical = 14.dp)
                 ) {
                     Text(link.name)
@@ -48,45 +53,44 @@ fun DownloadQualitySheet(
 }
 
 fun startDownload(
-    context: Context,
     link: ExtractorLink,
-    name: String,
+    loadResponse: LoadResponse,
+    dataString: String,
+    resultId: Int,
     apiName: String,
-    url: String,
-    type: com.lagradost.cloudstream3.TvType?,
-    posterUrl: String?,
+    isMovie: Boolean,
 ) {
+    val resultType = loadResponse.type
     val episode = ResultEpisode(
-        headerName = name,
-        name = name,
-        poster = posterUrl,
-        episode = 1,
+        headerName = loadResponse.name,
+        name = loadResponse.name,
+        poster = loadResponse.posterUrl,
+        episode = 0,
         seasonIndex = null,
         season = null,
-        data = url,
+        data = dataString,
         apiName = apiName,
-        id = url.hashCode(),
+        id = resultId,
         index = 0,
         position = 0L,
         duration = 0L,
-        score = null,
-        description = null,
+        score = loadResponse.score,
+        description = loadResponse.plot,
         isFiller = null,
-        tvType = type ?: com.lagradost.cloudstream3.TvType.Movie,
-        parentId = url.hashCode(),
+        tvType = resultType,
+        parentId = resultId,
         videoWatchState = VideoWatchState.None,
     )
-    com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.addToQueue(
-        com.lagradost.cloudstream3.utils.downloader.DownloadObjects.DownloadQueueItem(
-            episode = episode,
-            isMovie = episode.tvType == com.lagradost.cloudstream3.TvType.Movie,
-            resultName = name,
-            resultType = episode.tvType,
-            resultPoster = posterUrl,
-            apiName = apiName,
-            resultId = url.hashCode(),
-            resultUrl = url,
-            links = listOf(link),
-        ).toWrapper()
+    val downloadItem = DownloadObjects.DownloadQueueItem(
+        episode = episode,
+        isMovie = isMovie,
+        resultName = loadResponse.name,
+        resultType = resultType ?: TvType.Movie,
+        resultPoster = loadResponse.posterUrl,
+        apiName = apiName,
+        resultId = resultId,
+        resultUrl = loadResponse.url,
+        links = listOf(link),
     )
+    DownloadQueueManager.addToQueue(downloadItem.toWrapper())
 }
