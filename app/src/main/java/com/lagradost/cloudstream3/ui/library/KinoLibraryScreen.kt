@@ -104,7 +104,14 @@ private fun LibraryPoster(media: KinoLibraryItem, onMediaClick: (KinoLibraryItem
                 trackColor = Color(0xFF333333),
             )
         }
-        Text(media.name, color = Color.White, fontSize = 12.sp, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+        Text(
+            media.name,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
 
