@@ -18,11 +18,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class KinoLibraryViewModel : ViewModel() {
-    private val _continueWatching = MutableStateFlow<List<SearchResponse>>(emptyList())
-    val continueWatching: StateFlow<List<SearchResponse>> = _continueWatching
+    private val _continueWatching = MutableStateFlow<List<KinoLibraryItem>>(emptyList())
+    val continueWatching: StateFlow<List<KinoLibraryItem>> = _continueWatching
 
-    private val _downloads = MutableStateFlow<List<SearchResponse>>(emptyList())
-    val downloads: StateFlow<List<SearchResponse>> = _downloads
+    private val _downloads = MutableStateFlow<List<KinoLibraryItem>>(emptyList())
+    val downloads: StateFlow<List<KinoLibraryItem>> = _downloads
 
     fun loadData(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -34,13 +34,16 @@ class KinoLibraryViewModel : ViewModel() {
                         DOWNLOAD_HEADER_CACHE,
                         resume.parentId.toString()
                     ) ?: return@mapNotNull null
+                    val watchPos = DataStoreHelper.getViewPos(resume.episodeId)
                     KinoLibraryItem(
                         name = headerCache.name,
                         url = headerCache.url,
                         apiName = headerCache.apiName,
                         type = headerCache.type,
                         posterUrl = headerCache.poster,
-                        episodeId = resume.episodeId
+                        episodeId = resume.episodeId,
+                        position = watchPos?.position ?: 0L,
+                        duration = watchPos?.duration ?: 0L,
                     )
                 }
                 _continueWatching.value = resumeList
@@ -60,7 +63,7 @@ class KinoLibraryViewModel : ViewModel() {
                             apiName = header.apiName,
                             type = header.type,
                             posterUrl = file.poster ?: header.poster,
-                            id = file.id
+                            id = file.id,
                         )
                     }
                 _downloads.value = downloadedFiles
@@ -78,6 +81,8 @@ data class KinoLibraryItem(
     override var type: TvType? = null,
     override var posterUrl: String? = null,
     val episodeId: Int? = null,
+    val position: Long = 0L,
+    val duration: Long = 0L,
     override var posterHeaders: Map<String, String>? = null,
     override var id: Int? = null,
     override var quality: com.lagradost.cloudstream3.SearchQuality? = null,

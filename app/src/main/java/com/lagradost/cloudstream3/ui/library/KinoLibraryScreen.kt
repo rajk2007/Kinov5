@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,12 +21,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
-import com.lagradost.cloudstream3.SearchResponse
 
 @Composable
 fun KinoLibraryScreen(
     viewModel: KinoLibraryViewModel = viewModel(),
-    onMediaClick: (SearchResponse) -> Unit
+    onMediaClick: (KinoLibraryItem) -> Unit
 ) {
     val continueWatching by viewModel.continueWatching.collectAsState()
     val downloads by viewModel.downloads.collectAsState()
@@ -47,7 +47,14 @@ fun KinoLibraryScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
         if (continueWatching.isEmpty()) {
-            item { Text("Nothing to resume.", color = Color.Gray, fontSize = 15.sp) }
+            item {
+                Text(
+                    "Your watchlist is empty. Start watching something epic.",
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
         } else {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -61,7 +68,14 @@ fun KinoLibraryScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
         if (downloads.isEmpty()) {
-            item { Text("No downloads available.", color = Color.Gray, fontSize = 15.sp) }
+            item {
+                Text(
+                    "No downloads yet. Download movies to watch offline.",
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
         } else {
             items(downloads) { media -> LibraryDownloadRow(media, onMediaClick) }
         }
@@ -70,7 +84,7 @@ fun KinoLibraryScreen(
 }
 
 @Composable
-private fun LibraryPoster(media: SearchResponse, onMediaClick: (SearchResponse) -> Unit) {
+private fun LibraryPoster(media: KinoLibraryItem, onMediaClick: (KinoLibraryItem) -> Unit) {
     Column(modifier = Modifier.width(120.dp).clickable { onMediaClick(media) }) {
         AsyncImage(
             model = media.posterUrl ?: "",
@@ -78,12 +92,24 @@ private fun LibraryPoster(media: SearchResponse, onMediaClick: (SearchResponse) 
             modifier = Modifier.size(width = 120.dp, height = 180.dp)
                 .clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A))
         )
+        if (media.duration > 0L && media.position > 0L) {
+            val progress = (media.position.toFloat() / media.duration.toFloat()).coerceIn(0f, 1f)
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = Color(0xFFE50914),
+                trackColor = Color(0xFF333333),
+            )
+        }
         Text(media.name, color = Color.White, fontSize = 12.sp, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
 @Composable
-private fun LibraryDownloadRow(media: SearchResponse, onMediaClick: (SearchResponse) -> Unit) {
+private fun LibraryDownloadRow(media: KinoLibraryItem, onMediaClick: (KinoLibraryItem) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onMediaClick(media) }.padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
