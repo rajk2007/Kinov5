@@ -80,7 +80,6 @@ import com.lagradost.cloudstream3.utils.AppContextUtils.openBrowser
 import com.lagradost.cloudstream3.utils.AppContextUtils.updateHasTrailers
 import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.attachBackPressedCallback
 import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.detachBackPressedCallback
-import com.lagradost.cloudstream3.utils.BatteryOptimizationChecker.openBatteryOptimizationSettings
 import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
@@ -639,7 +638,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         Toast.LENGTH_SHORT
                     )
                 }
-                context?.let { openBatteryOptimizationSettings(it) }
             }
             resultFavorite.setOnClickListener {
                 viewModel.toggleFavoriteStatus(context) { newStatus: Boolean? ->
@@ -909,8 +907,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         ),
                         null
                     ) { click ->
-                        context?.let { openBatteryOptimizationSettings(it) }
-
                         when (click.action) {
                             DOWNLOAD_ACTION_DOWNLOAD -> {
                                 requirePathForActions(listOf(ACTION_DOWNLOAD_EPISODE to ep))
