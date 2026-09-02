@@ -75,7 +75,6 @@ import com.lagradost.cloudstream3.ui.player.GeneratorPlayer
 import com.lagradost.cloudstream3.ui.player.LOADTYPE_ALL
 import com.lagradost.cloudstream3.ui.player.LOADTYPE_CHROMECAST
 import com.lagradost.cloudstream3.ui.player.LOADTYPE_INAPP
-import com.lagradost.cloudstream3.ui.player.LOADTYPE_INAPP_DOWNLOAD
 import com.lagradost.cloudstream3.ui.player.RepoLinkGenerator
 import com.lagradost.cloudstream3.ui.player.SubtitleData
 import com.lagradost.cloudstream3.ui.result.EpisodeAdapter.Companion.getPlayerAction
@@ -1489,7 +1488,7 @@ class ResultViewModel2 : ViewModel() {
                 val response = currentResponse ?: return
                 acquireSingleLink(
                     click.data,
-                    LOADTYPE_INAPP_DOWNLOAD,
+                    LOADTYPE_INAPP,
                     txt(R.string.episode_action_download_mirror)
                 ) { (result, index) ->
                     DownloadQueueManager.addToQueue(
