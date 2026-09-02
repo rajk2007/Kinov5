@@ -95,7 +95,7 @@
         </service>
 
         <service
-            android:name=".utils.VideoDownloadManager$DownloadService"
+            android:name=".services.DownloadQueueService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

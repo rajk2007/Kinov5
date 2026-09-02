@@ -49,30 +49,38 @@ class KinoLibraryViewModel : ViewModel() {
                 }
                 _continueWatching.value = resumeList
 
-                val parentsWithFiles = context.getKeys(DOWNLOAD_EPISODE_CACHE)
-                    .mapNotNull { key -> context.getKey<DownloadObjects.DownloadEpisodeCached>(key) }
-                    .mapNotNull { episode ->
+                // Downloads — Filter by actual downloaded files
+                val episodeKeys = context.getKeys(DOWNLOAD_EPISODE_CACHE)
+                val parentsWithFiles = mutableSetOf<Int>()
+                for (key in episodeKeys) {
+                    val episode = context.getKey<DownloadObjects.DownloadEpisodeCached>(key)
+                    if (episode != null) {
                         val info = getDownloadFileInfo(context, episode.id)
-                        episode.parentId.takeIf { info != null && info.fileLength > 1L }
+                        if (info != null && info.fileLength > 1L) {
+                            parentsWithFiles.add(episode.parentId)
+                        }
                     }
-                    .toSet()
-                val activeQueueIds = runCatching {
-                    DownloadQueueManager.queue.value.map { it.parentId }.toSet()
-                }.getOrDefault(emptySet())
-                val downloadedItems = context.getKeys(DOWNLOAD_HEADER_CACHE)
-                    .mapNotNull { key -> context.getKey<DownloadObjects.DownloadHeaderCached>(key) }
-                    .filter { header -> header.id in parentsWithFiles || header.id in activeQueueIds }
-                    .distinctBy { it.id }
-                    .map { header ->
-                        KinoLibraryItem(
-                            name = header.name,
-                            url = header.url,
-                            apiName = header.apiName,
-                            type = header.type,
-                            posterUrl = header.poster,
-                            id = header.id,
-                        )
-                    }
+                }
+
+                val activeQueueIds = try {
+                    DownloadQueueManager.queue.value.map { it.parentId }
+                } catch (e: Exception) {
+                    emptyList()
+                }
+
+                val headerKeys = context.getKeys(DOWNLOAD_HEADER_CACHE)
+                val downloadedItems = headerKeys.mapNotNull { key ->
+                    context.getKey<DownloadObjects.DownloadHeaderCached>(key)
+                }.filter { header ->
+                    header.id in parentsWithFiles || header.id in activeQueueIds
+                }.map { header ->
+                    KinoLibraryItem(
+                        name = header.name,
+                        url = header.url,
+                        apiName = header.apiName,
+                        posterUrl = header.poster
+                    )
+                }
                 _downloads.value = downloadedItems
             } catch (e: Exception) {
                 e.printStackTrace()
