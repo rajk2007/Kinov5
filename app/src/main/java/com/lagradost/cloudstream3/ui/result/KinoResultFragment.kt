@@ -1,12 +1,10 @@
 package com.lagradost.cloudstream3.ui.result
 
-import android.app.Dialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
-import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.lagradost.cloudstream3.APIHolder
@@ -32,8 +30,9 @@ class KinoResultFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         view.findViewById<View>(R.id.download_button)?.setOnClickListener {
+            Toast.makeText(requireContext(), "Download tapped", Toast.LENGTH_SHORT).show()
             loadLinksAndShowSelector()
-        }
+        } ?: Toast.makeText(requireContext(), "download_button missing", Toast.LENGTH_LONG).show()
     }
 
     private fun loadLinksAndShowSelector() {
@@ -86,40 +85,33 @@ class KinoResultFragment : Fragment() {
                 val type = loadResponse.type
 
                 withContext(Dispatchers.Main) {
+                    if (!isAdded) return@withContext
                     if (links.isEmpty()) {
                         Toast.makeText(requireContext(), "No links found", Toast.LENGTH_SHORT).show()
                         return@withContext
                     }
 
-                    val dialog = Dialog(requireContext())
-                    dialog.setContentView(ComposeView(requireContext()).apply {
-                        setContent {
-                            DownloadQualitySheet(
-                                links = links.distinctBy { it.url },
-                                onLinkSelected = { link ->
-                                    startDownload(
-                                        link = link,
-                                        name = name,
-                                        apiName = apiName,
-                                        pageUrl = pageUrl,
-                                        dataString = dataString,
-                                        resultId = resultId,
-                                        type = type,
-                                        posterUrl = poster,
-                                    )
-                                    dialog.dismiss()
-                                },
-                                onDismiss = { dialog.dismiss() },
+                    val sorted = links.distinctBy { it.url }
+                    val labels = sorted.map { "${it.name} • ${it.source} • q=${it.quality}" }.toTypedArray()
+
+                    android.app.AlertDialog.Builder(requireContext())
+                        .setTitle("Choose download quality")
+                        .setItems(labels) { _, which ->
+                            val selectedLink = sorted[which]
+                            startDownload(
+                                link = selectedLink,
+                                name = name,
+                                apiName = apiName,
+                                pageUrl = pageUrl,
+                                dataString = dataString,
+                                resultId = resultId,
+                                type = type,
+                                posterUrl = poster
                             )
+                            Toast.makeText(requireContext(), "Queued: ${selectedLink.name}", Toast.LENGTH_SHORT).show()
                         }
-                    })
-                    dialog.setOnShowListener {
-                        dialog.window?.setLayout(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT,
-                        )
-                    }
-                    dialog.show()
+                        .setNegativeButton("Cancel", null)
+                        .show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

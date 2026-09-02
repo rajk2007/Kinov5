@@ -92,4 +92,9 @@ fun startDownload(
             links = listOf(link),
         ).toWrapper()
     )
+    android.util.Log.d(
+        "KinoDL",
+        "queued id=$resultId ctx=${com.lagradost.cloudstream3.CloudStreamApp.context != null} " +
+            "queue=${DownloadQueueManager.queue.value.size}"
+    )
 }
