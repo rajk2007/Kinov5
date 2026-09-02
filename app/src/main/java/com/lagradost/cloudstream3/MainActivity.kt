@@ -1288,6 +1288,15 @@ private fun autoInstallRepositories() {
             }
         }
 
+        try {
+            val lastErrorFile = java.io.File(filesDir, "last_error")
+            if (lastErrorFile.exists()) {
+                lastErrorFile.delete()
+            }
+            lastError = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         setLastError(this)
 
         val settingsForProvider = SettingsJson()

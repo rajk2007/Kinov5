@@ -24,6 +24,7 @@ import androidx.core.view.isVisible
 import androidx.core.widget.NestedScrollView
 import androidx.core.widget.doOnTextChanged
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import com.discord.panels.OverlappingPanelsLayout
 import com.discord.panels.PanelState
@@ -35,11 +36,14 @@ import com.google.android.material.button.MaterialButton
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.CommonActivity.showToast
 import com.lagradost.cloudstream3.DubStatus
+import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainActivity.Companion.afterPluginsLoadedEvent
+import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.base64Encode
 import com.lagradost.cloudstream3.databinding.FragmentResultBinding
 import com.lagradost.cloudstream3.databinding.FragmentResultSwipeBinding
@@ -56,6 +60,7 @@ import com.lagradost.cloudstream3.services.SubscriptionWorkManager
 import com.lagradost.cloudstream3.syncproviders.AccountManager.Companion.APP_STRING_SHARE
 import com.lagradost.cloudstream3.ui.BaseFragment
 import com.lagradost.cloudstream3.ui.WatchType
+import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.ui.download.DOWNLOAD_ACTION_DOWNLOAD
 import com.lagradost.cloudstream3.ui.download.DOWNLOAD_ACTION_LONG_CLICK
 import com.lagradost.cloudstream3.ui.download.DownloadButtonSetup
@@ -82,6 +87,7 @@ import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.attachBackPres
 import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.detachBackPressedCallback
 import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialogInstant
@@ -98,11 +104,15 @@ import com.lagradost.cloudstream3.utils.UIHelper.setListViewHeightBasedOnItems
 import com.lagradost.cloudstream3.utils.UIHelper.setNavigationBarColorCompat
 import com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement.getBasePath
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
+import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager
 import com.lagradost.cloudstream3.utils.getImageFromDrawable
 import com.lagradost.cloudstream3.utils.setText
 import com.lagradost.cloudstream3.utils.setTextHtml
 import com.lagradost.cloudstream3.utils.txt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentLinkedDeque
 import kotlin.math.roundToInt
@@ -164,6 +174,88 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 )
             } catch (_: NoSuchElementException) {
                 /** In case of a race */
+            }
+        }
+    }
+
+    private fun showSeparatedDownloadDialog(ep: ResultEpisode) {
+        val pageUrl = arguments?.getString("url") ?: return
+        val apiName = arguments?.getString("apiName") ?: return
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                val response = APIRepository(api).load(pageUrl)
+                if (response !is Resource.Success) return@launch
+                val loadResponse = response.value
+
+                val dataString = when (loadResponse) {
+                    is MovieLoadResponse -> loadResponse.dataUrl
+                    is TvSeriesLoadResponse -> loadResponse.episodes.firstOrNull()?.data
+                    is AnimeLoadResponse -> loadResponse.episodes.values.flatten().firstOrNull()?.data
+                    else -> null
+                } ?: return@launch
+
+                val links = mutableListOf<ExtractorLink>()
+                APIRepository(api).loadLinks(
+                    data = dataString,
+                    isCasting = false,
+                    subtitleCallback = { },
+                    callback = { links.add(it) }
+                )
+
+                if (links.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        if (isAdded) {
+                            Toast.makeText(requireContext(), "No links found", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    return@launch
+                }
+
+                val groupedLinks = links.groupBy { it.name }
+                withContext(Dispatchers.Main) {
+                    if (!isAdded) return@withContext
+                    val languages = groupedLinks.keys.toTypedArray()
+                    AlertDialog.Builder(requireContext())
+                        .setTitle("Select Language")
+                        .setItems(languages) { _, languageIndex ->
+                            val selectedLanguage = languages[languageIndex]
+                            val qualitiesForLanguage = groupedLinks[selectedLanguage].orEmpty()
+                            val qualityLabels = qualitiesForLanguage.map {
+                                "${it.source} • ${Qualities.getStringByInt(it.quality)}"
+                            }.toTypedArray()
+
+                            AlertDialog.Builder(requireContext())
+                                .setTitle("Select Quality ($selectedLanguage)")
+                                .setItems(qualityLabels) { _, qualityIndex ->
+                                    val selectedLink = qualitiesForLanguage[qualityIndex]
+                                    val downloadItem = DownloadObjects.DownloadQueueItem(
+                                        episode = ep,
+                                        isMovie = loadResponse is MovieLoadResponse,
+                                        resultName = loadResponse.name,
+                                        resultType = loadResponse.type,
+                                        resultPoster = loadResponse.posterUrl,
+                                        apiName = apiName,
+                                        resultId = loadResponse.getId(),
+                                        resultUrl = pageUrl,
+                                        links = listOf(selectedLink)
+                                    ).toWrapper()
+                                    DownloadQueueManager.addToQueue(downloadItem)
+                                    Toast.makeText(
+                                        requireContext(),
+                                        "Queued: $selectedLanguage ${qualityLabels[qualityIndex]}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                logError(e)
             }
         }
     }
@@ -909,7 +1001,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     ) { click ->
                         when (click.action) {
                             DOWNLOAD_ACTION_DOWNLOAD -> {
-                                requirePathForActions(listOf(ACTION_DOWNLOAD_MIRROR to ep))
+                                showSeparatedDownloadDialog(ep)
                             }
 
                             DOWNLOAD_ACTION_LONG_CLICK -> {

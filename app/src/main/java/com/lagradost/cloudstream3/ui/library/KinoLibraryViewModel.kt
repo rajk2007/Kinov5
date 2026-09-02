@@ -11,7 +11,6 @@ import com.lagradost.cloudstream3.utils.DataStore.getKey
 import com.lagradost.cloudstream3.utils.DataStore.getKeys
 import com.lagradost.cloudstream3.utils.DataStoreHelper
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
-import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.getDownloadFileInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,36 +48,39 @@ class KinoLibraryViewModel : ViewModel() {
                 }
                 _continueWatching.value = resumeList
 
-                // Downloads — Filter by actual downloaded files
+                // Downloads — filter by actual downloaded files and fetch progress.
                 val episodeKeys = context.getKeys(DOWNLOAD_EPISODE_CACHE)
-                val parentsWithFiles = mutableSetOf<Int>()
-                for (key in episodeKeys) {
+                val downloadedItems = episodeKeys.mapNotNull { key ->
                     val episode = context.getKey<DownloadObjects.DownloadEpisodeCached>(key)
-                    if (episode != null) {
-                        val info = getDownloadFileInfo(context, episode.id)
-                        if (info != null && info.fileLength > 1L) {
-                            parentsWithFiles.add(episode.parentId)
-                        }
+                        ?: return@mapNotNull null
+                    val header = context.getKey<DownloadObjects.DownloadHeaderCached>(
+                        DOWNLOAD_HEADER_CACHE,
+                        episode.parentId.toString()
+                    ) ?: return@mapNotNull null
+                    val info = getDownloadFileInfo(context, episode.id)
+                    val downloaded = info?.fileLength ?: 0L
+                    val total = info?.totalBytes ?: 0L
+                    val status = com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager
+                        .downloadStatus[episode.id]
+                    if (downloaded <= 1L && total <= 0L && status == null) return@mapNotNull null
+
+                    val progress = if (total > 0L) {
+                        (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                    } else {
+                        0f
                     }
-                }
 
-                val activeQueueIds = try {
-                    DownloadQueueManager.queue.value.map { it.parentId }
-                } catch (e: Exception) {
-                    emptyList()
-                }
-
-                val headerKeys = context.getKeys(DOWNLOAD_HEADER_CACHE)
-                val downloadedItems = headerKeys.mapNotNull { key ->
-                    context.getKey<DownloadObjects.DownloadHeaderCached>(key)
-                }.filter { header ->
-                    header.id in parentsWithFiles || header.id in activeQueueIds
-                }.map { header ->
                     KinoLibraryItem(
                         name = header.name,
                         url = header.url,
                         apiName = header.apiName,
-                        posterUrl = header.poster
+                        type = header.type,
+                        posterUrl = header.poster,
+                        episodeId = episode.id,
+                        downloadedBytes = downloaded,
+                        totalBytes = total,
+                        progress = progress,
+                        id = header.id
                     )
                 }
                 _downloads.value = downloadedItems
@@ -96,6 +98,9 @@ data class KinoLibraryItem(
     override var type: TvType? = null,
     override var posterUrl: String? = null,
     val episodeId: Int? = null,
+    val downloadedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val progress: Float = 0f,
     val position: Long = 0L,
     val duration: Long = 0L,
     override var posterHeaders: Map<String, String>? = null,

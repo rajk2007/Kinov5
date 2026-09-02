@@ -127,6 +127,36 @@ private fun LibraryDownloadRow(media: KinoLibraryItem, onMediaClick: (KinoLibrar
             modifier = Modifier.size(width = 72.dp, height = 104.dp)
                 .clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A))
         )
-        Text(media.name, color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+        Column(modifier = Modifier.weight(1f).padding(top = 8.dp)) {
+            Text(media.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Spacer(modifier = Modifier.height(4.dp))
+            val progressText = if (media.totalBytes > 0L) {
+                "${formatBytes(media.downloadedBytes)} / ${formatBytes(media.totalBytes)}"
+            } else {
+                "Queued..."
+            }
+            Text(progressText, color = Color.Gray, fontSize = 12.sp)
+            if (media.progress > 0f) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { media.progress },
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color = Color(0xFFE50914),
+                    trackColor = Color(0xFF333333)
+                )
+            }
+        }
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var size = bytes.toDouble()
+    var unitIndex = 0
+    while (size >= 1024.0 && unitIndex < units.lastIndex) {
+        size /= 1024.0
+        unitIndex++
+    }
+    return String.format("%.1f %s", size, units[unitIndex])
 }
