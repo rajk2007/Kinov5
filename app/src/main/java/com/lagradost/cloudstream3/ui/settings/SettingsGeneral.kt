@@ -35,8 +35,6 @@ import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.setPadd
 import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.setToolBarScrollFlags
 import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.setUpToolbar
 import com.lagradost.cloudstream3.ui.settings.utils.getChooseFolderLauncher
-import com.lagradost.cloudstream3.utils.BatteryOptimizationChecker.isAppRestricted
-import com.lagradost.cloudstream3.utils.BatteryOptimizationChecker.showBatteryOptimizationDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showMultiDialog
@@ -207,14 +205,6 @@ class SettingsGeneral : BasePreferenceFragmentCompat() {
         }
 
         getPref(R.string.battery_optimisation_key)?.hideOn(TV or EMULATOR)?.setOnPreferenceClickListener {
-            val ctx = context ?: return@setOnPreferenceClickListener false
-
-            if (isAppRestricted(ctx)) {
-                ctx.showBatteryOptimizationDialog()
-            } else {
-                showToast(R.string.app_unrestricted_toast)
-            }
-
             true
         }
 

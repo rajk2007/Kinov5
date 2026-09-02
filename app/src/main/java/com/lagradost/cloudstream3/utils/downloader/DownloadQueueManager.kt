@@ -223,19 +223,27 @@ object DownloadQueueManager {
 
     /** Add a new object to the queue. Will not queue completed downloads or current downloads. */
     fun addToQueue(downloadQueueWrapper: DownloadQueueWrapper) = safe {
-        val context = CloudStreamApp.context ?: return@safe
+        val context = CloudStreamApp.context
+        if (context == null) {
+            Log.e(TAG, "addToQueue aborted: CloudStreamApp.context is null")
+            return@safe
+        }
+
         val fileInfo = getDownloadFileInfo(context, downloadQueueWrapper.id)
         val isComplete = fileInfo != null &&
-                // Assure no division by 0
                 fileInfo.totalBytes > 0 &&
-                // If more than 98% downloaded then do not add to queue
                 (fileInfo.fileLength.toFloat() / fileInfo.totalBytes.toFloat()) > 0.98f
-        // Do not queue completed files!
-        if (isComplete) return@safe
+        if (isComplete) {
+            Log.i(TAG, "addToQueue skipped: ${downloadQueueWrapper.id} is already complete")
+            return@safe
+        }
 
         if (add(downloadQueueWrapper)) {
             setQueueStatus(downloadQueueWrapper.id, VideoDownloadManager.DownloadType.IsPending)
             startQueueService(context)
+            Log.d(TAG, "queued id=${downloadQueueWrapper.id}")
+        } else {
+            Log.w(TAG, "addToQueue failed: ${downloadQueueWrapper.id} already in queue or downloading")
         }
     }
 

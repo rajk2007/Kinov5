@@ -109,12 +109,12 @@ class CloudStreamApp : Application(), SingletonImageLoader.Factory {
             }
         }
 
-        private var _context: WeakReference<Context>? = null
+        private var _context: Context? = null
         var context
-            get() = _context?.get()
+            get() = _context
             private set(value) {
-                _context = WeakReference(value)
-                setContext(WeakReference(value))
+                _context = value
+                value?.let { setContext(WeakReference(it)) }
             }
 
         fun <T : Any> getKeyClass(path: String, valueType: Class<T>): T? {

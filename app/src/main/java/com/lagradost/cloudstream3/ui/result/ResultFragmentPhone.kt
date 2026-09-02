@@ -909,7 +909,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     ) { click ->
                         when (click.action) {
                             DOWNLOAD_ACTION_DOWNLOAD -> {
-                                requirePathForActions(listOf(ACTION_DOWNLOAD_EPISODE to ep))
+                                requirePathForActions(listOf(ACTION_DOWNLOAD_MIRROR to ep))
                             }
 
                             DOWNLOAD_ACTION_LONG_CLICK -> {
