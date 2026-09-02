@@ -2201,7 +2201,7 @@ private fun autoInstallRepositories() {
         }
 
         // Start the download queue
-        DownloadQueueManager.init(this)
+        DownloadQueueManager.init(applicationContext)
     }
 
     /** Biometric stuff **/
