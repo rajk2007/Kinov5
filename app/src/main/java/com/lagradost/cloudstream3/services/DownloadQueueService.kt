@@ -31,6 +31,7 @@ import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.KEY_RESU
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.KEY_RESUME_PACKAGES
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.downloadEvent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,6 +81,8 @@ class DownloadQueueService : Service() {
                 }
     }
 
+
+    private var queueJob: Job? = null
 
     private val baseNotification by lazy {
         val intent = Intent(this, MainActivity::class.java)
@@ -164,7 +167,7 @@ class DownloadQueueService : Service() {
 
         downloadEvent += downloadEventListener
 
-        val queueJob = ioSafe {
+        queueJob = ioSafe {
             // Ensure this is up to date to prevent race conditions with MainActivity launches
             setLastError(context)
             // Early return, to prevent waiting for plugins in safe mode
@@ -248,7 +251,7 @@ class DownloadQueueService : Service() {
         }
 
         // Stop self regardless of job outcome
-        queueJob.invokeOnCompletion { throwable ->
+        queueJob?.invokeOnCompletion { throwable ->
             if (throwable != null) {
                 logError(throwable)
             }
@@ -266,7 +269,49 @@ class DownloadQueueService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY // We want the service restarted if its killed
+        if (queueJob?.isActive != true) {
+            startQueueJob()
+        }
+        return START_STICKY
+    }
+
+    private fun startQueueJob() {
+        // The queue job is created from onCreate; onStartCommand can restart it
+        // after a failure or an unexpected completion while the service remains alive.
+        if (queueJob?.isActive == true) return
+        queueJob = ioSafe {
+            val context: Context = this@DownloadQueueService
+            setLastError(context)
+            if (lastError != null) return@ioSafe
+            totalDownloadFlow
+                .takeWhile { (instances, queue) ->
+                    isRunning && (instances.isNotEmpty() || queue.isNotEmpty()) && lastError == null
+                }
+                .collect { (_, queue, currentDownloads) ->
+                    val newInstances = _downloadInstances.updateAndGet { currentInstances ->
+                        currentInstances.filterNot { it.isCompleted || it.isFailed || it.isCancelled }
+                    }
+                    val maxDownloads = VideoDownloadManager.maxConcurrentDownloads(context)
+                    val currentInstanceCount = newInstances.size
+                    val newDownloads = minOf(maxOf(0, maxDownloads - currentInstanceCount), queue.size)
+                    if (newDownloads > 0) {
+                        _downloadInstances.update { instances ->
+                            val downloadInstance = DownloadQueueManager.popQueue(context)
+                            if (downloadInstance != null) {
+                                downloadInstance.startDownload()
+                                instances + downloadInstance
+                            } else instances
+                        }
+                    }
+                    updateNotification(context, currentDownloads.size + newInstances.count {
+                        currentDownloads.contains(it.downloadQueueWrapper.id).not()
+                    }, queue.size)
+                }
+        }
+        queueJob?.invokeOnCompletion { throwable ->
+            if (throwable != null) logError(throwable)
+            safe { stopSelf() }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

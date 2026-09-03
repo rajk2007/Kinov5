@@ -175,10 +175,6 @@ object DownloadQueueManager {
             Log.d(TAG, "Cannot start download queue service, null context.")
             return
         }
-        // Do not restart the download queue service
-        if (DownloadQueueService.isRunning) {
-            return
-        }
         ioSafe {
             val intent = DownloadQueueService.getIntent(context)
             ContextCompat.startForegroundService(context, intent)

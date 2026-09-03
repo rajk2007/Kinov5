@@ -69,6 +69,7 @@ import com.lagradost.cloudstream3.ui.player.CS3IPlayer
 import com.lagradost.cloudstream3.ui.player.CSPlayerEvent
 import com.lagradost.cloudstream3.ui.player.IPlayer
 import com.lagradost.cloudstream3.ui.player.PlayerView
+import com.lagradost.cloudstream3.ui.player.LOADTYPE_INAPP_DOWNLOAD
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityProfileDialog
 import com.lagradost.cloudstream3.ui.quicksearch.QuickSearchFragment
 import com.lagradost.cloudstream3.ui.result.ResultFragment.bindLogo
@@ -180,6 +181,13 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     }
 
     private fun showDownloadBottomSheet(ep: ResultEpisode) {
+        val (_, path) = context?.getBasePath() ?: return
+        if (path == null) {
+            Toast.makeText(requireContext(), "Please set a download folder first", Toast.LENGTH_LONG).show()
+            requirePathForActions(listOf(ACTION_DOWNLOAD_MIRROR to ep))
+            return
+        }
+
         val pageUrl = arguments?.getString("url") ?: run {
             Toast.makeText(requireContext(), "Missing url", Toast.LENGTH_SHORT).show()
             return
@@ -218,7 +226,12 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     data = dataString,
                     isCasting = false,
                     subtitleCallback = { },
-                    callback = { links.add(it) }
+                    callback = { link ->
+                        // Only accept video formats supported by the CloudStream Downloader.
+                        if (link.type in LOADTYPE_INAPP_DOWNLOAD) {
+                            links.add(link)
+                        }
+                    }
                 )
 
                 if (links.isEmpty()) {
