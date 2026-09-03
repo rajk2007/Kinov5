@@ -204,6 +204,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Provider not found", Toast.LENGTH_SHORT).show() }
                     return@launch
                 }
+
                 val response = APIRepository(api).load(pageUrl)
                 if (response !is Resource.Success || response.value == null) {
                     withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Failed to load page", Toast.LENGTH_SHORT).show() }
@@ -211,37 +212,45 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 }
                 val loadResponse = response.value!!
 
-                val dataString = when (loadResponse) {
-                    is MovieLoadResponse -> loadResponse.dataUrl
-                    is TvSeriesLoadResponse -> loadResponse.episodes.firstOrNull()?.data
-                    is AnimeLoadResponse -> loadResponse.episodes.values.flatten().firstOrNull()?.data
-                    else -> null
-                } ?: run {
-                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "No stream data", Toast.LENGTH_SHORT).show() }
+                // FIX: use the clicked episode/movie payload
+                val dataString = ep.data
+                if (APIRepository.isInvalidData(dataString)) {
+                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "No stream data (blank/invalid)", Toast.LENGTH_SHORT).show() }
                     return@launch
                 }
 
                 val links = mutableListOf<ExtractorLink>()
-                APIRepository(api).loadLinks(
+                val ok = APIRepository(api).loadLinks(
                     data = dataString,
                     isCasting = false,
                     subtitleCallback = { },
                     callback = { link ->
-                        // Only accept video formats supported by the CloudStream Downloader.
+                        // Crucial: Only accept video formats supported by CloudStream Downloader (VIDEO & M3U8)
                         if (link.type in LOADTYPE_INAPP_DOWNLOAD) {
                             links.add(link)
                         }
                     }
                 )
 
+                if (!ok) {
+                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "loadLinks failed (see logcat)", Toast.LENGTH_SHORT).show() }
+                    return@launch
+                }
+
                 if (links.isEmpty()) {
-                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "No links found", Toast.LENGTH_SHORT).show() }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            requireContext(),
+                            "No downloadable links (VIDEO/M3U8). Provider may only return DASH/Torrent.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                     return@launch
                 }
 
                 withContext(Dispatchers.Main) {
                     if (!isAdded) return@withContext
-                    val dialog = BottomSheetDialog(requireContext())
+                    val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(requireContext())
                     val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
                         setViewCompositionStrategy(
                             androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
@@ -252,29 +261,21 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                     links = links,
                                     onDownload = { link ->
                                         dialog.dismiss()
-                                        val wrapper = DownloadObjects.DownloadQueueItem(
+                                        val wrapper = com.lagradost.cloudstream3.utils.DownloadObjects.DownloadQueueItem(
                                             episode = ep,
                                             isMovie = loadResponse is MovieLoadResponse,
                                             resultName = loadResponse.name,
-                                            resultType = loadResponse.type ?: TvType.Movie,
+                                            resultType = loadResponse.type ?: com.lagradost.cloudstream3.TvType.Movie,
                                             resultPoster = loadResponse.posterUrl,
                                             apiName = apiName,
                                             resultId = loadResponse.getId(),
                                             resultUrl = pageUrl,
-                                            links = listOf(link),
+                                            links = listOf(link)
                                         ).toWrapper()
-
-                                        val before = DownloadQueueManager.queue.value.map { it.id }
                                         DownloadQueueManager.addToQueue(wrapper)
-                                        val after = DownloadQueueManager.queue.value.map { it.id }
-
-                                        if (ep.id !in after && ep.id !in before) {
-                                            Toast.makeText(requireContext(), "Queue rejected (duplicate/complete). See logcat.", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            Toast.makeText(requireContext(), "Queued", Toast.LENGTH_SHORT).show()
-                                        }
+                                        Toast.makeText(requireContext(), "Queued", Toast.LENGTH_SHORT).show()
                                     },
-                                    onDismiss = { dialog.dismiss() },
+                                    onDismiss = { dialog.dismiss() }
                                 )
                             }
                         }
