@@ -50,21 +50,21 @@ class KinoLibraryViewModel : ViewModel() {
                 _continueWatching.value = resumeList
 
                 // Downloads — show all items that are queued, active, or completed.
-                val episodeKeys = context.getKeys(DOWNLOAD_EPISODE_CACHE)
-                val queuedIds = try {
-                    com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.queue.value
-                        .map { it.id }
+                val queuedWrappers = try {
+                    com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.queue.value.toList()
                 } catch (e: Exception) {
                     emptyList()
                 }
-                val activeIds = try {
-                    DownloadQueueService.downloadInstances.value
-                        .map { it.downloadQueueWrapper.id }
+                val activeWrappers = try {
+                    DownloadQueueService.downloadInstances.value.map { it.downloadQueueWrapper }
                 } catch (e: Exception) {
                     emptyList()
                 }
+                val allQueueWrappers = (queuedWrappers + activeWrappers).distinctBy { it.id }
+                val queueAndActiveIds = allQueueWrappers.map { it.id }.toSet()
 
-                val downloadedItems = episodeKeys.mapNotNull { key ->
+                val episodeKeys = context.getKeys(DOWNLOAD_EPISODE_CACHE)
+                val cachedItems = episodeKeys.mapNotNull { key ->
                     val episode = context.getKey<DownloadObjects.DownloadEpisodeCached>(key)
                         ?: return@mapNotNull null
                     val header = context.getKey<DownloadObjects.DownloadHeaderCached>(
@@ -76,7 +76,7 @@ class KinoLibraryViewModel : ViewModel() {
                     val total = info?.totalBytes ?: 0L
                     // The episode cache is created before download metadata is written, so
                     // queued or active downloads may legitimately have no bytes yet.
-                    if (downloaded <= 1L && episode.id !in queuedIds && episode.id !in activeIds) {
+                    if (downloaded <= 1L && episode.id !in queueAndActiveIds) {
                         return@mapNotNull null
                     }
 
@@ -99,7 +99,29 @@ class KinoLibraryViewModel : ViewModel() {
                         id = header.id
                     )
                 }
-                _downloads.value = downloadedItems
+
+                val cachedIds = episodeKeys.mapNotNull {
+                    context.getKey<DownloadObjects.DownloadEpisodeCached>(it)?.id
+                }.toSet()
+                val queueItems = allQueueWrappers
+                    .filter { it.id !in cachedIds }
+                    .mapNotNull { wrapper ->
+                        val downloadItem = wrapper.downloadItem ?: return@mapNotNull null
+                        KinoLibraryItem(
+                            name = downloadItem.resultName,
+                            url = downloadItem.resultUrl,
+                            apiName = downloadItem.apiName,
+                            type = downloadItem.resultType,
+                            posterUrl = downloadItem.resultPoster,
+                            episodeId = downloadItem.episode.id,
+                            downloadedBytes = 0L,
+                            totalBytes = 0L,
+                            progress = 0f,
+                            id = downloadItem.resultId
+                        )
+                    }
+
+                _downloads.value = cachedItems + queueItems
             } catch (e: Exception) {
                 e.printStackTrace()
             }

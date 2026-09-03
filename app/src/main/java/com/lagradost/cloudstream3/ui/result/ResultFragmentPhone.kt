@@ -213,17 +213,28 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     return@launch
                 }
 
-                // Extract a base language name so qualities such as "Hindi 1080p" and
-                // "Hindi 720p" are presented together.
+                // Extract a base language name so qualities and extractor sources are
+                // presented together.
                 fun getLanguageName(link: ExtractorLink): String {
                     val qualityStr = Qualities.getStringByInt(link.quality)
-                    var lang = link.name.replace(qualityStr, "", ignoreCase = true)
-                    lang = lang.replace(Regex("""\b\d{3,4}\s*p\b""", RegexOption.IGNORE_CASE), "")
-                    lang = lang.replace(Regex("""\b\d{3,4}\b""", RegexOption.IGNORE_CASE), "")
-                    return lang.trim().ifBlank { link.source.ifBlank { "Unknown" } }
+                    // Remove the extractor/source name first (for example, StreamSB).
+                    var lang = link.name.replace(link.source, "", ignoreCase = true)
+                    // Remove the named quality and any remaining resolution/number.
+                    lang = lang.replace(qualityStr, "", ignoreCase = true)
+                    lang = lang.replace(Regex("""\b\d{3,4}\s*[pP]\b"""), "")
+                    lang = lang.replace(Regex("""\b\d{3,4}\b"""), "")
+                    // Normalize common separators and whitespace.
+                    lang = lang.replace(Regex("""[-–—_|\\[\\](){}:]"""), " ")
+                    lang = lang.replace(Regex("""\s+"""), " ")
+                    return lang.trim().ifBlank { "Unknown" }
                 }
 
-                val groupedLinks = links.groupBy { getLanguageName(it) }
+                val groupedLinks = links
+                    .groupBy { getLanguageName(it) }
+                    .mapValues { (_, linkList) ->
+                        linkList.distinctBy { it.quality }.sortedByDescending { it.quality }
+                    }
+                    .toSortedMap(String.CASE_INSENSITIVE_ORDER)
                 withContext(Dispatchers.Main) {
                     if (!isAdded) return@withContext
                     val languages = groupedLinks.keys.toTypedArray()
@@ -231,17 +242,15 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         .setTitle("Select Language")
                         .setItems(languages) { _, languageIndex ->
                             val selectedLanguage = languages[languageIndex]
-                            val qualitiesForLanguage = groupedLinks[selectedLanguage]
-                                .orEmpty()
-                                .sortedByDescending { it.quality }
-                            val qualityLabels = qualitiesForLanguage.map { link ->
+                            val qualitiesForLang = groupedLinks[selectedLanguage].orEmpty()
+                            val qualityLabels = qualitiesForLang.map { link ->
                                 "${Qualities.getStringByInt(link.quality)} • ${link.source}"
                             }.toTypedArray()
 
                             AlertDialog.Builder(requireContext())
                                 .setTitle("Select Quality ($selectedLanguage)")
                                 .setItems(qualityLabels) { _, qualityIndex ->
-                                    val selectedLink = qualitiesForLanguage[qualityIndex]
+                                    val selectedLink = qualitiesForLang[qualityIndex]
                                     val downloadItem = DownloadObjects.DownloadQueueItem(
                                         episode = ep,
                                         isMovie = loadResponse is MovieLoadResponse,
