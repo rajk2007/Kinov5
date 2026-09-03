@@ -8,6 +8,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,10 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 
-// Helper to group links by language without splitting by quality
 fun ExtractorLink.languageKey(): String {
     val q = Qualities.getStringByInt(quality)
     return name
@@ -41,13 +42,11 @@ fun DownloadOptionsSheet(
     onDownload: (ExtractorLink) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Group by language, then deduplicate by quality within that language
     val groupedLinks = remember(links) {
         links.groupBy { it.languageKey() }
             .mapValues { (_, g) -> g.distinctBy { it.quality }.sortedByDescending { it.quality } }
             .toSortedMap(String.CASE_INSENSITIVE_ORDER)
     }
-
     val languages = groupedLinks.keys.toList()
     var selectedLanguage by remember { mutableStateOf(languages.firstOrNull() ?: "") }
     val qualities = groupedLinks[selectedLanguage] ?: emptyList()
@@ -56,10 +55,9 @@ fun DownloadOptionsSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF121212)) // Near black background
+            .background(Color(0xFF121212))
             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
     ) {
-        // Drag Handle
         Box(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
@@ -69,27 +67,23 @@ fun DownloadOptionsSheet(
                 .clip(RoundedCornerShape(2.dp))
                 .background(Color.Gray)
         )
-
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Download Options", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            TextButton(onClick = onDismiss) {
-                Text("Close", color = Color.White)
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
         }
-
-        // Language Section
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Text("Language", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-        }
-
+        Text(
+            "Language",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+        )
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -100,7 +94,6 @@ fun DownloadOptionsSheet(
                 val bgColor = if (isSelected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)
                 val borderColor = if (isSelected) Color(0xFFE50914) else Color(0xFF333333)
                 val textColor = if (isSelected) Color.White else Color.LightGray
-
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -111,26 +104,21 @@ fun DownloadOptionsSheet(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     if (isSelected) {
-                        Box(
-                            modifier = Modifier.size(16.dp).clip(CircleShape).background(Color(0xFFE50914))
-                        )
+                        Box(Modifier.size(16.dp).clip(CircleShape).background(Color(0xFFE50914)))
                         Spacer(Modifier.width(6.dp))
                     }
                     Text(lang, color = textColor, fontSize = 14.sp)
                 }
             }
         }
-
         Spacer(Modifier.height(16.dp))
-
-        // Quality Section
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Text("Quality", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-        }
-
+        Text(
+            "Quality",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+        )
         Column(
             modifier = Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -140,7 +128,14 @@ fun DownloadOptionsSheet(
                 val bgColor = if (isSelected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)
                 val borderColor = if (isSelected) Color(0xFFE50914) else Color(0xFF333333)
                 val qualityStr = Qualities.getStringByInt(link.quality)
-
+                val badgeText = when (link.quality) {
+                    Qualities.P2160.value -> "4K"
+                    Qualities.P1440.value -> "QHD"
+                    Qualities.P1080.value -> "FHD"
+                    Qualities.P720.value -> "HD"
+                    Qualities.P480.value -> "SD"
+                    else -> ""
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -153,9 +148,19 @@ fun DownloadOptionsSheet(
                 ) {
                     Text(qualityStr, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
                     Spacer(Modifier.width(8.dp))
+                    if (badgeText.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFFE50914))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(badgeText, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
                     Text(link.source, color = Color.Gray, fontSize = 14.sp)
                     Spacer(Modifier.weight(1f))
-                    // Radio Indicator
                     Box(
                         modifier = Modifier
                             .size(20.dp)
@@ -170,10 +175,7 @@ fun DownloadOptionsSheet(
                 }
             }
         }
-
         Spacer(Modifier.height(16.dp))
-
-        // Download Button
         Button(
             onClick = {
                 qualities.find { it.quality == selectedQuality }?.let { onDownload(it) }
@@ -185,6 +187,8 @@ fun DownloadOptionsSheet(
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))
         ) {
+            Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+            Spacer(Modifier.width(8.dp))
             Text("Download", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
     }
