@@ -44,6 +44,7 @@ import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvSeriesLoadResponse
+import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.base64Encode
 import com.lagradost.cloudstream3.databinding.FragmentResultBinding
 import com.lagradost.cloudstream3.databinding.FragmentResultSwipeBinding
@@ -178,23 +179,39 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
     }
 
-    private fun showSeparatedDownloadDialog(ep: ResultEpisode) {
-        val pageUrl = arguments?.getString("url") ?: return
-        val apiName = arguments?.getString("apiName") ?: return
+    private fun showDownloadBottomSheet(ep: ResultEpisode) {
+        val pageUrl = arguments?.getString("url") ?: run {
+            Toast.makeText(requireContext(), "Missing url", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val apiName = arguments?.getString("apiName") ?: run {
+            Toast.makeText(requireContext(), "Missing apiName", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                val api = APIHolder.getApiFromNameNull(apiName)
+                if (api == null) {
+                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Provider not found", Toast.LENGTH_SHORT).show() }
+                    return@launch
+                }
                 val response = APIRepository(api).load(pageUrl)
-                if (response !is Resource.Success) return@launch
-                val loadResponse = response.value
+                if (response !is Resource.Success || response.value == null) {
+                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Failed to load page", Toast.LENGTH_SHORT).show() }
+                    return@launch
+                }
+                val loadResponse = response.value!!
 
                 val dataString = when (loadResponse) {
                     is MovieLoadResponse -> loadResponse.dataUrl
                     is TvSeriesLoadResponse -> loadResponse.episodes.firstOrNull()?.data
                     is AnimeLoadResponse -> loadResponse.episodes.values.flatten().firstOrNull()?.data
                     else -> null
-                } ?: return@launch
+                } ?: run {
+                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "No stream data", Toast.LENGTH_SHORT).show() }
+                    return@launch
+                }
 
                 val links = mutableListOf<ExtractorLink>()
                 APIRepository(api).loadLinks(
@@ -205,78 +222,56 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 )
 
                 if (links.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        if (isAdded) {
-                            Toast.makeText(requireContext(), "No links found", Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "No links found", Toast.LENGTH_SHORT).show() }
                     return@launch
                 }
 
-                // Extract a base language name so qualities and extractor sources are
-                // presented together.
-                fun getLanguageName(link: ExtractorLink): String {
-                    val qualityStr = Qualities.getStringByInt(link.quality)
-                    // Remove the extractor/source name first (for example, StreamSB).
-                    var lang = link.name.replace(link.source, "", ignoreCase = true)
-                    // Remove the named quality and any remaining resolution/number.
-                    lang = lang.replace(qualityStr, "", ignoreCase = true)
-                    lang = lang.replace(Regex("""\b\d{3,4}\s*[pP]\b"""), "")
-                    lang = lang.replace(Regex("""\b\d{3,4}\b"""), "")
-                    // Normalize common separators and whitespace.
-                    lang = lang.replace(Regex("""[-–—_|\\[\\](){}:]"""), " ")
-                    lang = lang.replace(Regex("""\s+"""), " ")
-                    return lang.trim().ifBlank { "Unknown" }
-                }
-
-                val groupedLinks = links
-                    .groupBy { getLanguageName(it) }
-                    .mapValues { (_, linkList) ->
-                        linkList.distinctBy { it.quality }.sortedByDescending { it.quality }
-                    }
-                    .toSortedMap(String.CASE_INSENSITIVE_ORDER)
                 withContext(Dispatchers.Main) {
                     if (!isAdded) return@withContext
-                    val languages = groupedLinks.keys.toTypedArray()
-                    AlertDialog.Builder(requireContext())
-                        .setTitle("Select Language")
-                        .setItems(languages) { _, languageIndex ->
-                            val selectedLanguage = languages[languageIndex]
-                            val qualitiesForLang = groupedLinks[selectedLanguage].orEmpty()
-                            val qualityLabels = qualitiesForLang.map { link ->
-                                "${Qualities.getStringByInt(link.quality)} • ${link.source}"
-                            }.toTypedArray()
+                    val dialog = BottomSheetDialog(requireContext())
+                    val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+                        setViewCompositionStrategy(
+                            androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+                        )
+                        setContent {
+                            androidx.compose.material3.MaterialTheme {
+                                DownloadOptionsSheet(
+                                    links = links,
+                                    onDownload = { link ->
+                                        dialog.dismiss()
+                                        val wrapper = DownloadObjects.DownloadQueueItem(
+                                            episode = ep,
+                                            isMovie = loadResponse is MovieLoadResponse,
+                                            resultName = loadResponse.name,
+                                            resultType = loadResponse.type ?: TvType.Movie,
+                                            resultPoster = loadResponse.posterUrl,
+                                            apiName = apiName,
+                                            resultId = loadResponse.getId(),
+                                            resultUrl = pageUrl,
+                                            links = listOf(link),
+                                        ).toWrapper()
 
-                            AlertDialog.Builder(requireContext())
-                                .setTitle("Select Quality ($selectedLanguage)")
-                                .setItems(qualityLabels) { _, qualityIndex ->
-                                    val selectedLink = qualitiesForLang[qualityIndex]
-                                    val downloadItem = DownloadObjects.DownloadQueueItem(
-                                        episode = ep,
-                                        isMovie = loadResponse is MovieLoadResponse,
-                                        resultName = loadResponse.name,
-                                        resultType = loadResponse.type,
-                                        resultPoster = loadResponse.posterUrl,
-                                        apiName = apiName,
-                                        resultId = loadResponse.getId(),
-                                        resultUrl = pageUrl,
-                                        links = listOf(selectedLink)
-                                    ).toWrapper()
-                                    DownloadQueueManager.addToQueue(downloadItem)
-                                    Toast.makeText(
-                                        requireContext(),
-                                        "Queued: $selectedLanguage ${qualityLabels[qualityIndex]}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                .setNegativeButton("Cancel", null)
-                                .show()
+                                        val before = DownloadQueueManager.queue.value.map { it.id }
+                                        DownloadQueueManager.addToQueue(wrapper)
+                                        val after = DownloadQueueManager.queue.value.map { it.id }
+
+                                        if (ep.id !in after && ep.id !in before) {
+                                            Toast.makeText(requireContext(), "Queue rejected (duplicate/complete). See logcat.", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(requireContext(), "Queued", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onDismiss = { dialog.dismiss() },
+                                )
+                            }
                         }
-                        .setNegativeButton("Cancel", null)
-                        .show()
+                    }
+                    dialog.setContentView(composeView)
+                    dialog.show()
                 }
             } catch (e: Exception) {
                 logError(e)
+                withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show() }
             }
         }
     }
@@ -1022,7 +1017,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     ) { click ->
                         when (click.action) {
                             DOWNLOAD_ACTION_DOWNLOAD -> {
-                                showSeparatedDownloadDialog(ep)
+                                showDownloadBottomSheet(ep)
                             }
 
                             DOWNLOAD_ACTION_LONG_CLICK -> {
