@@ -261,7 +261,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                     links = links,
                                     onDownload = { link ->
                                         dialog.dismiss()
-                                        val wrapper = com.lagradost.cloudstream3.utils.DownloadObjects.DownloadQueueItem(
+                                        val wrapper = DownloadObjects.DownloadQueueItem(
                                             episode = ep,
                                             isMovie = loadResponse is MovieLoadResponse,
                                             resultName = loadResponse.name,
