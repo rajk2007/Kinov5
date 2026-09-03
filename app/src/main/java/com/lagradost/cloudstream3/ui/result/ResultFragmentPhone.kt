@@ -225,7 +225,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     isCasting = false,
                     subtitleCallback = { },
                     callback = { link ->
-                        links.add(link)
+                        // Include VIDEO, M3U8, and DASH for the selector. Exclude TORRENT/MAGNET.
+                        if (link.type != ExtractorLinkType.TORRENT && link.type != ExtractorLinkType.MAGNET) {
+                            links.add(link)
+                        }
                     }
                 )
 
@@ -257,11 +260,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 DownloadOptionsSheet(
                                     links = links,
                                     onDownload = { link ->
-                                        // Safety check: only queue formats supported by the downloader
-                                        if (link.type != ExtractorLinkType.VIDEO && link.type != ExtractorLinkType.M3U8) {
-                                            Toast.makeText(requireContext(), "This link type cannot be downloaded (Only VIDEO/M3U8 supported).", Toast.LENGTH_SHORT).show()
-                                            return@DownloadOptionsSheet
-                                        }
                                         dialog.dismiss()
                                         val wrapper = DownloadObjects.DownloadQueueItem(
                                             episode = ep,
