@@ -69,7 +69,6 @@ import com.lagradost.cloudstream3.ui.player.CS3IPlayer
 import com.lagradost.cloudstream3.ui.player.CSPlayerEvent
 import com.lagradost.cloudstream3.ui.player.IPlayer
 import com.lagradost.cloudstream3.ui.player.PlayerView
-import com.lagradost.cloudstream3.ui.player.LOADTYPE_INAPP_DOWNLOAD
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityProfileDialog
 import com.lagradost.cloudstream3.ui.quicksearch.QuickSearchFragment
 import com.lagradost.cloudstream3.ui.result.ResultFragment.bindLogo
@@ -89,6 +88,7 @@ import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.attachBackPres
 import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.detachBackPressedCallback
 import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialog
@@ -225,8 +225,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     isCasting = false,
                     subtitleCallback = { },
                     callback = { link ->
-                        // Crucial: Only accept video formats supported by CloudStream Downloader (VIDEO & M3U8)
-                        if (link.type in LOADTYPE_INAPP_DOWNLOAD) {
+                        // Allow VIDEO, M3U8, and DASH. Exclude TORRENT/MAGNET (need special handling).
+                        if (link.type != ExtractorLinkType.TORRENT && link.type != ExtractorLinkType.MAGNET) {
                             links.add(link)
                         }
                     }
@@ -241,7 +241,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             requireContext(),
-                            "No downloadable links (VIDEO/M3U8). Provider may only return DASH/Torrent.",
+                            "No downloadable links found.",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
