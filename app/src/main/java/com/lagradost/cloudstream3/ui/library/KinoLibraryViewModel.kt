@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.services.DownloadQueueService
 import com.lagradost.cloudstream3.utils.DOWNLOAD_EPISODE_CACHE
 import com.lagradost.cloudstream3.utils.DOWNLOAD_HEADER_CACHE
 import com.lagradost.cloudstream3.utils.DataStore.getKey
@@ -48,8 +49,21 @@ class KinoLibraryViewModel : ViewModel() {
                 }
                 _continueWatching.value = resumeList
 
-                // Downloads — filter by actual downloaded files and fetch progress.
+                // Downloads — show all items that are queued, active, or completed.
                 val episodeKeys = context.getKeys(DOWNLOAD_EPISODE_CACHE)
+                val queuedIds = try {
+                    com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.queue.value
+                        .map { it.id }
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                val activeIds = try {
+                    DownloadQueueService.downloadInstances.value
+                        .map { it.downloadQueueWrapper.id }
+                } catch (e: Exception) {
+                    emptyList()
+                }
+
                 val downloadedItems = episodeKeys.mapNotNull { key ->
                     val episode = context.getKey<DownloadObjects.DownloadEpisodeCached>(key)
                         ?: return@mapNotNull null
@@ -60,9 +74,11 @@ class KinoLibraryViewModel : ViewModel() {
                     val info = getDownloadFileInfo(context, episode.id)
                     val downloaded = info?.fileLength ?: 0L
                     val total = info?.totalBytes ?: 0L
-                    val status = com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager
-                        .downloadStatus[episode.id]
-                    if (downloaded <= 1L && total <= 0L && status == null) return@mapNotNull null
+                    // The episode cache is created before download metadata is written, so
+                    // queued or active downloads may legitimately have no bytes yet.
+                    if (downloaded <= 1L && episode.id !in queuedIds && episode.id !in activeIds) {
+                        return@mapNotNull null
+                    }
 
                     val progress = if (total > 0L) {
                         (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f)

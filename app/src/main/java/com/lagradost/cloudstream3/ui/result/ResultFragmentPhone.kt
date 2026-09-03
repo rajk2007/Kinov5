@@ -213,7 +213,17 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     return@launch
                 }
 
-                val groupedLinks = links.groupBy { it.name }
+                // Extract a base language name so qualities such as "Hindi 1080p" and
+                // "Hindi 720p" are presented together.
+                fun getLanguageName(link: ExtractorLink): String {
+                    val qualityStr = Qualities.getStringByInt(link.quality)
+                    var lang = link.name.replace(qualityStr, "", ignoreCase = true)
+                    lang = lang.replace(Regex("""\b\d{3,4}\s*p\b""", RegexOption.IGNORE_CASE), "")
+                    lang = lang.replace(Regex("""\b\d{3,4}\b""", RegexOption.IGNORE_CASE), "")
+                    return lang.trim().ifBlank { link.source.ifBlank { "Unknown" } }
+                }
+
+                val groupedLinks = links.groupBy { getLanguageName(it) }
                 withContext(Dispatchers.Main) {
                     if (!isAdded) return@withContext
                     val languages = groupedLinks.keys.toTypedArray()
@@ -221,9 +231,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         .setTitle("Select Language")
                         .setItems(languages) { _, languageIndex ->
                             val selectedLanguage = languages[languageIndex]
-                            val qualitiesForLanguage = groupedLinks[selectedLanguage].orEmpty()
-                            val qualityLabels = qualitiesForLanguage.map {
-                                "${it.source} • ${Qualities.getStringByInt(it.quality)}"
+                            val qualitiesForLanguage = groupedLinks[selectedLanguage]
+                                .orEmpty()
+                                .sortedByDescending { it.quality }
+                            val qualityLabels = qualitiesForLanguage.map { link ->
+                                "${Qualities.getStringByInt(link.quality)} • ${link.source}"
                             }.toTypedArray()
 
                             AlertDialog.Builder(requireContext())
