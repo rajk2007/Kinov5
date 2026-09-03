@@ -225,8 +225,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     isCasting = false,
                     subtitleCallback = { },
                     callback = { link ->
-                        // Allow VIDEO, M3U8, and DASH. Exclude TORRENT/MAGNET (need special handling).
-                        if (link.type != ExtractorLinkType.TORRENT && link.type != ExtractorLinkType.MAGNET) {
+                        // Only allow formats supported by the CloudStream Downloader (VIDEO & M3U8)
+                        if (link.type == ExtractorLinkType.VIDEO || link.type == ExtractorLinkType.M3U8) {
                             links.add(link)
                         }
                     }
@@ -241,7 +241,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             requireContext(),
-                            "No downloadable links found.",
+                            "No downloadable links found. Provider may only return DASH/Torrent.",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -260,6 +260,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 DownloadOptionsSheet(
                                     links = links,
                                     onDownload = { link ->
+                                        // Safety check: do not queue unsupported formats
+                                        if (link.type != ExtractorLinkType.VIDEO && link.type != ExtractorLinkType.M3U8) {
+                                            Toast.makeText(requireContext(), "This link type cannot be downloaded", Toast.LENGTH_SHORT).show()
+                                            return@DownloadOptionsSheet
+                                        }
                                         dialog.dismiss()
                                         val wrapper = DownloadObjects.DownloadQueueItem(
                                             episode = ep,
