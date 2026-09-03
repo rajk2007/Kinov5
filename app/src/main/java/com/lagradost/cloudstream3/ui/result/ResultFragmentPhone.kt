@@ -225,10 +225,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     isCasting = false,
                     subtitleCallback = { },
                     callback = { link ->
-                        // Only allow formats supported by the CloudStream Downloader (VIDEO & M3U8)
-                        if (link.type == ExtractorLinkType.VIDEO || link.type == ExtractorLinkType.M3U8) {
-                            links.add(link)
-                        }
+                        links.add(link)
                     }
                 )
 
@@ -241,7 +238,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             requireContext(),
-                            "No downloadable links found. Provider may only return DASH/Torrent.",
+                            "No downloadable links found.",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -260,9 +257,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 DownloadOptionsSheet(
                                     links = links,
                                     onDownload = { link ->
-                                        // Safety check: do not queue unsupported formats
+                                        // Safety check: only queue formats supported by the downloader
                                         if (link.type != ExtractorLinkType.VIDEO && link.type != ExtractorLinkType.M3U8) {
-                                            Toast.makeText(requireContext(), "This link type cannot be downloaded", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(requireContext(), "This link type cannot be downloaded (Only VIDEO/M3U8 supported).", Toast.LENGTH_SHORT).show()
                                             return@DownloadOptionsSheet
                                         }
                                         dialog.dismiss()
