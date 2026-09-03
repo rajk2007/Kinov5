@@ -8,11 +8,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -82,8 +77,8 @@ fun DownloadOptionsSheet(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Download Options", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = Color.White)
             }
         }
 
@@ -92,8 +87,6 @@ fun DownloadOptionsSheet(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Icon(Icons.Default.Public, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
             Text("Language", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
 
@@ -135,8 +128,6 @@ fun DownloadOptionsSheet(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
             Text("Quality", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
 
@@ -194,8 +185,6 @@ fun DownloadOptionsSheet(
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))
         ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
-            Spacer(Modifier.width(8.dp))
             Text("Download", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
     }
