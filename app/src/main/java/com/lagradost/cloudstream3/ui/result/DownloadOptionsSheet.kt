@@ -10,9 +10,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -92,7 +92,7 @@ fun DownloadOptionsSheet(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.Public, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("Language", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
@@ -135,7 +135,7 @@ fun DownloadOptionsSheet(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Icon(Icons.Default.HighQuality, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("Quality", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
@@ -194,7 +194,7 @@ fun DownloadOptionsSheet(
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))
         ) {
-            Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
             Spacer(Modifier.width(8.dp))
             Text("Download", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
