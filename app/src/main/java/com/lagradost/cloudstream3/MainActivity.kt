@@ -485,65 +485,66 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
 private fun autoInstallRepositories() {
-    val prefs = getSharedPreferences("kino_setup_v6", MODE_PRIVATE)
-    if (prefs.getBoolean("repos_installed_v6", false)) return
+    // BUMP THE KEY so existing installs re-run (v6 may already be poisoned)
+    val prefs = getSharedPreferences("kino_setup_v7", MODE_PRIVATE)
+
+    val alreadyLoaded = APIHolder.apis.any {
+        it.name.equals("CNC Verse", ignoreCase = true) ||
+        it.name.equals("CineFreak", ignoreCase = true)
+    }
+    if (alreadyLoaded && prefs.getBoolean("repos_installed_v7", false)) return
+
     ioSafe {
         withContext(Dispatchers.Main) { showToast("Setting up providers...") }
         val targetRepos = listOf(
-            RepositoryData(
-                name = "CNC Verse",
-                url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json"
-            ),
-            RepositoryData(
-                name = "Phisher",
-                url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json"
-            )
-        )
-        val legacyUrls = listOf(
-            "https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json",
-            "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json",
-            "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CS.json",
-            "https://raw.githubusercontent.com/Sushan64/NetMirror-Extension/refs/heads/builds/Netflix.json"
+            RepositoryData(name = "CNC Verse",
+                url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json"),
+            RepositoryData(name = "Phisher",
+                url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json")
         )
         try {
-            RepositoryManager.getRepositories()
-                .filter { it.url in legacyUrls || it.name.contains("MovieBox", ignoreCase = true) }
-                .forEach { repository ->
-                    runCatching { RepositoryManager.removeRepository(this@MainActivity, repository) }
-                        .onFailure { logError(it) }
-                }
-            targetRepos.forEach { repository ->
-                if (RepositoryManager.getRepositories().none { it.url == repository.url }) {
-                    RepositoryManager.addRepository(repository)
+            targetRepos.forEach { repo ->
+                if (RepositoryManager.getRepositories().none { it.url == repo.url }) {
+                    RepositoryManager.addRepository(repo)
                 }
             }
+
             val wanted = mapOf(
-                targetRepos[0].url to setOf("CNC Verse", "Cricify"),
+                targetRepos[0].url to setOf("CNC Verse", "CricifyProvider"), // NOTE: real name is CricifyProvider
                 targetRepos[1].url to setOf("CineFreak")
             )
+
+            var allOk = true
             wanted.forEach { (repositoryUrl, names) ->
-                RepositoryManager.getRepoPlugins(repositoryUrl)?.forEach { pluginPair ->
-                    val sitePlugin = pluginPair.second
+                val plugins = RepositoryManager.getRepoPlugins(repositoryUrl)
+                if (plugins == null) {
+                    Log.e(TAG, "Repo fetch FAILED: $repositoryUrl")
+                    allOk = false
+                    return@forEach
+                }
+                plugins.forEach { (repoUrl, sitePlugin) ->
                     if (names.any { sitePlugin.name.equals(it, ignoreCase = true) }) {
-                        runCatching {
+                        val ok = runCatching {
                             PluginManager.downloadPlugin(
                                 activity = this@MainActivity,
                                 pluginUrl = sitePlugin.url,
                                 pluginHash = sitePlugin.fileHash,
                                 internalName = sitePlugin.internalName,
-                                repositoryUrl = pluginPair.first,
+                                repositoryUrl = repoUrl,
                                 loadPlugin = true
                             )
-                        }.onFailure { logError(it) }
+                        }.getOrElse { logError(it); false }
+                        Log.i(TAG, "Installed ${sitePlugin.internalName}: $ok")
+                        if (!ok) allOk = false
                     }
                 }
             }
-            prefs.edit().putBoolean("repos_installed_v6", true).apply()
-            withContext(Dispatchers.Main) { showToast("Providers installed!") }
-        } catch (e: Exception) {
-            logError(e)
-            withContext(Dispatchers.Main) { showToast("Install failed") }
-        }
+
+            // Only persist success; tell the UI providers changed
+            if (allOk) prefs.edit().putBoolean("repos_installed_v7", true).apply()
+            afterPluginsLoadedEvent.invoke(true)
+            mainPluginsLoadedEvent.invoke(true)
+        } catch (e: Exception) { logError(e) }
     }
 }
     override fun onDialogDismissed(dialogId: Int) {

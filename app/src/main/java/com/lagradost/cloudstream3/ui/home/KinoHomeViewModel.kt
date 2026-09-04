@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.mvvm.Resource
@@ -85,7 +86,15 @@ class KinoHomeViewModel : ViewModel() {
     private val _networkState = MutableStateFlow(NetworkState.Loading)
     val networkState: StateFlow<NetworkState> = _networkState.asStateFlow()
 
-    init { loadData() }
+    init {
+        MainActivity.afterPluginsLoadedEvent += ::onPluginsLoaded
+        loadData()
+    }
+
+    private fun onPluginsLoaded(@Suppress("UNUSED_PARAMETER") force: Boolean) {
+        // Re-try once plugins actually arrive
+        if (_homeRows.value.isEmpty()) retry()
+    }
 
     private fun loadData() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -96,7 +105,8 @@ class KinoHomeViewModel : ViewModel() {
                 var cncApi: MainAPI? = null
                 var retries = 0
                 while (cncApi == null && retries < 20) {
-                    cncApi = APIHolder.apis.find { it.name.equals("CNC Verse", ignoreCase = true) }
+                    cncApi = APIHolder.apis.firstOrNull { it.name.equals("CNC Verse", ignoreCase = true) }
+                        ?: APIHolder.apis.firstOrNull { it.name.contains("CNC Verse", ignoreCase = true) }
                     if (cncApi == null) {
                         delay(500)
                         retries++
@@ -176,9 +186,14 @@ class KinoHomeViewModel : ViewModel() {
 
     fun retry() = loadData()
 
+    override fun onCleared() {
+        MainActivity.afterPluginsLoadedEvent -= ::onPluginsLoaded
+        super.onCleared()
+    }
+
     fun loadLiveEvents() {
         viewModelScope.launch(Dispatchers.IO) {
-            val api = APIHolder.apis.find { it.name.equals("Cricify", ignoreCase = true) } ?: return@launch
+            val api = APIHolder.apis.find { it.name.equals("CricifyProvider", ignoreCase = true) } ?: return@launch
             val terms = listOf("live", "cricket", "football", "basketball")
             val events = terms.flatMap { term ->
                 runCatching { (APIRepository(api).search(term, 1) as? Resource.Success)?.value?.items.orEmpty() }.getOrDefault(emptyList())
