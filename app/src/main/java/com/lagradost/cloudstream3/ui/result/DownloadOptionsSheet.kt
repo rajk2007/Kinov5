@@ -10,7 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -187,7 +187,7 @@ fun DownloadOptionsSheet(
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))
         ) {
-            Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
             Spacer(Modifier.width(8.dp))
             Text("Download", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
