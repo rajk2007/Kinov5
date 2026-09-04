@@ -212,12 +212,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 }
                 val loadResponse = response.value!!
 
-                // FIX: use the clicked episode/movie payload
-                val dataString = ep.data
-                if (APIRepository.isInvalidData(dataString)) {
-                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "No stream data (blank/invalid)", Toast.LENGTH_SHORT).show() }
-                    return@launch
-                }
+                // FIX: Use ep.data, but fallback to pageUrl if ep.data is invalid/blank
+                val dataString = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                android.util.Log.d("KinoDownload", "loadLinks data='$dataString' api=$apiName page=$pageUrl")
 
                 val links = mutableListOf<ExtractorLink>()
                 val ok = APIRepository(api).loadLinks(
@@ -225,7 +222,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     isCasting = false,
                     subtitleCallback = { },
                     callback = { link ->
-                        // Include VIDEO, M3U8, and DASH for the selector. Exclude TORRENT/MAGNET.
+                        // Allow VIDEO, M3U8, and DASH. Exclude TORRENT/MAGNET.
                         if (link.type != ExtractorLinkType.TORRENT && link.type != ExtractorLinkType.MAGNET) {
                             links.add(link)
                         }
@@ -233,17 +230,15 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 )
 
                 if (!ok) {
-                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "loadLinks failed (see logcat)", Toast.LENGTH_SHORT).show() }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(requireContext(), "loadLinks failed (see logcat)", Toast.LENGTH_SHORT).show()
+                    }
                     return@launch
                 }
 
                 if (links.isEmpty()) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            requireContext(),
-                            "No downloadable links found.",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(requireContext(), "No downloadable links found.", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
@@ -285,7 +280,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 }
             } catch (e: Exception) {
                 logError(e)
-                withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show() }
+                android.util.Log.e("KinoDownload", "Download flow failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
