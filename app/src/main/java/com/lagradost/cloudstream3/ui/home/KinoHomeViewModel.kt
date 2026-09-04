@@ -6,6 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.CloudStreamApp
+import com.lagradost.cloudstream3.HomePageList
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
@@ -16,8 +19,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+data class HomeRow(
+    val title: String,
+    val items: List<MovieResult>
+)
+
 class KinoHomeViewModel : ViewModel() {
     enum class NetworkState { Loading, Online, Slow, Offline }
+    private val _homeRows = MutableStateFlow<List<HomeRow>>(emptyList())
+    val homeRows: StateFlow<List<HomeRow>> = _homeRows.asStateFlow()
     private val _trendingMovies = MutableStateFlow<List<MovieResult>>(emptyList())
     val trendingMovies: StateFlow<List<MovieResult>> = _trendingMovies.asStateFlow()
     private val _popularMovies = MutableStateFlow<List<MovieResult>>(emptyList())
@@ -85,40 +95,57 @@ class KinoHomeViewModel : ViewModel() {
                     ?: error("CNC Verse provider is not installed")
                 val response = APIRepository(cncApi).getMainPage(page = 1)
                 if (response !is Resource.Success) error("CNC Verse homepage unavailable")
-                val rows = response.value.flatMap { page -> page?.list.orEmpty() }.map { item ->
-                    MovieResult(
-                        id = item.id ?: item.url.hashCode(),
-                        title = item.name,
-                        poster_path = item.posterUrl,
-                        providerUrl = item.url,
-                        providerApiName = item.apiName
-                    )
-                }.distinctBy { it.providerUrl }
-                if (rows.isEmpty()) error("CNC Verse returned no homepage items")
-                val chunks = rows.chunked(20)
-                                    _trendingMovies.value = rows[0]
-                    _popularMovies.value = rows[0]
-                    _topRatedMovies.value = rows[0]
-                    _nowPlaying.value = rows[0]
-                    _upcoming.value = rows[0]
-                    _popularTV.value = rows[0]
-                    _topRatedTV.value = rows[0]
-                    _trendingTv.value = rows[0]
-                    _hindiDubbedMovies.value = rows[0]
-                    _animeSpotlightTv.value = rows[0]
-                    _kDramaSpotlightTv.value = rows[0]
-                    _hiddenGemsMovies.value = rows[0]
-                    _actionAdventureMovies.value = rows[0]
-                    _comedyMovies.value = rows[0]
-                    _thrillerHorrorMovies.value = rows[0]
-                    _familyKidsMovies.value = rows[0]
-                    _internationalHitsMovies.value = rows[0]
-                    _trendingAnimeThisWeekTv.value = rows[0]
-                    _criticallyAcclaimedMovies.value = rows[0]
-                    _popularHindiMovies.value = rows[0]
-                    _topRatedHindiMovies.value = rows[0]
-                    _popularKoreanTv.value = rows[0]
-                    _actionAnimeTv.value = rows[0]
+
+                val homePageResponse: List<HomePageResponse?> = response.value
+                val rows = homePageResponse.mapNotNull { page ->
+                    page?.items?.let { items ->
+                        items.map { homePageList: HomePageList ->
+                            HomeRow(
+                                title = homePageList.name,
+                                items = homePageList.list.map { sr: SearchResponse ->
+                                    MovieResult(
+                                        id = sr.id ?: sr.url.hashCode(),
+                                        title = sr.name,
+                                        poster_path = sr.posterUrl,
+                                        backdrop_path = sr.posterUrl,
+                                        providerUrl = sr.url,
+                                        providerApiName = sr.apiName
+                                    )
+                                }.distinctBy { it.providerUrl }
+                            )
+                        }
+                    }
+                }.flatten()
+                _homeRows.value = rows
+
+                val contentRows = rows.map { it.items }.filter { it.isNotEmpty() }
+                if (contentRows.isEmpty()) error("CNC Verse returned no homepage items")
+                fun contentRow(index: Int): List<MovieResult> =
+                    contentRows.getOrElse(index) { contentRows.first() }
+
+                _trendingMovies.value = contentRow(0)
+                _popularMovies.value = contentRow(1)
+                _topRatedMovies.value = contentRow(2)
+                _nowPlaying.value = contentRow(3)
+                _upcoming.value = contentRow(4)
+                _popularTV.value = contentRow(5)
+                _topRatedTV.value = contentRow(6)
+                _trendingTv.value = contentRow(7)
+                _hindiDubbedMovies.value = contentRow(8)
+                _animeSpotlightTv.value = contentRow(9)
+                _kDramaSpotlightTv.value = contentRow(10)
+                _hiddenGemsMovies.value = contentRow(11)
+                _actionAdventureMovies.value = contentRow(12)
+                _comedyMovies.value = contentRow(13)
+                _thrillerHorrorMovies.value = contentRow(14)
+                _familyKidsMovies.value = contentRow(15)
+                _internationalHitsMovies.value = contentRow(16)
+                _trendingAnimeThisWeekTv.value = contentRow(17)
+                _criticallyAcclaimedMovies.value = contentRow(18)
+                _popularHindiMovies.value = contentRow(19)
+                _topRatedHindiMovies.value = contentRow(20)
+                _popularKoreanTv.value = contentRow(21)
+                _actionAnimeTv.value = contentRow(22)
                 _networkState.value = NetworkState.Online
             } catch (e: Exception) {
                 _error.value = e.message ?: "Unable to load CNC Verse homepage"
