@@ -168,10 +168,18 @@ class DownloadQueueService : Service() {
         downloadEvent += downloadEventListener
 
         queueJob = ioSafe {
-            // Ensure this is up to date to prevent race conditions with MainActivity launches
+            // Clear any previous crash marker so downloads are not blocked
+            try {
+                val errorFile = filesDir.resolve("last_error")
+                if (errorFile.exists()) errorFile.delete()
+            } catch (_: Exception) {}
+            com.lagradost.cloudstream3.MainActivity.lastError = null
+
             setLastError(context)
-            // Early return, to prevent waiting for plugins in safe mode
-            if (lastError != null) return@ioSafe
+            if (lastError != null) {
+                android.util.Log.w(TAG, "lastError was present but continuing queue: $lastError")
+                com.lagradost.cloudstream3.MainActivity.lastError = null
+            }
 
             // Try to ensure all plugins are loaded before starting the downloader.
             // To prevent infinite stalls we use a timeout of 15 seconds, it is judged as long enough
@@ -205,8 +213,7 @@ class DownloadQueueService : Service() {
                     isRunning
                             // Run as long as there is a queue to process
                             && (instances.isNotEmpty() || queue.isNotEmpty())
-                            // Run as long as there are no app crashes
-                            && lastError == null
+
                 }
                 .collect { (_, queue, currentDownloads) ->
                     // Remove completed or failed

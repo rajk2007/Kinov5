@@ -236,6 +236,11 @@ object DownloadQueueManager {
 
         if (add(downloadQueueWrapper)) {
             setQueueStatus(downloadQueueWrapper.id, VideoDownloadManager.DownloadType.IsPending)
+            try {
+                val errorFile = context.filesDir.resolve("last_error")
+                if (errorFile.exists()) errorFile.delete()
+            } catch (_: Exception) {}
+            com.lagradost.cloudstream3.MainActivity.lastError = null
             startQueueService(context)
             Log.d(TAG, "queued id=${downloadQueueWrapper.id}")
         } else {
