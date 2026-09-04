@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.api.MovieResult
-import com.lagradost.cloudstream3.api.TMDBApi
 import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
@@ -82,8 +81,8 @@ fun KinoHomeScreen(
         // Dynamic Blurred Background
         if (currentMovie != null) {
             Box(modifier = Modifier.fillMaxSize()) {
-                val backdropUrl = currentMovie.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                    ?: currentMovie.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                val backdropUrl = currentMovie.backdrop_path?.let { it }
+                    ?: currentMovie.poster_path?.let { it }
                     ?: ""
                 AsyncImage(
                     model = backdropUrl,
@@ -362,8 +361,8 @@ fun HeroBanner(
                 modifier = Modifier.fillMaxSize().clickable { onMovieClick(movie) }
             ) {
                 Box {
-                    val backdropUrl = movie.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                        ?: movie.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
+                    val backdropUrl = movie.backdrop_path?.let { it }
+                        ?: movie.poster_path?.let { it }
                         ?: ""
 
                     AsyncImage(
@@ -533,7 +532,7 @@ fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit, modifier: Modi
             )
     ) {
         AsyncImage(
-            model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
+            model = movie.poster_path ?: "",
             contentDescription = movie.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier

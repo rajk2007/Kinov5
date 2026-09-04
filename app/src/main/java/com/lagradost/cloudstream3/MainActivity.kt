@@ -485,84 +485,60 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
 private fun autoInstallRepositories() {
-    val prefs = getSharedPreferences("kino_setup_v5", MODE_PRIVATE)
-    if (prefs.getBoolean("repos_installed_v5", false)) return
-
+    val prefs = getSharedPreferences("kino_setup_v6", MODE_PRIVATE)
+    if (prefs.getBoolean("repos_installed_v6", false)) return
     ioSafe {
         withContext(Dispatchers.Main) { showToast("Setting up providers...") }
-
-        // 1. Define unwanted repos to permanently delete
-        val unwantedUrls = listOf(
+        val targetRepos = listOf(
+            RepositoryData(
+                name = "CNC Verse",
+                url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json"
+            ),
+            RepositoryData(
+                name = "Phisher",
+                url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json"
+            )
+        )
+        val legacyUrls = listOf(
             "https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json",
             "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json",
-            "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json",
             "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CS.json",
             "https://raw.githubusercontent.com/Sushan64/NetMirror-Extension/refs/heads/builds/Netflix.json"
         )
-
-        // Delete unwanted repos if they exist
         try {
-            val currentRepos = RepositoryManager.getRepositories()
-            currentRepos.filter { it.url in unwantedUrls }.forEach { repo ->
-                try {
-                    RepositoryManager.removeRepository(this@MainActivity, repo)
-                } catch (e: Exception) { logError(e) }
-            }
-        } catch (e: Exception) { logError(e) }
-
-        // 2. Add ONLY CNC Verse
-        val cncVerse = RepositoryData(
-            name = "CNC Verse",
-            url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/refs/heads/builds/CNC.json"
-        )
-        
-        try {
-            val exists = RepositoryManager.getRepositories().any { it.url == cncVerse.url }
-            if (!exists) {
-                RepositoryManager.addRepository(cncVerse)
-            }
-        } catch (e: Exception) { logError(e) }
-
-        // 3. Download ONLY MovieBox and Cricify from CNC Verse
-        try {
-            val plugins = RepositoryManager.getRepoPlugins(cncVerse.url)
-            var movieBoxInstalled = false
-            var cricifyInstalled = false
-            
-            plugins?.forEach { pluginPair ->
-                val repoUrl = pluginPair.first
-                val sitePlugin = pluginPair.second
-                
-                if (!movieBoxInstalled && sitePlugin.name.contains("moviebox", ignoreCase = true)) {
-                    try {
-                        PluginManager.downloadPlugin(
-                            activity = this@MainActivity,
-                            pluginUrl = sitePlugin.url,
-                            pluginHash = sitePlugin.fileHash,
-                            internalName = sitePlugin.internalName,
-                            repositoryUrl = repoUrl,
-                            loadPlugin = true
-                        )
-                        movieBoxInstalled = true
-                    } catch (e: Exception) { logError(e) }
+            RepositoryManager.getRepositories()
+                .filter { it.url in legacyUrls || it.name.contains("MovieBox", ignoreCase = true) }
+                .forEach { repository ->
+                    runCatching { RepositoryManager.removeRepository(this@MainActivity, repository) }
+                        .onFailure { logError(it) }
                 }
-                
-                if (!cricifyInstalled && sitePlugin.name.contains("cricify", ignoreCase = true)) {
-                    try {
-                        PluginManager.downloadPlugin(
-                            activity = this@MainActivity,
-                            pluginUrl = sitePlugin.url,
-                            pluginHash = sitePlugin.fileHash,
-                            internalName = sitePlugin.internalName,
-                            repositoryUrl = repoUrl,
-                            loadPlugin = true
-                        )
-                        cricifyInstalled = true
-                    } catch (e: Exception) { logError(e) }
+            targetRepos.forEach { repository ->
+                if (RepositoryManager.getRepositories().none { it.url == repository.url }) {
+                    RepositoryManager.addRepository(repository)
                 }
             }
-            
-            prefs.edit().putBoolean("repos_installed_v5", true).apply()
+            val wanted = mapOf(
+                targetRepos[0].url to setOf("CNC Verse", "Cricify"),
+                targetRepos[1].url to setOf("CineFreak")
+            )
+            wanted.forEach { (repositoryUrl, names) ->
+                RepositoryManager.getRepoPlugins(repositoryUrl)?.forEach { pluginPair ->
+                    val sitePlugin = pluginPair.second
+                    if (names.any { sitePlugin.name.equals(it, ignoreCase = true) }) {
+                        runCatching {
+                            PluginManager.downloadPlugin(
+                                activity = this@MainActivity,
+                                pluginUrl = sitePlugin.url,
+                                pluginHash = sitePlugin.fileHash,
+                                internalName = sitePlugin.internalName,
+                                repositoryUrl = pluginPair.first,
+                                loadPlugin = true
+                            )
+                        }.onFailure { logError(it) }
+                    }
+                }
+            }
+            prefs.edit().putBoolean("repos_installed_v6", true).apply()
             withContext(Dispatchers.Main) { showToast("Providers installed!") }
         } catch (e: Exception) {
             logError(e)
@@ -570,7 +546,6 @@ private fun autoInstallRepositories() {
         }
     }
 }
-
     override fun onDialogDismissed(dialogId: Int) {
         onDialogDismissedEvent.invoke(dialogId)
     }
