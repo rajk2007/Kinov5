@@ -10,6 +10,7 @@ import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -67,18 +68,20 @@ class KinoSearchViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             _results.value = emptyList()
-            val cncDeferred = async { searchProvider("CNC Verse", query) }
-            val cineDeferred = async { searchProvider("CineFreak", query) }
-            val cncResults = cncDeferred.await()
-            val cineResults = cineDeferred.await()
-            _results.value = cncResults + cineResults
+            val targetProviders = listOf("CNC Verse", "CineFreak")
+            val providers = targetProviders.mapNotNull { target ->
+                APIHolder.apis.find { api -> api.name.contains(target, ignoreCase = true) }
+            }
+            val providerResults = providers.map { api ->
+                async { searchProvider(api, query) }
+            }.awaitAll()
+            _results.value = providerResults.flatten()
             _isLoading.value = false
         }
     }
 
-    private suspend fun searchProvider(apiName: String, query: String): List<KinoSearchResult> {
+    private suspend fun searchProvider(api: com.lagradost.cloudstream3.MainAPI, query: String): List<KinoSearchResult> {
         return try {
-            val api = APIHolder.apis.find { it.name.equals(apiName, ignoreCase = true) } ?: return emptyList()
             val response = APIRepository(api).search(query, page = 1)
             if (response is Resource.Success) {
                 response.value.items.map { sr ->

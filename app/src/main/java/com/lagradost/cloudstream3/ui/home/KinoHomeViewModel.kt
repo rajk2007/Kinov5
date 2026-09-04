@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.mvvm.Resource
@@ -16,7 +17,8 @@ import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class HomeRow(
@@ -91,9 +93,21 @@ class KinoHomeViewModel : ViewModel() {
             _error.value = null
             _networkState.value = NetworkState.Loading
             try {
-                val cncApi = APIHolder.apis.find { it.name.equals("CNC Verse", ignoreCase = true) }
-                    ?: error("CNC Verse provider is not installed")
-                val response = APIRepository(cncApi).getMainPage(page = 1)
+                var cncApi: MainAPI? = null
+                var retries = 0
+                while (cncApi == null && retries < 20) {
+                    cncApi = APIHolder.apis.find { it.name.equals("CNC Verse", ignoreCase = true) }
+                    if (cncApi == null) {
+                        delay(500)
+                        retries++
+                    }
+                }
+                if (cncApi == null) {
+                    _error.value = "CNC Verse provider not loaded."
+                    return@launch
+                }
+                val repo = APIRepository(cncApi)
+                val response = repo.getMainPage(page = 1)
                 if (response !is Resource.Success) error("CNC Verse homepage unavailable")
 
                 val homePageResponse: List<HomePageResponse?> = response.value
