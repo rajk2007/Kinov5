@@ -201,7 +201,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.lagradost.cloudstream3.AutoDownloadMode
 import com.lagradost.cloudstream3.amap
 
 class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCallback {
@@ -485,43 +484,81 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
 private fun autoInstallRepositories() {
-    val prefs = getSharedPreferences("kino_setup_v8", MODE_PRIVATE)
+    val prefs = getSharedPreferences("kino_setup_v9", MODE_PRIVATE)
 
     val alreadyLoaded = APIHolder.apis.any {
         it.name.equals("CNC Verse", ignoreCase = true) ||
         it.name.equals("CineFreak", ignoreCase = true)
     }
-    if (alreadyLoaded && prefs.getBoolean("repos_installed_v8", false)) return
+    if (alreadyLoaded && prefs.getBoolean("repos_installed_v9", false)) return
 
     ioSafe {
         withContext(Dispatchers.Main) { showToast("Setting up providers...") }
 
+        // 1. Make sure the two repositories exist
         val targetRepos = listOf(
-            RepositoryData(name = "CNC Verse",
-                url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json"),
-            RepositoryData(name = "Phisher",
-                url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json")
+            RepositoryData(
+                name = "CNC Verse",
+                url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json"
+            ),
+            RepositoryData(
+                name = "Phisher",
+                url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json"
+            )
         )
         try {
-            // 1. Ensure repositories exist
             targetRepos.forEach { repo ->
                 if (RepositoryManager.getRepositories().none { it.url == repo.url }) {
                     RepositoryManager.addRepository(repo)
                 }
             }
 
-            // 2. Use the official downloader to get all missing plugins
-            PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(
-                this@MainActivity,
-                AutoDownloadMode.All
+            // 2. Only the plugins we actually want
+            val wanted = mapOf(
+                "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json" to
+                    setOf("CNC Verse", "CricifyProvider"),
+                "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json" to
+                    setOf("CineFreak")
             )
 
-            // 3. Explicitly load all online plugins to ensure APIHolder.apis is populated
+            var allOk = true
+            wanted.forEach { (repositoryUrl, names) ->
+                val plugins = RepositoryManager.getRepoPlugins(repositoryUrl)
+                if (plugins == null) {
+                    Log.e(TAG, "Repo fetch FAILED: $repositoryUrl")
+                    allOk = false
+                    return@forEach
+                }
+
+                plugins.forEach { (repoUrl, sitePlugin) ->
+                    if (names.any { sitePlugin.name.equals(it, ignoreCase = true) }) {
+                        val ok = runCatching {
+                            PluginManager.downloadPlugin(
+                                activity = this@MainActivity,
+                                pluginUrl = sitePlugin.url,
+                                pluginHash = sitePlugin.fileHash,
+                                internalName = sitePlugin.internalName,
+                                repositoryUrl = repoUrl,
+                                loadPlugin = true
+                            )
+                        }.getOrElse {
+                            logError(it)
+                            false
+                        }
+                        Log.i(TAG, "Installed ${sitePlugin.name} (${sitePlugin.internalName}): $ok")
+                        if (!ok) allOk = false
+                    }
+                }
+            }
+
+            // 3. Make sure everything that is on disk is actually loaded
             PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
 
-            prefs.edit().putBoolean("repos_installed_v8", true).apply()
+            if (allOk) {
+                prefs.edit().putBoolean("repos_installed_v9", true).apply()
+            }
 
-            // 4. Now that APIs are guaranteed to be loaded, fire the events on the Main thread
+            // 4. Fire events only after the loads finished
             withContext(Dispatchers.Main) {
                 afterPluginsLoadedEvent.invoke(true)
                 mainPluginsLoadedEvent.invoke(true)
