@@ -1421,6 +1421,21 @@ private fun autoInstallRepositories() {
             )
         }
 
+        // Force load all downloaded plugins on every launch
+        ioSafe {
+            try {
+                PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
+                PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllLocalPlugins(this@MainActivity, false)
+            } catch (e: Exception) {
+                logError(e)
+            }
+            // Fire events to tell the UI plugins are ready
+            withContext(Dispatchers.Main) {
+                afterPluginsLoadedEvent.invoke(true)
+                mainPluginsLoadedEvent.invoke(true)
+            }
+        }
+
         val contentRoot = findViewById<ViewGroup>(android.R.id.content)
         val introView = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -1503,12 +1518,6 @@ private fun autoInstallRepositories() {
                     mainPluginsLoadedEvent.invoke(false)
                 }
 
-                ioSafe {
-                    PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllLocalPlugins(
-                        this@MainActivity,
-                        false
-                    )
-                }
 
 // Add your channel creation here
 

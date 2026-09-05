@@ -92,7 +92,7 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private fun onPluginsLoaded(@Suppress("UNUSED_PARAMETER") force: Boolean) {
-        if (_homeRows.value.isEmpty() || _error.value != null) retry()
+        if (_homeRows.value.isEmpty()) retry()
     }
 
     private fun loadData() {
