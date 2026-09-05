@@ -670,9 +670,9 @@ object PluginManager {
             true
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to load $file: ${Log.getStackTraceString(e)}")
+            val detail = e.message ?: e.javaClass.simpleName
             showToast(
-                // context.getActivity(), // we are not always on the main thread
-                context.getString(R.string.plugin_load_fail).format(fileName),
+                "Plugin fail: $fileName\n$detail",
                 Toast.LENGTH_LONG
             )
             currentlyLoading = null

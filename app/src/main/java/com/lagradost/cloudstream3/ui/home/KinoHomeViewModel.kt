@@ -103,7 +103,7 @@ class KinoHomeViewModel : ViewModel() {
             try {
                 var cncApi: MainAPI? = null
                 var retries = 0
-                while (cncApi == null && retries < 120) {
+                while (cncApi == null && retries < 30) {
                     cncApi = APIHolder.apis.firstOrNull { it.name.equals("CNC Verse", ignoreCase = true) }
                         ?: APIHolder.apis.firstOrNull { it.name.contains("CNC Verse", ignoreCase = true) }
                     if (cncApi == null) {
