@@ -572,6 +572,7 @@ private fun autoInstallRepositories() {
             }
 
             withContext(Dispatchers.Main) {
+                onAllPluginsLoaded(true)
                 afterPluginsLoadedEvent.invoke(true)
                 mainPluginsLoadedEvent.invoke(true)
             }
@@ -733,7 +734,6 @@ private fun autoInstallRepositories() {
 
     override fun onResume() {
         super.onResume()
-        afterPluginsLoadedEvent += ::onAllPluginsLoaded
         setActivityInstance(this)
         try {
             if (isCastApiAvailable()) {
@@ -1442,6 +1442,7 @@ private fun autoInstallRepositories() {
             .apply()
 
         // Keep provider installation off the startup path so the intro can render immediately.
+        afterPluginsLoadedEvent += ::onAllPluginsLoaded
         lifecycleScope.launch(Dispatchers.IO) {
             autoInstallRepositories()
         }
