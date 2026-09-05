@@ -103,7 +103,7 @@ class KinoHomeViewModel : ViewModel() {
             try {
                 var cncApi: MainAPI? = null
                 var retries = 0
-                while (cncApi == null && retries < 30) {
+                while (cncApi == null && retries < 120) {
                     cncApi = APIHolder.apis.firstOrNull { it.name.equals("CNC Verse", ignoreCase = true) }
                         ?: APIHolder.apis.firstOrNull { it.name.contains("CNC Verse", ignoreCase = true) }
                     if (cncApi == null) {
@@ -111,11 +111,13 @@ class KinoHomeViewModel : ViewModel() {
                         retries++
                     }
                 }
+                android.util.Log.d("KinoHome", "CNC Verse API found: ${cncApi != null}. Total APIs loaded: ${APIHolder.apis.size}")
                 if (cncApi == null) {
                     _error.value = "CNC Verse provider not loaded."
                     return@launch
                 }
                 val repo = APIRepository(cncApi)
+                android.util.Log.d("KinoHome", "Fetching CNC Verse main page")
                 val response = repo.getMainPage(page = 1)
                 if (response !is Resource.Success) error("CNC Verse homepage unavailable")
 

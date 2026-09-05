@@ -1,7 +1,6 @@
 import com.android.build.gradle.internal.cxx.configure.gradleLocalProperties
 import org.jetbrains.dokka.gradle.engine.parameters.KotlinPlatform
 import org.jetbrains.dokka.gradle.engine.parameters.VisibilityModifier
-import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
@@ -309,7 +308,7 @@ tasks.register<Jar>("makeJar") {
 tasks.withType<KotlinJvmCompile> {
     compilerOptions {
         jvmTarget.set(javaTarget)
-        jvmDefault.set(JvmDefaultMode.ENABLE)
+        freeCompilerArgs.add("-Xjvm-default=all-compatibility")
         freeCompilerArgs.add("-Xannotation-default-target=param-property")
         optIn.addAll(
             "com.lagradost.cloudstream3.InternalAPI",

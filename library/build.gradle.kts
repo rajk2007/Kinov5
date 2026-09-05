@@ -43,6 +43,7 @@ kotlin {
             "-Xexpect-actual-classes",
             "-Xannotation-default-target=param-property"
         )
+        optIn.add("kotlin.time.ExperimentalTime")
     }
 
     sourceSets {
