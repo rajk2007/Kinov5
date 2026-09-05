@@ -92,8 +92,7 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private fun onPluginsLoaded(@Suppress("UNUSED_PARAMETER") force: Boolean) {
-        // Re-try once plugins actually arrive
-        if (_homeRows.value.isEmpty()) retry()
+        if (_homeRows.value.isEmpty() || _error.value != null) retry()
     }
 
     private fun loadData() {
@@ -104,7 +103,7 @@ class KinoHomeViewModel : ViewModel() {
             try {
                 var cncApi: MainAPI? = null
                 var retries = 0
-                while (cncApi == null && retries < 20) {
+                while (cncApi == null && retries < 120) {
                     cncApi = APIHolder.apis.firstOrNull { it.name.equals("CNC Verse", ignoreCase = true) }
                         ?: APIHolder.apis.firstOrNull { it.name.contains("CNC Verse", ignoreCase = true) }
                     if (cncApi == null) {

@@ -485,17 +485,17 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
 private fun autoInstallRepositories() {
-    // BUMP THE KEY so existing installs re-run (v6 may already be poisoned)
-    val prefs = getSharedPreferences("kino_setup_v7", MODE_PRIVATE)
+    val prefs = getSharedPreferences("kino_setup_v8", MODE_PRIVATE)
 
     val alreadyLoaded = APIHolder.apis.any {
         it.name.equals("CNC Verse", ignoreCase = true) ||
         it.name.equals("CineFreak", ignoreCase = true)
     }
-    if (alreadyLoaded && prefs.getBoolean("repos_installed_v7", false)) return
+    if (alreadyLoaded && prefs.getBoolean("repos_installed_v8", false)) return
 
     ioSafe {
         withContext(Dispatchers.Main) { showToast("Setting up providers...") }
+
         val targetRepos = listOf(
             RepositoryData(name = "CNC Verse",
                 url = "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json"),
@@ -503,47 +503,29 @@ private fun autoInstallRepositories() {
                 url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json")
         )
         try {
+            // 1. Ensure repositories exist
             targetRepos.forEach { repo ->
                 if (RepositoryManager.getRepositories().none { it.url == repo.url }) {
                     RepositoryManager.addRepository(repo)
                 }
             }
 
-            val wanted = mapOf(
-                targetRepos[0].url to setOf("CNC Verse", "CricifyProvider"), // NOTE: real name is CricifyProvider
-                targetRepos[1].url to setOf("CineFreak")
+            // 2. Use the official downloader to get all missing plugins
+            PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(
+                this@MainActivity,
+                AutoDownloadMode.All
             )
 
-            var allOk = true
-            wanted.forEach { (repositoryUrl, names) ->
-                val plugins = RepositoryManager.getRepoPlugins(repositoryUrl)
-                if (plugins == null) {
-                    Log.e(TAG, "Repo fetch FAILED: $repositoryUrl")
-                    allOk = false
-                    return@forEach
-                }
-                plugins.forEach { (repoUrl, sitePlugin) ->
-                    if (names.any { sitePlugin.name.equals(it, ignoreCase = true) }) {
-                        val ok = runCatching {
-                            PluginManager.downloadPlugin(
-                                activity = this@MainActivity,
-                                pluginUrl = sitePlugin.url,
-                                pluginHash = sitePlugin.fileHash,
-                                internalName = sitePlugin.internalName,
-                                repositoryUrl = repoUrl,
-                                loadPlugin = true
-                            )
-                        }.getOrElse { logError(it); false }
-                        Log.i(TAG, "Installed ${sitePlugin.internalName}: $ok")
-                        if (!ok) allOk = false
-                    }
-                }
-            }
+            // 3. Explicitly load all online plugins to ensure APIHolder.apis is populated
+            PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
 
-            // Only persist success; tell the UI providers changed
-            if (allOk) prefs.edit().putBoolean("repos_installed_v7", true).apply()
-            afterPluginsLoadedEvent.invoke(true)
-            mainPluginsLoadedEvent.invoke(true)
+            prefs.edit().putBoolean("repos_installed_v8", true).apply()
+
+            // 4. Now that APIs are guaranteed to be loaded, fire the events on the Main thread
+            withContext(Dispatchers.Main) {
+                afterPluginsLoadedEvent.invoke(true)
+                mainPluginsLoadedEvent.invoke(true)
+            }
         } catch (e: Exception) { logError(e) }
     }
 }

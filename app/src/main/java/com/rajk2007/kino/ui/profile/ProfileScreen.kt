@@ -3,6 +3,8 @@ package com.rajk2007.kino.ui.profile
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.fragment.app.FragmentActivity
+import androidx.navigation.Navigation
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -163,6 +165,16 @@ fun ProfileScreen() {
             item {
                 ProfileSection("PREFERENCES", Icons.Default.Settings) {
                     ProfileRow("Subtitles/CC Language", "English", Icons.Default.Settings) {}
+                    ProfileRow(
+                        title = "Extensions Manager",
+                        value = "View installed plugins and repos",
+                        icon = Icons.Default.Settings,
+                        onClick = {
+                            val activity = context as? FragmentActivity ?: return@ProfileRow
+                            val navController = Navigation.findNavController(activity, R.id.nav_host_fragment)
+                            navController.navigate(R.id.action_navigation_global_to_navigation_settings_extensions)
+                        }
+                    )
                     ProfileSwitchRow("Closed Captions", Icons.Default.Settings, closedCaptions) { closedCaptions = it }
                 }
             }
