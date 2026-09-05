@@ -1,14 +1,18 @@
 package com.lagradost.cloudstream3.ui.player
 
 import android.util.Log
+import android.widget.Toast
 import com.lagradost.cloudstream3.APIHolder.getApiFromNameNull
 import com.lagradost.cloudstream3.APIHolder.unixTime
+import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.ui.result.ResultEpisode
 import com.lagradost.cloudstream3.utils.AppContextUtils.html
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -104,9 +108,9 @@ class RepoLinkGenerator(
             }
         }
 
-        val result = APIRepository(
-            getApiFromNameNull(current.apiName) ?: throw Exception("This provider does not exist")
-        ).loadLinks(
+        val api = getApiFromNameNull(current.apiName) ?: throw Exception("This provider does not exist")
+        val result = try {
+            APIRepository(api).loadLinks(
             current.data,
             isCasting = isCasting,
             subtitleCallback = { file ->
@@ -149,7 +153,20 @@ class RepoLinkGenerator(
                     }
                 }
             }
-        )
+            )
+        } catch (e: Exception) {
+            Log.e("KinoLinks", "Provider ${api.name} loadLinks failed", e)
+            withContext(Dispatchers.Main) {
+                CloudStreamApp.context?.let { context ->
+                    Toast.makeText(
+                        context,
+                        "Links fail: ${api.name}\n${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            return false
+        }
 
         synchronized(currentCache) {
             currentCache.saturated = currentCache.linkCache.isNotEmpty()

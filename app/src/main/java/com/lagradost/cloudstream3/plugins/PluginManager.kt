@@ -59,8 +59,10 @@ import com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement.saniti
 import com.lagradost.cloudstream3.utils.extractorApis
 import com.lagradost.cloudstream3.utils.txt
 import dalvik.system.PathClassLoader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStreamReader
 
@@ -669,12 +671,37 @@ object PluginManager {
             currentlyLoading = null
             true
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to load $file: ${Log.getStackTraceString(e)}")
-            val detail = e.message ?: e.javaClass.simpleName
-            showToast(
-                "Plugin fail: $fileName\n$detail",
-                Toast.LENGTH_LONG
-            )
+            val trace = Log.getStackTraceString(e)
+            Log.e(TAG, "Failed to load $file: $trace")
+
+            // Persist full trace to a file readable without ADB
+            try {
+                val dumpDir = File(context.getExternalFilesDir(null), "plugin_errors")
+                dumpDir.mkdirs()
+                File(dumpDir, "plugin_fail_$fileName.txt").writeText(
+                    "Plugin: $fileName\nFile: $file\nError: ${e.javaClass.name}: ${e.message}\n\n$trace"
+                )
+            } catch (t: Throwable) { Log.e(TAG, "Failed to write plugin error file", t) }
+
+            // Show full trace in a scrollable, copyable dialog on screen
+            withContext(Dispatchers.Main) {
+                try {
+                    val activity = context as? android.app.Activity
+                    if (activity != null && !activity.isFinishing) {
+                        android.app.AlertDialog.Builder(activity)
+                            .setTitle("Plugin failed: $fileName")
+                            .setMessage("${e.javaClass.name}: ${e.message}\n\n$trace".take(3500))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .setNeutralButton("Copy") { _, _ ->
+                                val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                cm.setPrimaryClip(android.content.ClipData.newPlainText("plugin error", trace))
+                            }
+                            .show()
+                    } else {
+                        showToast("Plugin fail: $fileName\n${e.javaClass.name}", Toast.LENGTH_LONG)
+                    }
+                } catch (_: Throwable) { /* ignore UI failures */ }
+            }
             currentlyLoading = null
             false
         }
