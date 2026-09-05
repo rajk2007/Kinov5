@@ -212,8 +212,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 }
                 val loadResponse = response.value!!
 
-                // FIX: Use ep.data, but fallback to pageUrl if ep.data is invalid/blank
-                val dataString = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                // FIX: Use ep.data, but fall back to an empty string if it is invalid/blank
+                val dataString = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: ""
                 android.util.Log.d("KinoDownload", "loadLinks data='$dataString' api=$apiName page=$pageUrl")
 
                 val links = mutableListOf<ExtractorLink>()

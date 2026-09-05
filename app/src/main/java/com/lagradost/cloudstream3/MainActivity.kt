@@ -93,7 +93,6 @@ import com.lagradost.cloudstream3.mvvm.observeNullable
 import com.lagradost.cloudstream3.network.initClient
 import com.lagradost.cloudstream3.plugins.PluginManager
 import com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins
-import com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem
 import com.lagradost.cloudstream3.plugins.PluginManager.loadSinglePlugin
 import com.lagradost.cloudstream3.receivers.VideoDownloadRestartReceiver
 import com.lagradost.cloudstream3.services.SubscriptionWorkManager
@@ -486,16 +485,13 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 private fun autoInstallRepositories() {
     val prefs = getSharedPreferences("kino_setup_v9", MODE_PRIVATE)
 
-    val alreadyLoaded = APIHolder.apis.any {
-        it.name.equals("CNC Verse", ignoreCase = true) ||
-        it.name.equals("CineFreak", ignoreCase = true)
-    }
-    if (alreadyLoaded && prefs.getBoolean("repos_installed_v9", false)) return
+    val hasCnc = APIHolder.apis.any { it.name.equals("CNC Verse", ignoreCase = true) }
+    val hasCine = APIHolder.apis.any { it.name.equals("CineFreak", ignoreCase = true) }
+    if (hasCnc && hasCine && prefs.getBoolean("repos_installed_v9", false)) return
 
     ioSafe {
         withContext(Dispatchers.Main) { showToast("Setting up providers...") }
 
-        // 1. Make sure the two repositories exist
         val targetRepos = listOf(
             RepositoryData(
                 name = "CNC Verse",
@@ -513,12 +509,9 @@ private fun autoInstallRepositories() {
                 }
             }
 
-            // 2. Only the plugins we actually want
             val wanted = mapOf(
-                "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json" to
-                    setOf("CNC Verse", "CricifyProvider"),
-                "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json" to
-                    setOf("CineFreak")
+                targetRepos[0].url to setOf("CNC Verse", "Cricify", "CricifyProvider"),
+                targetRepos[1].url to setOf("CineFreak")
             )
 
             var allOk = true
@@ -531,7 +524,12 @@ private fun autoInstallRepositories() {
                 }
 
                 plugins.forEach { (repoUrl, sitePlugin) ->
-                    if (names.any { sitePlugin.name.equals(it, ignoreCase = true) }) {
+                    // FIX: match display name OR internal name
+                    val match = names.any {
+                        sitePlugin.name.equals(it, ignoreCase = true) ||
+                                sitePlugin.internalName.equals(it, ignoreCase = true)
+                    }
+                    if (match) {
                         val ok = runCatching {
                             PluginManager.downloadPlugin(
                                 activity = this@MainActivity,
@@ -551,19 +549,35 @@ private fun autoInstallRepositories() {
                 }
             }
 
-            // 3. Make sure everything that is on disk is actually loaded
+            // Safety net: load everything on disk
             PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
 
-            if (allOk) {
+            // FIX: verify CNC Verse actually registered; if not, reload once more
+            val cncLoaded = APIHolder.allProviders.any {
+                it.name.equals("CNC Verse", ignoreCase = true)
+            }
+            if (!cncLoaded) {
+                Log.w(TAG, "CNC Verse not registered after load, retrying...")
+                PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
+            }
+
+            // Only cache success when the providers really registered
+            val verified = APIHolder.allProviders.any {
+                it.name.equals("CNC Verse", ignoreCase = true)
+            } && APIHolder.allProviders.any {
+                it.name.equals("CineFreak", ignoreCase = true)
+            }
+            if (verified) {
                 prefs.edit().putBoolean("repos_installed_v9", true).apply()
             }
 
-            // 4. Fire events only after the loads finished
             withContext(Dispatchers.Main) {
                 afterPluginsLoadedEvent.invoke(true)
                 mainPluginsLoadedEvent.invoke(true)
             }
-        } catch (e: Exception) { logError(e) }
+        } catch (e: Exception) {
+            logError(e)
+        }
     }
 }
     override fun onDialogDismissed(dialogId: Int) {
@@ -1422,6 +1436,11 @@ private fun autoInstallRepositories() {
             )
         )
 
+        settingsManager.edit()
+            .putInt(getString(R.string.auto_download_plugins_key), AutoDownloadMode.Disable.value)
+            .putBoolean(getString(R.string.auto_update_plugins_key), false)
+            .apply()
+
         // Keep provider installation off the startup path so the intro can render immediately.
         lifecycleScope.launch(Dispatchers.IO) {
             autoInstallRepositories()
@@ -1481,34 +1500,6 @@ private fun autoInstallRepositories() {
                     mainPluginsLoadedEvent.invoke(loadSinglePlugin(this@MainActivity, homeApi))
                 } ?: run {
                     mainPluginsLoadedEvent.invoke(false)
-                }
-
-                ioSafe {
-                    if (settingsManager.getBoolean(
-                            getString(R.string.auto_update_plugins_key),
-                            true
-                        )
-                    ) {
-                        PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(
-                            this@MainActivity
-                        )
-                    } else {
-                        ___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
-                    }
-
-                    //Automatically download not existing plugins, using mode specified.
-                    val autoDownloadPlugin = AutoDownloadMode.getEnum(
-                        settingsManager.getInt(
-                            getString(R.string.auto_download_plugins_key),
-                            0
-                        )
-                    ) ?: AutoDownloadMode.Disable
-                    if (autoDownloadPlugin != AutoDownloadMode.Disable) {
-                        PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_downloadNotExistingPluginsAndLoad(
-                            this@MainActivity,
-                            autoDownloadPlugin
-                        )
-                    }
                 }
 
                 ioSafe {
@@ -2124,45 +2115,7 @@ private fun autoInstallRepositories() {
         }
         println("Loaded everything")
 
-        ioSafe {
-            migrateResumeWatching()
-            
-            val firstLaunchKey = "kino_first_launch_repos"
-            val hasInstalledRepos = getKey<Boolean>(firstLaunchKey) == true && RepositoryManager.getRepositories().isNotEmpty()
-            
-            if (!hasInstalledRepos) {
-                val defaultRepos = listOf(
-                    RepositoryData(name = "CloudStream Extensions", url = "https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json"),
-                    RepositoryData(name = "Mega Repository", url = "https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json")
-                )
-                
-                defaultRepos.forEach { repo ->
-                    try {
-                        val parsedUrl = RepositoryManager.parseRepoUrl(repo.url)
-                        if (!parsedUrl.isNullOrBlank()) {
-                            val repository = RepositoryManager.parseRepository(parsedUrl)
-                            if (repository != null) {
-                                val newRepo = RepositoryData(
-                                    iconUrl = repository.iconUrl,
-                                    name = repo.name.ifBlank { repository.name },
-                                    url = parsedUrl
-                                )
-                                RepositoryManager.addRepository(newRepo)
-                            }
-                        }
-                    } catch (e: Exception) { logError(e) }
-                }
-                
-                setKey(firstLaunchKey, true)
-                
-                // Force load all plugins from installed repositories
-                /*
-                main {
-                    PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_updateAllOnlinePluginsAndLoadThem(this@MainActivity)
-                }
-                */
-            }
-        }
+        ioSafe { migrateResumeWatching() }
 
         main {
             val channelId =
