@@ -68,7 +68,6 @@ fun KinoHomeScreen(
 
     LaunchedEffect(selectedCategory) {
         if (selectedCategory == "Live" && liveEventsMap.isEmpty()) {
-            viewModel.loadLiveEvents()
         }
     }
 
@@ -114,7 +113,6 @@ fun KinoHomeScreen(
                             onCategorySelected = { 
                                 selectedCategory = it 
                                 if (it == "Live" && liveEventsMap.isEmpty()) {
-                                    viewModel.loadLiveEvents()
                                 }
                             }
                         )

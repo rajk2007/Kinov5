@@ -169,6 +169,15 @@ class SearchViewModel : ViewModel() {
         )
     }
 
+    private fun providerPriority(apiName: String): Int = when {
+        apiName.contains("IStreamFlare", ignoreCase = true) ||
+            apiName.contains("IStream Flare", ignoreCase = true) ||
+            apiName.contains("IStreamplay", ignoreCase = true) -> 1
+        apiName.contains("AniVortex", ignoreCase = true) ||
+            apiName.contains("Ani Vortex", ignoreCase = true) -> 2
+        else -> 3
+    }
+
     private fun bundleSearch(lists: MutableMap<String, ExpandableSearchList>): ExpandableSearchList {
         if (lists.size == 1) {
             return lists.values.first()
@@ -176,7 +185,9 @@ class SearchViewModel : ViewModel() {
 
         val list = ArrayList<SearchResponse>()
         val nestedList =
-            lists.map { it.value.list }
+            lists.entries
+                .sortedBy { providerPriority(it.key) }
+                .map { it.value.list }
 
         // I do it this way to move the relevant search results to the top
         var index = 0

@@ -141,12 +141,36 @@ actual class WebViewResolver actual constructor(
                 }
 
                 webView?.webViewClient = object : WebViewClient() {
+                    private fun isAdRedirect(url: String): Boolean {
+                        val adKeywords = listOf(
+                            "omg10.com", "doubleclick.net", "googleadservices.com",
+                            "googlesyndication.com", "adnxs.com", "taboola.com", "outbrain.com",
+                            "popads.net", "casino", "pooky.vip", "megawin", "bewokwinjoz.site",
+                            "ketuatotogwtc.site", "google.dk/search?q=casino",
+                            "google.com/search?q=casino", "google.co.id/search?q=casino"
+                        )
+                        return adKeywords.any { url.contains(it, ignoreCase = true) }
+                    }
+
+                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                        val redirectUrl = request?.url?.toString().orEmpty()
+                        if (isAdRedirect(redirectUrl)) {
+                            Log.d(TAG, "Blocked ad redirect: $redirectUrl")
+                            return true
+                        }
+                        return super.shouldOverrideUrlLoading(view, request)
+                    }
+
                     override fun shouldInterceptRequest(
                         view: WebView,
                         request: WebResourceRequest
                     ): WebResourceResponse? = runBlocking {
                         val webViewUrl = request.url.toString()
                         Log.i(TAG, "Loading WebView URL: $webViewUrl")
+                        if (isAdRedirect(webViewUrl)) {
+                            Log.d(TAG, "Blocked ad request: $webViewUrl")
+                            return@runBlocking WebResourceResponse("text/plain", "UTF-8", null)
+                        }
 
                         if (script != null) {
                             runOnMainThread {

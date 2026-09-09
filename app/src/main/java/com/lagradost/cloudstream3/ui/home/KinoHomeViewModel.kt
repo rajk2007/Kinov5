@@ -19,6 +19,12 @@ import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.HomePageList
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.HomePageList
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.SearchResponse
 import kotlinx.coroutines.Dispatchers
 import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 import kotlin.math.max
@@ -125,59 +131,65 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private fun loadData() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             _error.value = null
             _networkState.value = NetworkState.Loading
-            // Show the last complete home immediately while the network refresh runs.
-            restoreHomeCache()
             try {
-                val standardTrending = try { tmdbApi.getTrending(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
-                val hindiTrending = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results } catch (e: Exception) { emptyList() }
-
-                // Interleave Hindi and Standard, remove duplicates, keep 20
-                val mixedTrending = interleave(hindiTrending, standardTrending)
-                    .distinctBy { it.id }
-                    .take(20)
-                _trendingMovies.value = mixedTrending
-
-                _popularMovies.value = tmdbApi.getPopular(TMDBApi.API_KEY).results
-                _topRatedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
-
-                val standardNowPlaying = try { tmdbApi.getNowPlaying(TMDBApi.API_KEY).results } catch (e: Exception) { emptyList() }
-                val recentHindi = try { tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "release_date.desc").results } catch (e: Exception) { emptyList() }
-
-                // Interleave Hindi and Standard, remove duplicates, keep 20
-                val mixedNowPlaying = interleave(recentHindi, standardNowPlaying)
-                    .distinctBy { it.id }
-                    .take(20)
-                _nowPlaying.value = mixedNowPlaying
-
-                _upcoming.value = tmdbApi.getUpcoming(TMDBApi.API_KEY).results
-                _popularTV.value = tmdbApi.getPopularTV(TMDBApi.API_KEY).results
-                _topRatedTV.value = tmdbApi.getTopRatedTV(TMDBApi.API_KEY).results
-                _trendingTv.value = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results
-                _hindiDubbedMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi").results
-                _animeSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16").results
-                _kDramaSpotlightTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko").results
-                _hiddenGemsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, sortBy = "vote_average.desc", voteCountGte = 200).results
-                _actionAdventureMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "28").results
-                _comedyMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "35").results
-                _thrillerHorrorMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "27").results
-                _familyKidsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withGenres = "10751").results
-                _internationalHitsMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "ja").results
-                _trendingAnimeThisWeekTv.value = tmdbApi.getTrendingTv(TMDBApi.API_KEY).results
-                _criticallyAcclaimedMovies.value = tmdbApi.getTopRated(TMDBApi.API_KEY).results
-                _popularHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "popularity.desc").results
-                _topRatedHindiMovies.value = tmdbApi.discoverMovie(TMDBApi.API_KEY, withOriginalLanguage = "hi", sortBy = "vote_average.desc").results
-                _popularKoreanTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withOriginalLanguage = "ko", sortBy = "popularity.desc").results
-                _actionAnimeTv.value = tmdbApi.discoverTv(TMDBApi.API_KEY, withGenres = "16,10759").results
-                withContext(Dispatchers.IO) { saveHomeCache() }
+                var istreamFlareApi: com.lagradost.cloudstream3.MainAPI? = null
+                repeat(60) {
+                    if (istreamFlareApi == null) {
+                        istreamFlareApi = APIHolder.apis.firstOrNull {
+                            it.name.contains("IStreamFlare", ignoreCase = true) ||
+                                it.name.contains("IStream Flare", ignoreCase = true) ||
+                                it.name.contains("IStreamplay", ignoreCase = true)
+                        }
+                        if (istreamFlareApi == null) kotlinx.coroutines.delay(500)
+                    }
+                }
+                if (istreamFlareApi == null) {
+                    _error.value = "IStreamFlare provider not loaded. Available: ${APIHolder.apis.map { it.name }}"
+                    _networkState.value = if (isNetworkAvailable()) NetworkState.Slow else NetworkState.Offline
+                    return@launch
+                }
+                val response = APIRepository(istreamFlareApi!!).getMainPage(page = 1)
+                if (response !is Resource.Success) error("IStreamFlare homepage unavailable")
+                val rows = response.value.flatMap { it?.items.orEmpty() }.map { homePageList: HomePageList ->
+                    HomeRow(
+                        title = homePageList.name,
+                        items = homePageList.list.map { sr: SearchResponse ->
+                            MovieResult(
+                                id = sr.id ?: 0,
+                                title = sr.name,
+                                poster_path = sr.posterUrl,
+                                backdrop_path = sr.posterUrl,
+                                providerUrl = sr.url,
+                                providerApiName = sr.apiName
+                            )
+                        }
+                    )
+                }
+                _homeRows.value = rows
+                if (rows.isEmpty() || rows.none { it.items.isNotEmpty() }) error("IStreamFlare returned no homepage items")
+                _trendingMovies.value = rows.firstOrNull()?.items?.take(7).orEmpty()
+                fun sectionItems(vararg keywords: String): List<MovieResult> = rows
+                    .filter { row -> keywords.any { row.title.contains(it, ignoreCase = true) } }
+                    .flatMap { it.items }
+                _popularMovies.value = sectionItems("Popular", "Trending")
+                _topRatedMovies.value = sectionItems("Top Rated", "Best")
+                _nowPlaying.value = sectionItems("New", "Recent", "Latest")
+                _upcoming.value = sectionItems("Upcoming", "Soon")
+                _popularTV.value = sectionItems("TV", "Series")
+                _trendingTv.value = sectionItems("Trending")
+                _animeSpotlightTv.value = sectionItems("Anime", "Animation")
+                _actionAdventureMovies.value = sectionItems("Action", "Adventure")
+                _comedyMovies.value = sectionItems("Comedy")
+                _thrillerHorrorMovies.value = sectionItems("Thriller", "Horror")
+                _familyKidsMovies.value = sectionItems("Family", "Kids")
                 _networkState.value = NetworkState.Online
-                linkMovieBoxResults()
+                withContext(Dispatchers.IO) { saveHomeCache() }
             } catch (e: Exception) {
-                logError(e)
-                _error.value = e.message ?: "Unknown error"
+                _error.value = e.message ?: "Unable to load IStreamFlare homepage"
                 restoreHomeCache()
                 _networkState.value = if (isNetworkAvailable()) NetworkState.Slow else NetworkState.Offline
             } finally {
@@ -185,7 +197,6 @@ class KinoHomeViewModel : ViewModel() {
             }
         }
     }
-
     private fun currentHomeLists(): Map<String, List<MovieResult>> = linkedMapOf(
         "trending" to _trendingMovies.value,
         "popular" to _popularMovies.value,
@@ -295,116 +306,6 @@ class KinoHomeViewModel : ViewModel() {
         return manager.activeNetwork?.let { manager.getNetworkCapabilities(it) != null } == true
     }
 
-    private fun movieBoxMatchScore(movie: MovieResult, candidateName: String): Int? {
-        val movieTitle = movie.displayTitle().lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
-        val candidateTitle = candidateName.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
-        if (movieTitle.isBlank() || candidateTitle.isBlank()) return null
-
-        val movieYear = movie.release_date?.take(4)?.toIntOrNull()
-        val candidateHasYear = movieYear?.toString()?.let { candidateTitle.contains(it) } == true
-        val movieWords = movieTitle.split(" ").filter { it.length > 1 }.toSet()
-        val candidateWords = candidateTitle.split(" ").filter { it.length > 1 }.toSet()
-        val overlap = movieWords.intersect(candidateWords).size
-        val containsTitle = candidateTitle.contains(movieTitle) || movieTitle.contains(candidateTitle)
-        val minimumOverlap = if (movieWords.size <= 2) movieWords.size else 2
-        if (!containsTitle && overlap < minimumOverlap) return null
-
-        return (if (containsTitle) 100 else 0) + overlap * 10 + if (candidateHasYear) 20 else 0
-    }
-
-    private fun linkMovieBoxResults() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val movieBoxApi = APIHolder.apis.find { it.name.equals("MovieBox", ignoreCase = true) }
-                    ?: return@launch
-                val repo = APIRepository(movieBoxApi)
-
-                suspend fun linkMovies(movies: List<MovieResult>): List<MovieResult> {
-                    return movies.mapIndexed { index, movie ->
-                        if (index >= 10) return@mapIndexed movie
-                        try {
-                            val searchRes = repo.search(movie.displayTitle(), page = 1)
-                            if (searchRes is Resource.Success) {
-                                val match = searchRes.value.items
-                                    .take(5)
-                                    .mapNotNull { candidate ->
-                                        movieBoxMatchScore(movie, candidate.name)?.let { score -> score to candidate }
-                                    }
-                                    .maxByOrNull { it.first }
-                                    ?.second
-                                if (match != null) {
-                                    movie.copy(providerUrl = match.url, providerApiName = match.apiName)
-                                } else movie
-                            } else movie
-                        } catch (e: Exception) {
-                            movie
-                        }
-                    }
-                }
-
-                _trendingMovies.value = linkMovies(_trendingMovies.value)
-                _popularMovies.value = linkMovies(_popularMovies.value)
-                _topRatedMovies.value = linkMovies(_topRatedMovies.value)
-                withContext(Dispatchers.IO) { saveHomeCache() }
-            } catch (e: Exception) {
-                logError(e)
-            }
-        }
-    }
-
     fun retry() { loadData() }
 
-    fun loadLiveEvents() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val cricifyApi = APIHolder.apis.find { it.name.lowercase().contains("cricify") }
-            if (cricifyApi != null) {
-                try {
-                    val repo = APIRepository(cricifyApi)
-                    val liveMap = mutableMapOf<String, MutableList<KinoSearchResult>>()
-
-                    // Define sports and their search terms
-                    val sports = mapOf(
-                        "Cricket" to listOf("cricket", "ipl", "bbl", "psl"),
-                        "Football" to listOf("football", "soccer", "epl", "la liga"),
-                        "Basketball" to listOf("basketball", "nba"),
-                        "Tennis" to listOf("tennis", "atp", "wta"),
-                        "Live Now" to listOf("live") // Catch-all for other live events
-                    )
-
-                    sports.forEach { (sportName, terms) ->
-                        val sportList = mutableListOf<KinoSearchResult>()
-                        terms.forEach { term ->
-                            try {
-                                val resource = repo.search(term, page = 1)
-                                if (resource is Resource.Success) {
-                                    resource.value.items.forEach { response ->
-                                        if (sportList.none { it.url == response.url }) {
-                                            sportList.add(
-                                                KinoSearchResult(
-                                                    name = response.name,
-                                                    url = response.url,
-                                                    apiName = response.apiName,
-                                                    posterUrl = response.posterUrl,
-                                                    type = response.type,
-                                                    year = null,
-                                                    quality = response.quality?.name
-                                                )
-                                            )
-                                        }
-                                    }
-                                }
-                            } catch (e: Exception) { e.printStackTrace() }
-                        }
-                        if (sportList.isNotEmpty()) {
-                            liveMap[sportName] = sportList
-                        }
-                    }
-
-                    _liveEvents.value = liveMap
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-    }
 }
