@@ -167,6 +167,13 @@ actual class WebViewResolver actual constructor(
                     ): WebResourceResponse? = runBlocking {
                         val webViewUrl = request.url.toString()
                         Log.i(TAG, "Loading WebView URL: $webViewUrl")
+                        if (webViewUrl.contains(".mp4", ignoreCase = true) ||
+                            webViewUrl.contains(".m3u8", ignoreCase = true) ||
+                            webViewUrl.contains(".ts", ignoreCase = true) ||
+                            webViewUrl.contains("video", ignoreCase = true)
+                        ) {
+                            Log.d("VIDEO_EXTRACT", "Video URL detected: $webViewUrl")
+                        }
                         if (isAdRedirect(webViewUrl)) {
                             Log.d(TAG, "Blocked ad request: $webViewUrl")
                             return@runBlocking WebResourceResponse("text/plain", "UTF-8", null)
@@ -201,31 +208,12 @@ actual class WebViewResolver actual constructor(
                             ".jpg",
                             ".png",
                             ".webp",
-                            ".mpg",
-                            ".mpeg",
                             ".jpeg",
-                            ".webm",
-                            ".mp4",
-                            ".mp3",
-                            ".gifv",
-                            ".flv",
-                            ".asf",
-                            ".mov",
-                            ".mng",
-                            ".mkv",
-                            ".ogg",
-                            ".avi",
-                            ".wav",
+                            ".gif",
                             ".woff2",
                             ".woff",
                             ".ttf",
-                            ".css",
-                            ".vtt",
-                            ".srt",
-                            ".ts",
-                            ".gif",
-                            // Warning, this might fuck some future sites, but it's used to make Sflix work.
-                            "wss://"
+                            ".css"
                         )
 
                         /** NOTE!  request.requestHeaders is not perfect!
