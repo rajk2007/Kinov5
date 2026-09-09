@@ -22,12 +22,14 @@ import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.HomePageList
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.SearchResponse
 import kotlinx.coroutines.Dispatchers
 import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 import kotlin.math.max
+
+data class HomeRow(
+    val title: String,
+    val items: List<MovieResult>
+)
 
 class KinoHomeViewModel : ViewModel() {
     enum class NetworkState { Loading, Online, Slow, Offline }
@@ -39,6 +41,9 @@ class KinoHomeViewModel : ViewModel() {
 
     private val _trendingMovies = MutableStateFlow<List<MovieResult>>(emptyList())
     val trendingMovies: StateFlow<List<MovieResult>> = _trendingMovies.asStateFlow()
+
+    private val _homeRows = MutableStateFlow<List<HomeRow>>(emptyList())
+    val homeRows: StateFlow<List<HomeRow>> = _homeRows.asStateFlow()
 
     private val _popularMovies = MutableStateFlow<List<MovieResult>>(emptyList())
     val popularMovies: StateFlow<List<MovieResult>> = _popularMovies.asStateFlow()
