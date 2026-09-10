@@ -1,40 +1,49 @@
 package com.lagradost.cloudstream3.ui.home
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,11 +51,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.api.MovieResult
-import com.lagradost.cloudstream3.api.TMDBApi
-import kotlinx.coroutines.delay
-import androidx.compose.ui.platform.LocalContext
-import android.widget.Toast
 import com.lagradost.cloudstream3.ui.search.KinoSearchResult
+import kotlinx.coroutines.delay
+
+private val KinoBackground = Color(0xFF08090C)
+private val KinoSurface = Color(0xFF14161C)
+private val KinoRed = Color(0xFFE50914)
 
 @Composable
 fun KinoHomeScreen(
@@ -55,181 +65,26 @@ fun KinoHomeScreen(
     onLiveClick: (KinoSearchResult) -> Unit = {},
     onSearchClick: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val trending by viewModel.trendingMovies.collectAsState()
-    val popular by viewModel.popularMovies.collectAsState()
-    val topRated by viewModel.topRatedMovies.collectAsState()
-    val liveEventsMap by viewModel.liveEvents.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val rows by viewModel.homeRows.collectAsState()
+    val heroItems by viewModel.heroBannerItems.collectAsState()
+    val loading by viewModel.isLoading.collectAsState()
     val networkState by viewModel.networkState.collectAsState()
-    
-    val categories = listOf("All", "Live", "Movies", "Series", "Anime", "Hindi")
-    var selectedCategory by remember { mutableStateOf(categories[0]) }
 
-    LaunchedEffect(selectedCategory) {
-        if (selectedCategory == "Live" && liveEventsMap.isEmpty()) {
-        }
-    }
-
-    val pagerState = rememberPagerState(pageCount = { trending.take(7).size })
-    val currentMovie = if (trending.isNotEmpty() && pagerState.pageCount > 0) trending[pagerState.currentPage % trending.size] else null
-
-    Surface(
-        color = Color(0xFF080808),
-        modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
-    ) {
-        // Dynamic Blurred Background
-        if (currentMovie != null) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                val backdropUrl = currentMovie.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                    ?: currentMovie.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                    ?: ""
-                AsyncImage(
-                    model = backdropUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(25.dp)
-                        .graphicsLayer(alpha = 0.2f)
-                )
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
-            }
-        }
-
-        if (isLoading && trending.isEmpty()) {
-            ShimmerLoading()
+    Surface(color = KinoBackground, modifier = Modifier.fillMaxSize()) {
+        if (loading && rows.isEmpty()) {
+            LoadingHome()
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 100.dp)
-            ) {
-                item {
-                    Column(Modifier.background(Color(0xFF080808))) {
-                        Header(onSearchClick)
-                        QuickDiscoveryChips(
-                            categories = categories,
-                            selectedCategory = selectedCategory,
-                            onCategorySelected = { 
-                                selectedCategory = it 
-                                if (it == "Live" && liveEventsMap.isEmpty()) {
-                                }
-                            }
-                        )
-                    }
+            LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+                item { HomeHeader(onSearchClick) }
+                if (heroItems.isNotEmpty()) item { HeroBanner(heroItems, onMovieClick) }
+                if (networkState != KinoHomeViewModel.NetworkState.Online && !loading) {
+                    item { NetworkHint(networkState) }
                 }
-                
-                if (networkState != KinoHomeViewModel.NetworkState.Online && !isLoading) {
-                    item {
-                        OuroborosStatus(networkState)
-                    }
-                }
-
-                item {
-                    Column {
-                        when (selectedCategory) {
-                            "All" -> {
-                                if (trending.isNotEmpty()) {
-                                    HeroBanner(movies = trending.take(7), onMovieClick = onMovieClick, pagerState = pagerState)
-                                }
-                                MovieSection("🔥 Trending Now", trending, onMovieClick)
-
-                                MovieSection("🆕 New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
-                                MovieSection("🇮🇳 Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🌸 Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick)
-                                MovieSection("🇰🇷 K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
-                                MovieSection("❤️ Recommended For You", popular, onMovieClick)
-                                MovieSection("💎 Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🎥 Popular Movies", popular, onMovieClick)
-                                MovieSection("📺 Popular TV Shows", viewModel.popularTV.collectAsState().value, onMovieClick)
-                                MovieSection("🍿 Weekend Picks", popular, onMovieClick)
-                                MovieSection("⭐ Critically Acclaimed", viewModel.criticallyAcclaimedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🎭 Action & Adventure", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
-                                MovieSection("😂 Comedy Picks", viewModel.comedyMovies.collectAsState().value, onMovieClick)
-                                MovieSection("😱 Thriller & Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
-                                MovieSection("👨‍👩‍👧 Family & Kids", viewModel.familyKidsMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🌍 International Hits", viewModel.internationalHitsMovies.collectAsState().value, onMovieClick)
-                                MovieSection("🎌 Trending Anime This Week", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
-                            }
-                            "Live" -> {
-                                // Handled in a separate logic below to avoid nesting item inside item
-                            }
-                            "Movies" -> {
-                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
-                                MovieSection("Popular Movies", popular, onMovieClick)
-                                MovieSection("Top Rated", topRated, onMovieClick)
-                                MovieSection("Action", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Comedy", viewModel.comedyMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
-                            }
-                            "Series" -> {
-                                MovieSection("Popular TV", viewModel.popularTV.collectAsState().value, onMovieClick)
-                                MovieSection("Top Rated TV", viewModel.topRatedTV.collectAsState().value, onMovieClick)
-                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, onMovieClick)
-                                MovieSection("K-Drama", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
-                            }
-                            "Anime" -> {
-                                MovieSection("Anime Spotlight", viewModel.animeSpotlightTv.collectAsState().value, onMovieClick)
-                                MovieSection("Trending Anime", viewModel.trendingAnimeThisWeekTv.collectAsState().value, onMovieClick)
-                                MovieSection("Action Anime", viewModel.actionAnimeTv.collectAsState().value, onMovieClick)
-                            }
-                            "Hindi" -> {
-                                MovieSection("Hindi Dubbed For You", viewModel.hindiDubbedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Popular Hindi", viewModel.popularHindiMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Top Rated Hindi", viewModel.topRatedHindiMovies.collectAsState().value, onMovieClick)
-                            }
-                            "K-Drama" -> {
-                                MovieSection("K-Drama Spotlight", viewModel.kDramaSpotlightTv.collectAsState().value, onMovieClick)
-                                MovieSection("Popular Korean TV", viewModel.popularKoreanTv.collectAsState().value, onMovieClick)
-                            }
-                            "Trending" -> {
-                                MovieSection("Trending Now", trending, onMovieClick)
-                                MovieSection("Trending TV", viewModel.trendingTv.collectAsState().value, onMovieClick)
-                            }
-                            "New" -> {
-                                MovieSection("New Releases", viewModel.nowPlaying.collectAsState().value, onMovieClick)
-                            }
-                            "Top Rated" -> {
-                                MovieSection("Critically Acclaimed", viewModel.criticallyAcclaimedMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Hidden Gems", viewModel.hiddenGemsMovies.collectAsState().value, onMovieClick)
-                            }
-                            "Genres" -> {
-                                MovieSection("Action", viewModel.actionAdventureMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Comedy", viewModel.comedyMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Horror", viewModel.thrillerHorrorMovies.collectAsState().value, onMovieClick)
-                                MovieSection("Family", viewModel.familyKidsMovies.collectAsState().value, onMovieClick)
-                            }
-                            "My List" -> {
-                                MovieSection("Watchlist", emptyList(), onMovieClick)
-                            }
-                            "Under 2 Hours" -> {
-                                MovieSection("Popular Movies", popular, onMovieClick)
-                            }
-                        }
-                    }
-                }
-
-                // When selectedCategory == "Live", show grouped live events
-                if (selectedCategory == "Live") {
-                    if (liveEventsMap.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().padding(32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(color = Color(0xFFE50914))
-                            }
-                        }
+                items(rows, key = { it.sectionType.name }) { row ->
+                    if (row.sectionType == HomeSectionType.TOP_10_TODAY) {
+                        Top10Section(row, onMovieClick)
                     } else {
-                        liveEventsMap.forEach { (sportName, events) ->
-                            item {
-                                LiveEventsSection(
-                                    title = sportName,
-                                    liveEvents = events,
-                                    onLiveClick = onLiveClick
-                                )
-                            }
-                        }
+                        MovieSection(row, onMovieClick)
                     }
                 }
             }
@@ -238,276 +93,96 @@ fun KinoHomeScreen(
 }
 
 @Composable
-private fun OuroborosStatus(networkState: KinoHomeViewModel.NetworkState) {
-    val message = when (networkState) {
-        KinoHomeViewModel.NetworkState.Slow -> "Ouroboros is trying to catch its talent."
-        KinoHomeViewModel.NetworkState.Offline -> "Ouroboros has caught its talent."
-        else -> return
-    }
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp)
-            .background(Color(0xFF141414), RoundedCornerShape(20.dp))
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Image(
-            painter = painterResource(com.lagradost.cloudstream3.R.drawable.ic_ouroboros),
-            contentDescription = "Ouroboros network status",
-            modifier = Modifier.size(92.dp),
-            contentScale = ContentScale.Fit
-        )
-        Spacer(modifier = Modifier.height(14.dp))
-        Text(message, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-fun Header(onSearchClick: () -> Unit = {}) {
-    val headerTitle = "KINO"
-
+private fun HomeHeader(onSearchClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(16.dp)
-            .background(Color.Transparent),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(headerTitle, color = Color(0xFFE50914), fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                onClick = onSearchClick,
-                modifier = Modifier.background(Color.Transparent)
-            ) {
-                Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color.White)
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = { /* TODO: Handle notifications click */ },
-                modifier = Modifier.background(Color.Transparent)
-            ) {
-                Icon(Icons.Filled.Notifications, contentDescription = "Notifications", tint = Color.White)
-            }
+        Column {
+            Text("KINO", color = KinoRed, fontSize = 30.sp, fontWeight = FontWeight.Black)
+            Text("Your next obsession", color = Color.White.copy(alpha = .55f), fontSize = 12.sp)
         }
+        IconButton(onClick = onSearchClick) { Icon(Icons.Filled.Search, "Search", tint = Color.White) }
     }
 }
 
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun QuickDiscoveryChips(
-    categories: List<String>,
-    selectedCategory: String,
-    onCategorySelected: (String) -> Unit
-) {
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(categories) { category ->
-            val isSelected = selectedCategory == category
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(if (isSelected) Color(0xFFE50914) else Color(0x22FFFFFF))
-                    .clickable { onCategorySelected(category) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    category,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
+private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) -> Unit) {
+    val pagerState = rememberPagerState(pageCount = { items.size })
+    LaunchedEffect(items) {
+        if (items.size > 1) while (true) {
+            delay(5_000)
+            pagerState.animateScrollToPage((pagerState.currentPage + 1) % items.size)
         }
     }
-}
-
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-fun HeroBanner(
-    movies: List<MovieResult>, 
-    onMovieClick: (MovieResult) -> Unit = {},
-    pagerState: androidx.compose.foundation.pager.PagerState = rememberPagerState(pageCount = { movies.size })
-) {
-    // Guaranteed Auto-Scroll
-    LaunchedEffect(Unit) {
-        while (movies.size > 1) {
-            delay(5000)
-            val nextPage = (pagerState.currentPage + 1) % movies.size
-            pagerState.animateScrollToPage(nextPage)
-        }
-    }
-
-    // ROOT BOX
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
-            .height(320.dp) // Reduced height for better ratio
-    ) {
-        // HORIZONTAL PAGER (Child 1)
+    Column(modifier = Modifier.padding(bottom = 18.dp)) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            pageSpacing = 10.dp,
+            modifier = Modifier.fillMaxWidth().height(330.dp)
         ) { page ->
-            val movie = movies[page % movies.size]
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxSize().clickable { onMovieClick(movie) }
+            val item = items[page]
+            Box(
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).clickable { onMovieClick(item.movie) }
             ) {
-                Box {
-                    val backdropUrl = movie.backdrop_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                        ?: movie.poster_path?.let { "https://image.tmdb.org/t/p/original$it" }
-                        ?: ""
-
-                    AsyncImage(
-                        model = backdropUrl,
-                        contentDescription = movie.displayTitle(),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-        // Premium Gradient Overlay
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, Color(0xCC080808), Color(0xFF080808)),
-                    startY = 100f
+                AsyncImage(
+                    model = item.backdropUrl,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
-            )
-        )
-        
-        // Content (Text)
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(24.dp)
-                .padding(bottom = 24.dp) // Extra padding so it doesn't mix with dots
-        ) {
-            Text(
-                movie.displayTitle(),
-                color = Color.White,
-                fontSize = 26.sp, // Reduced from 32.sp to 26.sp
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
-            
-            // Metadata Row (Year, Rating, Genre)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (movie.release_date != null) {
-                    Text(movie.release_date.take(4), color = Color.Gray, fontSize = 14.sp)
-                }
-                if (movie.vote_average != null) {
-                    Text("⭐ ${movie.vote_average}", color = Color(0xFFF5C518), fontSize = 14.sp)
-                }
-                Text(getGenreName(movie.genre_ids?.firstOrNull()), color = Color.Gray, fontSize = 14.sp)
-            }
-        }
+                Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xEE08090C)))
+                    )
+                )
+                Column(modifier = Modifier.align(Alignment.BottomStart).padding(22.dp)) {
+                    Text("NEW RELEASE", color = KinoRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(5.dp))
+                    Text(item.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                    Spacer(Modifier.height(7.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item.year?.let { Text(it, color = Color.White.copy(alpha = .72f), fontSize = 13.sp) }
+                        item.rating?.let { Text("★ $it", color = Color(0xFFFFD54F), fontSize = 13.sp) }
+                        item.genre?.let { Text(it, color = Color.White.copy(alpha = .72f), fontSize = 13.sp) }
+                    }
                 }
             }
         }
-
-        // INDICATOR DOTS (Child 2 - direct child of Box, so .align works)
         Row(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            repeat(movies.size) { index ->
-                val color = if (pagerState.currentPage == index) Color(0xFFE50914) else Color(0x55FFFFFF)
+            items.indices.forEach { index ->
                 Box(
-                    Modifier
-                        .padding(horizontal = 4.dp)
-                        .clip(CircleShape)
-                        .background(color)
-                        .size(8.dp)
+                    Modifier.padding(horizontal = 3.dp).size(if (pagerState.currentPage == index) 18.dp else 6.dp, 6.dp)
+                        .clip(CircleShape).background(if (pagerState.currentPage == index) KinoRed else Color.White.copy(alpha = .35f))
                 )
             }
         }
     }
 }
 
-fun getGenreName(genreId: Int?): String {
-    return when (genreId) {
-        28 -> "Action"
-        12 -> "Adventure"
-        16 -> "Animation"
-        35 -> "Comedy"
-        80 -> "Crime"
-        18 -> "Drama"
-        27 -> "Horror"
-        9648 -> "Mystery"
-        10749 -> "Romance"
-        878 -> "Sci-Fi"
-        53 -> "Thriller"
-        10752 -> "War"
-        else -> "Movie"
-    }
-}
-
 @Composable
-fun MovieSection(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit) {
-    if (movies.isEmpty()) return
-    
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(movies) { movie ->
-                MovieCard(movie, onMovieClick)
-            }
+private fun MovieSection(row: HomeRow, onMovieClick: (MovieResult) -> Unit) {
+    SectionShell(row) {
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(row.items, key = { "${it.providerApiName}:${it.providerUrl ?: it.id}" }) { movie -> MovieCard(movie, onMovieClick) }
         }
     }
 }
 
 @Composable
-fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieResult) -> Unit) {
-    if (movies.isEmpty()) return
-
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(movies.size) { index ->
-                Box(modifier = Modifier.width(140.dp)) {
-                    Text(
-                        text = (index + 1).toString(),
-                        fontSize = 100.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(x = (-10).dp, y = 10.dp)
-                            .graphicsLayer(alpha = 0.5f)
-                    )
-                    MovieCard(
-                        movie = movies[index],
-                        onClick = onMovieClick,
-                        modifier = Modifier.align(Alignment.CenterEnd)
-                    )
+private fun Top10Section(row: HomeRow, onMovieClick: (MovieResult) -> Unit) {
+    SectionShell(row) {
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(row.items.take(10), key = { "top:${it.providerApiName}:${it.providerUrl ?: it.id}" }) { movie ->
+                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.width(142.dp)) {
+                    Text((row.items.indexOf(movie) + 1).toString(), color = Color.White.copy(alpha = .9f), fontSize = 58.sp, fontWeight = FontWeight.Black, modifier = Modifier.offset(x = 4.dp, y = 6.dp))
+                    MovieCard(movie, onMovieClick, Modifier.width(104.dp))
                 }
             }
         }
@@ -515,135 +190,45 @@ fun Top10Section(title: String, movies: List<MovieResult>, onMovieClick: (MovieR
 }
 
 @Composable
-fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit, modifier: Modifier = Modifier) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(targetValue = if (isPressed) 0.85f else 1f, label = "scale")
+private fun SectionShell(row: HomeRow, content: @Composable () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+        Row(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(row.title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            if (row.isPersonalized) {
+                Text("  FOR YOU", color = KinoRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        content()
+    }
+}
 
-    Column(
-        modifier = modifier
-            .width(110.dp)
-            .scale(scale)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = { onClick(movie) }
-            )
-    ) {
+@Composable
+private fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .94f else 1f, label = "cardScale")
+    Column(modifier = modifier.width(112.dp).scale(scale).clickable(interactionSource = interaction, indication = null) { onClick(movie) }) {
         AsyncImage(
-            model = "${TMDBApi.IMAGE_BASE_URL}${movie.poster_path}",
-            contentDescription = movie.title,
+            model = movie.poster_path,
+            contentDescription = movie.displayTitle(),
             contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .height(160.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
+            modifier = Modifier.fillMaxWidth().height(164.dp).clip(RoundedCornerShape(10.dp)).background(KinoSurface)
         )
-        Text(
-            movie.title ?: movie.name ?: "",
-            color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 2,
-            modifier = Modifier.padding(top = 6.dp, start = 2.dp)
-        )
-    }
-}
-
-
-
-@Composable
-fun ShimmerLoading() {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val translateAnim by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing)
-        ),
-        label = "shimmer"
-    )
-
-    val brush = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF1A1A1A),
-            Color(0xFF2A2A2A),
-            Color(0xFF1A1A1A)
-        ),
-        start = androidx.compose.ui.geometry.Offset(translateAnim, translateAnim),
-        end = androidx.compose.ui.geometry.Offset(translateAnim + 300f, translateAnim + 300f)
-    )
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Box(modifier = Modifier.fillMaxWidth().height(400.dp).clip(RoundedCornerShape(12.dp)).background(brush))
-        Spacer(modifier = Modifier.height(20.dp))
-        repeat(3) {
-            Box(modifier = Modifier.size(120.dp, 180.dp).clip(RoundedCornerShape(8.dp)).background(brush))
-            Spacer(modifier = Modifier.height(20.dp))
-        }
+        Text(movie.displayTitle(), color = Color.White.copy(alpha = .9f), fontSize = 12.sp, maxLines = 2, modifier = Modifier.padding(top = 6.dp, start = 2.dp))
     }
 }
 
 @Composable
-fun LiveEventsSection(
-    title: String,
-    liveEvents: List<KinoSearchResult>,
-    onLiveClick: (KinoSearchResult) -> Unit
-) {
-    Column(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) {
-        Text(
-            "🔴 $title",
-            color = Color(0xFFE50914),
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(liveEvents) { event ->
-                LiveEventCard(event, onLiveClick)
-            }
-        }
-    }
+private fun NetworkHint(state: KinoHomeViewModel.NetworkState) {
+    val text = if (state == KinoHomeViewModel.NetworkState.Offline) "Offline mode · Showing what is cached" else "Connection is slow · Showing available releases"
+    Text(text, color = Color.White.copy(alpha = .6f), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
 }
 
 @Composable
-fun LiveEventCard(event: KinoSearchResult, onClick: (KinoSearchResult) -> Unit) {
-    Column(
-        modifier = Modifier.width(160.dp).clickable { onClick(event) }
-    ) {
-        Box(
-            modifier = Modifier
-                .size(width = 160.dp, height = 100.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF1A1A1A))
-        ) {
-            AsyncImage(
-                model = event.posterUrl ?: "",
-                contentDescription = event.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-            // LIVE badge
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFFE50914))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text("LIVE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-        Text(
-            event.name,
-            color = Color.White,
-            fontSize = 12.sp,
-            maxLines = 2,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+private fun LoadingHome() {
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator(color = KinoRed)
+        Spacer(Modifier.height(14.dp))
+        Text("Curating your home", color = Color.White.copy(alpha = .7f))
     }
 }
