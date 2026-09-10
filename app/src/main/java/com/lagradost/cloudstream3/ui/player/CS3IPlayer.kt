@@ -40,6 +40,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.cronet.CronetDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -109,7 +110,7 @@ import com.lagradost.cloudstream3.utils.WIDEVINE_DRM_UUID
 import com.lagradost.cloudstream3.utils.videoskip.VideoSkipStamp
 import kotlinx.coroutines.delay
 import okhttp3.Interceptor
-// Removed CronetEngine import
+import org.chromium.net.CronetEngine
 import java.io.File
 import java.security.SecureRandom
 import java.util.UUID
@@ -665,7 +666,7 @@ class CS3IPlayer : IPlayer {
          * 2. Mem consumption/GC
          * 3. Disk usage, as we simply use the same folder
          * */
-        // private var cronetEngine: CronetEngine? = null - Cronet disabled
+        private var cronetEngine: CronetEngine? = null
 
         /**
          * How many active sessions we have.
@@ -681,7 +682,16 @@ class CS3IPlayer : IPlayer {
         private var cronetReleasedId = 0
 
         fun releaseCronetEngine() {
-            // Cronet is disabled
+            cronetReleasedId++
+            if (activePlayers == 0) {
+                try {
+                    cronetEngine?.shutdown()
+                } catch (t: Throwable) {
+                    logError(t)
+                } finally {
+                    cronetEngine = null
+                }
+            }
         }
 
         /**
@@ -723,20 +733,45 @@ class CS3IPlayer : IPlayer {
             return source
         }
 
-        fun tryCreateEngine(context: Context, diskCacheSize: Long): Any? {
-            return null
+        fun tryCreateEngine(context: Context, diskCacheSize: Long): CronetEngine? {
+            cronetEngine?.let { return it }
+            return try {
+                val cacheDirectory = File(context.cacheDir, "CronetEngine")
+                cacheDirectory.deleteRecursively()
+                cacheDirectory.mkdirs()
+                CronetEngine.Builder(context)
+                    .enableBrotli(true)
+                    .enableHttp2(true)
+                    .enableQuic(true)
+                    .setStoragePath(cacheDirectory.absolutePath)
+                    .setLibraryLoader(null)
+                    .enableHttpCache(CronetEngine.Builder.HTTP_CACHE_DISK, diskCacheSize)
+                    .build()
+                    .also { cronetEngine = it }
+            } catch (t: Throwable) {
+                logError(t)
+                null
+            }
         }
 
         private fun createVideoSource(
             link: ExtractorLink,
-            engine: Any?,
+            engine: CronetEngine?,
             interceptor: Interceptor?,
         ): HttpDataSource.Factory {
             val userAgent = link.headers.entries.find {
                 it.key.equals("User-Agent", ignoreCase = true)
             }?.value ?: USER_AGENT
 
-            val source = if (interceptor == null) {
+            val source = if (interceptor == null && engine != null) {
+                Log.d(TAG, "Using CronetDataSource for $link")
+                CronetDataSource.Factory(engine, Executors.newSingleThreadExecutor())
+                    .setUserAgent(userAgent)
+                    .setConnectionTimeoutMs(CRONET_TIMEOUT_MS)
+                    .setReadTimeoutMs(CRONET_TIMEOUT_MS)
+                    .setResetTimeoutOnRedirects(true)
+                    .setHandleSetCookieRequests(true)
+            } else if (interceptor == null) {
                 Log.d(TAG, "Using OkHttpDataSource for $link")
                 OkHttpDataSource.Factory(app.baseClient).setUserAgent(userAgent)
             } else {

@@ -15,13 +15,13 @@ import com.lagradost.cloudstream3.utils.Coroutines.main
 import com.lagradost.cloudstream3.utils.Coroutines.mainWork
 import com.lagradost.cloudstream3.utils.Coroutines.runOnMainThread
 import com.lagradost.nicehttp.requestCreator
+import io.ktor.http.Url
+import io.ktor.http.decodeURLPart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
-import java.net.URI
-
 /**
  * When used as Interceptor additionalUrls cannot be returned, use WebViewResolver(...).resolveUsingWebView(...)
  * @param interceptUrl will stop the WebView when reaching this url.
@@ -170,6 +170,8 @@ actual class WebViewResolver actual constructor(
                         if (webViewUrl.contains(".mp4", ignoreCase = true) ||
                             webViewUrl.contains(".m3u8", ignoreCase = true) ||
                             webViewUrl.contains(".ts", ignoreCase = true) ||
+                            webViewUrl.contains(".webm", ignoreCase = true) ||
+                            webViewUrl.contains(".mkv", ignoreCase = true) ||
                             webViewUrl.contains("video", ignoreCase = true)
                         ) {
                             Log.d("VIDEO_EXTRACT", "Video URL detected: $webViewUrl")
@@ -223,7 +225,9 @@ actual class WebViewResolver actual constructor(
                          * */
                         return@runBlocking try {
                             when {
-                                blacklistedFiles.any { URI(webViewUrl).path.contains(it) } || webViewUrl.endsWith(
+                                blacklistedFiles.any {
+                                    Url(webViewUrl).encodedPath.decodeURLPart().contains(it)
+                                } || webViewUrl.endsWith(
                                     "/favicon.ico"
                                 ) -> WebResourceResponse(
                                     "image/png",
