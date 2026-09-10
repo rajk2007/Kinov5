@@ -15,13 +15,12 @@ import com.lagradost.cloudstream3.utils.Coroutines.main
 import com.lagradost.cloudstream3.utils.Coroutines.mainWork
 import com.lagradost.cloudstream3.utils.Coroutines.runOnMainThread
 import com.lagradost.nicehttp.requestCreator
-import io.ktor.http.Url
-import io.ktor.http.decodeURLPart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
+import java.net.URL
 /**
  * When used as Interceptor additionalUrls cannot be returned, use WebViewResolver(...).resolveUsingWebView(...)
  * @param interceptUrl will stop the WebView when reaching this url.
@@ -192,7 +191,7 @@ actual class WebViewResolver actual constructor(
                         return@runBlocking try {
                             when {
                                 blacklistedFiles.any {
-                                    Url(webViewUrl).encodedPath.decodeURLPart().contains(it)
+                                    URL(webViewUrl).path.contains(it)
                                 } || webViewUrl.endsWith(
                                     "/favicon.ico"
                                 ) -> WebResourceResponse(
