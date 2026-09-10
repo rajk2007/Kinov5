@@ -2,6 +2,9 @@ package com.lagradost.cloudstream3.ui.home
 
 import android.content.Context
 import android.net.ConnectivityManager
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.APIHolder
@@ -80,7 +83,18 @@ class KinoHomeViewModel : ViewModel() {
                 async { api to fetchProviderContent(api) }
             }.awaitAll()
             val istream = results.firstOrNull { it.first == providers.firstOrNull() }?.second.orEmpty()
-            val anime = results.filter { it.first != providers.firstOrNull() }.flatMap { it.second }
+            var anime = results.filter { it.first != providers.firstOrNull() }.flatMap { it.second }
+            if (anime.isEmpty()) {
+                val animeApi = providers.firstOrNull { it.name.contains("Ani", true) }
+                if (animeApi != null) {
+                    anime = runCatching {
+                        when (val response = APIRepository(animeApi).search("anime", 1)) {
+                            is Resource.Success -> response.value?.items.orEmpty().map { it.toMovieResult(animeApi) }
+                            else -> emptyList()
+                        }
+                    }.getOrDefault(emptyList())
+                }
+            }
             if (istream.isEmpty()) error("IStreamFlare returned no homepage items")
 
             val sections = buildSections(istream, anime)
@@ -132,29 +146,39 @@ class KinoHomeViewModel : ViewModel() {
         val all = uniqueIStream + uniqueAnime
         val sections = HomeSectionType.entries.associateWith { mutableListOf<MovieResult>() }
         fun add(type: HomeSectionType, movie: MovieResult) { sections.getValue(type).add(movie) }
+        fun textOf(movie: MovieResult): String = listOfNotNull(movie.title, movie.name).joinToString(" ").lowercase()
+        fun matches(movie: MovieResult, keywords: Set<String>): Boolean {
+            val text = textOf(movie)
+            return keywords.any(text::contains)
+        }
+        val psychological = setOf("psychological", "mind game", "mental", "character study", "mental health")
+        val mindBending = setOf("mind-bending", "mind bending", "plot twist", "time loop", "alternate reality", "unreliable narrator", "reality manipulation", "twist ending", "complex narrative", "science fiction", "sci-fi", "inception")
+        val romance = setOf("romance", "romantic", "rom-com", "love story", "relationship", "love triangle")
+        val romanceExcludes = setOf("horror", "thriller", "sci-fi", "science fiction", "monster", "alien")
+        val action = setOf("action", "adventure", "superhero", "martial arts", "spy", "mission", "combat", "fight")
+        val crime = setOf("crime", "detective", "murder", "mystery", "investigation", "police", "whodunit", "heist", "criminal", "forensic")
+        val horror = setOf("horror", "supernatural", "paranormal", "slasher", "haunted", "ghost", "demon", "zombie", "creature")
+        val horrorExcludes = setOf("cartoon", "animation", "anime", "kids", "children", "family", "shinchan")
+        val comedy = setOf("comedy", "sitcom", "funny", "humor")
+        val indian = setOf("indian", "bollywood", "hindi", "tamil", "telugu", "bengali", "malayalam", "kannada", "marathi", "punjabi")
+        val korean = setOf("korean", "k-drama", "k drama", "korea")
+        val emotional = setOf("emotional", "tearjerker", "family drama", "inspirational", "heartwarming", "coming of age")
         uniqueIStream.forEach { movie ->
-            val text = movie.displayTitle().lowercase()
-            val genre = when {
-                text.hasAny("action", "superhero", "martial") -> HomeSectionType.ACTION_HITS
-                text.hasAny("comedy", "funny") -> HomeSectionType.COMEDY_PICKS
-                text.hasAny("romance", "romantic", "love") -> HomeSectionType.ROMANCE_PICKS
-                text.hasAny("crime", "detective", "mystery") -> HomeSectionType.CRIME_MYSTERY
-                text.hasAny("horror", "supernatural", "paranormal") -> HomeSectionType.HORROR_AFTER_DARK
-                text.hasAny("psychological", "mental") -> HomeSectionType.PSYCHOLOGICAL
-                text.hasAny("mind", "twist", "loop", "inception") -> HomeSectionType.MIND_BENDING
-                text.hasAny("korean", "k-drama", "k drama") -> HomeSectionType.KDRAMA_FAVORITES
-                text.hasAny("indian", "bollywood", "hindi", "tamil", "telugu") -> HomeSectionType.INDIAN_HITS
-                text.hasAny("drama", "emotional", "heart") -> HomeSectionType.EMOTIONAL_PICKS
-                else -> null
-            }
-            genre?.let { add(it, movie) }
-            if (movie.media_type == "tv" || text.hasAny("series", "season")) add(HomeSectionType.BINGE_WORTHY, movie)
+            if (matches(movie, psychological)) add(HomeSectionType.PSYCHOLOGICAL, movie)
+            if (matches(movie, mindBending)) add(HomeSectionType.MIND_BENDING, movie)
+            if (matches(movie, romance) && !matches(movie, romanceExcludes)) add(HomeSectionType.ROMANCE_PICKS, movie)
+            if (matches(movie, action)) add(HomeSectionType.ACTION_HITS, movie)
+            if (matches(movie, crime)) add(HomeSectionType.CRIME_MYSTERY, movie)
+            if (matches(movie, horror) && !matches(movie, horrorExcludes)) add(HomeSectionType.HORROR_AFTER_DARK, movie)
+            if (matches(movie, comedy)) add(HomeSectionType.COMEDY_PICKS, movie)
+            if (matches(movie, indian)) add(HomeSectionType.INDIAN_HITS, movie)
+            if (matches(movie, korean) && !matches(movie, indian)) add(HomeSectionType.KDRAMA_FAVORITES, movie)
+            if (matches(movie, emotional)) add(HomeSectionType.EMOTIONAL_PICKS, movie)
+            if (movie.media_type == "tv" || textOf(movie).hasAny("series", "season")) add(HomeSectionType.BINGE_WORTHY, movie)
             if (movie.vote_average != null && movie.vote_average >= 8.0) add(HomeSectionType.HIDDEN_GEMS, movie)
         }
         uniqueIStream.take(20).forEach { add(HomeSectionType.TRENDING_NOW, it) }
-        uniqueIStream.filter { it.displayTitle().lowercase().hasAny("new", "recent", "latest", "release") }
-            .take(20).forEach { add(HomeSectionType.NEW_RELEASES, it) }
-        if (sections.getValue(HomeSectionType.NEW_RELEASES).isEmpty()) uniqueIStream.take(7).forEach { add(HomeSectionType.NEW_RELEASES, it) }
+        uniqueIStream.filter(::isRecentlyReleased).take(20).forEach { add(HomeSectionType.NEW_RELEASES, it) }
         uniqueAnime.take(20).forEach { add(HomeSectionType.ANIME_SPOTLIGHT, it) }
         all.sortedByDescending { it.vote_average ?: 0.0 }.take(10).forEach { add(HomeSectionType.TOP_10_TODAY, it) }
         all.sortedByDescending { it.vote_average ?: 0.0 }.take(20).forEach { add(HomeSectionType.KINO_RECOMMENDS, it) }
@@ -191,6 +215,14 @@ class KinoHomeViewModel : ViewModel() {
         )
     }
     private fun String.hasAny(vararg values: String) = values.any(::contains)
+    private fun isRecentlyReleased(movie: MovieResult): Boolean {
+        val date = movie.release_date ?: movie.first_air_date ?: return false
+        val parsed = runCatching { SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date) }.getOrNull()
+        val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -6) }.time
+        return parsed?.let { !it.before(cutoff) } ?: date.take(4).toIntOrNull()?.let {
+            it == Calendar.getInstance().get(Calendar.YEAR)
+        } == true
+    }
     private fun isNetworkAvailable(): Boolean {
         val context = CloudStreamApp.context ?: return false
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -95,7 +96,10 @@ fun KinoHomeScreen(
 @Composable
 private fun HomeHeader(onSearchClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -122,12 +126,10 @@ private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) 
             state = pagerState,
             contentPadding = PaddingValues(horizontal = 16.dp),
             pageSpacing = 10.dp,
-            modifier = Modifier.fillMaxWidth().height(330.dp)
+            modifier = Modifier.fillMaxWidth().height(200.dp)
         ) { page ->
             val item = items[page]
-            Box(
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).clickable { onMovieClick(item.movie) }
-            ) {
+                Box(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { onMovieClick(item.movie) }) {
                 AsyncImage(
                     model = item.backdropUrl,
                     contentDescription = item.title,
@@ -135,21 +137,12 @@ private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) 
                     modifier = Modifier.fillMaxSize()
                 )
                 Box(
-                    modifier = Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xEE08090C)))
-                    )
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC08090C))))
                 )
-                Column(modifier = Modifier.align(Alignment.BottomStart).padding(22.dp)) {
-                    Text("NEW RELEASE", color = KinoRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(5.dp))
-                    Text(item.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, maxLines = 2)
-                    Spacer(Modifier.height(7.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item.year?.let { Text(it, color = Color.White.copy(alpha = .72f), fontSize = 13.sp) }
-                        item.rating?.let { Text("★ $it", color = Color(0xFFFFD54F), fontSize = 13.sp) }
-                        item.genre?.let { Text(it, color = Color.White.copy(alpha = .72f), fontSize = 13.sp) }
-                    }
-                }
             }
         }
         Row(
