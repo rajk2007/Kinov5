@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.ui.search
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.APIHolder
@@ -18,7 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
-data class KinoSearchResult(
+ data class KinoSearchResult(
     val name: String,
     val url: String,
     val apiName: String,
@@ -28,43 +29,57 @@ data class KinoSearchResult(
     val quality: String?
 )
 
+/** Scores titles without changing the provider's returned data. */
+fun getSearchRelevanceScore(title: String, query: String): Int {
+    val titleLower = title.lowercase().trim()
+    val queryLower = query.lowercase().trim()
+    if (queryLower.isEmpty()) return 0
+    return when {
+        titleLower == queryLower -> 100
+        titleLower.startsWith(queryLower) -> 90
+        titleLower.contains(" $queryLower") || titleLower.contains("$queryLower ") -> 80
+        titleLower.contains(queryLower) -> 70
+        else -> 0
+    }
+}
+
+fun getProviderPriority(apiName: String): Int {
+    val name = apiName.lowercase()
+    return when {
+        name.contains("netflix") -> 1
+        name.contains("primevideo") || name.contains("prime video") -> 2
+        name.contains("hotstar") -> 3
+        else -> 4
+    }
+}
+
+fun sortKinoSearchResults(results: List<KinoSearchResult>, query: String): List<KinoSearchResult> =
+    results.sortedWith(
+        compareByDescending<KinoSearchResult> { getSearchRelevanceScore(it.name, query) }
+            .thenBy { getProviderPriority(it.apiName) }
+            .thenBy { it.name.lowercase() }
+    )
+
 class KinoSearchViewModel : ViewModel() {
     private val _results = MutableStateFlow<List<KinoSearchResult>>(emptyList())
     val results: StateFlow<List<KinoSearchResult>> = _results
-
     private val _trending = MutableStateFlow<List<KinoSearchResult>>(emptyList())
     val trending: StateFlow<List<KinoSearchResult>> = _trending
-
     private val _recentSearches = MutableStateFlow<List<String>>(emptyList())
     val recentSearches: StateFlow<List<String>> = _recentSearches
-
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
-
     var query = MutableStateFlow("")
 
     private val mutex = Mutex()
-    private val preferences by lazy {
-        CloudStreamApp.context?.getSharedPreferences("kino_search", Context.MODE_PRIVATE)
-    }
-
-    private fun getProviderPriority(apiName: String): Int {
-        val name = apiName.lowercase()
-        return when {
-            name.contains("moviebox") -> 1
-            name.contains("castle") -> 2
-            name.contains("netmirror") || name.contains("netflix") -> 3
-            name.contains("pikashow") -> 4
-            else -> 100
-        }
-    }
+    private val preferences by lazy { CloudStreamApp.context?.getSharedPreferences("kino_search", Context.MODE_PRIVATE) }
 
     init {
         _recentSearches.value = loadRecentSearches()
         viewModelScope.launch(Dispatchers.IO) { loadTrending() }
         viewModelScope.launch {
-            query.collect { q ->
-                if (q.length >= 2) searchProviders(q) else _results.value = emptyList()
+            query.collect { value ->
+                if (value.trim().length >= 2) searchProviders(value.trim()) else _results.value = emptyList()
             }
         }
     }
@@ -72,8 +87,7 @@ class KinoSearchViewModel : ViewModel() {
     fun submitQuery() {
         val value = query.value.trim()
         if (value.length < 2) return
-        val updated = listOf(value) + _recentSearches.value.filterNot { it.equals(value, true) }
-        _recentSearches.value = updated.take(10)
+        _recentSearches.value = (listOf(value) + _recentSearches.value.filterNot { it.equals(value, true) }).take(10)
         preferences?.edit()?.putStringSet("recent_searches", _recentSearches.value.toSet())?.apply()
     }
 
@@ -82,57 +96,63 @@ class KinoSearchViewModel : ViewModel() {
         preferences?.edit()?.remove("recent_searches")?.apply()
     }
 
-    private fun loadRecentSearches(): List<String> = preferences?.getStringSet("recent_searches", emptySet())
-        ?.toList()
-        ?.sorted() ?: emptyList()
+    private fun loadRecentSearches(): List<String> = preferences?.getStringSet("recent_searches", emptySet())?.toList()?.sorted() ?: emptyList()
 
     private suspend fun loadTrending() {
         runCatching {
             TMDBApi.create().getPopular(TMDBApi.API_KEY).results.take(10).map { movie ->
-                KinoSearchResult(
-                    name = movie.displayTitle(),
-                    url = movie.providerUrl ?: "",
-                    apiName = movie.providerApiName ?: "TMDB",
-                    posterUrl = movie.poster_path?.let { "https://image.tmdb.org/t/p/w500$it" },
-                    type = if (movie.media_type.equals("tv", true)) TvType.TvSeries else TvType.Movie,
-                    year = movie.release_date?.take(4) ?: movie.first_air_date?.take(4),
-                    quality = null
-                )
+                KinoSearchResult(movie.displayTitle(), movie.providerUrl ?: "", movie.providerApiName ?: "TMDB",
+                    movie.poster_path?.let { "https://image.tmdb.org/t/p/w500$it" },
+                    if (movie.media_type.equals("tv", true)) TvType.TvSeries else TvType.Movie,
+                    movie.release_date?.take(4) ?: movie.first_air_date?.take(4), null)
             }
         }.onSuccess { _trending.value = it }
     }
 
-    private suspend fun searchProviders(query: String) {
+    private suspend fun searchProviders(searchQuery: String) {
         _isLoading.value = true
         _results.value = emptyList()
+        val providers = APIHolder.apis.toList().sortedBy { getProviderPriority(it.name) }
+        Log.d("SEARCH_DEBUG", "All providers: ${providers.map { it.name }}")
+        Log.d("SEARCH_DEBUG", "Hotstar loaded: ${providers.any { it.name.contains("Hotstar", true) }}")
         val masterList = mutableListOf<KinoSearchResult>()
-        val priorityNames = listOf("moviebox", "castle", "netmirror", "netflix", "pikashow")
-        val providers = APIHolder.apis.sortedBy { api ->
-            val index = priorityNames.indexOfFirst { api.name.lowercase().contains(it) }
-            if (index >= 0) index else Int.MAX_VALUE
-        }
-        if (providers.isEmpty()) {
-            _isLoading.value = false
-            return
-        }
-        coroutineScope {
-            providers.forEach { api ->
-                launch(Dispatchers.IO) {
-                    try {
-                        val resource = withTimeoutOrNull(6000L) { APIRepository(api).search(query, page = 1) }
-                        if (resource is Resource.Success) {
-                            val mapped = resource.value.items.map { response ->
-                                KinoSearchResult(response.name, response.url, response.apiName, response.posterUrl, response.type, null, response.quality?.name)
-                            }
-                            mutex.withLock {
-                                masterList.addAll(mapped)
-                                _results.value = masterList.sortedBy { getProviderPriority(it.apiName) }
-                            }
+        try {
+            coroutineScope {
+                providers.map { api ->
+                    launch(Dispatchers.IO) {
+                        val providerResults = searchFromProvider(api, searchQuery)
+                        if (providerResults.isNotEmpty()) mutex.withLock {
+                            masterList.addAll(providerResults)
+                            _results.value = sortKinoSearchResults(masterList, searchQuery)
                         }
-                    } catch (_: Exception) { }
-                }
+                    }
+                }.forEach { it.join() }
             }
+        } finally {
+            _results.value = sortKinoSearchResults(masterList, searchQuery)
+            _isLoading.value = false
         }
-        _isLoading.value = false
+    }
+
+    private suspend fun searchFromProvider(api: com.lagradost.cloudstream3.MainAPI, searchQuery: String): List<KinoSearchResult> {
+        return try {
+            Log.d("SEARCH_DEBUG", "Searching ${api.name} for: $searchQuery")
+            val repository = APIRepository(api)
+            var resource = withTimeoutOrNull(8_000L) { repository.search(searchQuery, 1) }
+            var results = (resource as? Resource.Success)?.value?.items.orEmpty()
+            if (results.isEmpty() && api.name.contains("Hotstar", true)) {
+                Log.d("SEARCH_DEBUG", "${api.name} returned no regular results; trying quick search")
+                resource = withTimeoutOrNull(8_000L) { repository.quickSearch(searchQuery) }
+                results = (resource as? Resource.Success)?.value?.items.orEmpty()
+            }
+            Log.d("SEARCH_DEBUG", "${api.name} returned ${results.size} results")
+            results.map { response ->
+                KinoSearchResult(response.name, response.url, response.apiName.ifBlank { api.name }, response.posterUrl,
+                    response.type, null, response.quality?.name)
+            }
+        } catch (error: Exception) {
+            Log.e("SEARCH_DEBUG", "${api.name} search error: ${error.message}", error)
+            emptyList()
+        }
     }
 }

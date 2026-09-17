@@ -82,7 +82,11 @@ fun KinoHomeScreen(
                     item { NetworkHint(networkState) }
                 }
                 items(rows, key = { it.sectionType.name }) { row ->
-                    if (row.sectionType == HomeSectionType.TOP_10_TODAY) {
+                    if (row.sectionType in setOf(
+                            HomeSectionType.TOP_NETFLIX_SERIES,
+                            HomeSectionType.TOP_PRIME_MOVIES,
+                            HomeSectionType.TOP_PRIME_SERIES
+                        )) {
                         Top10Section(row, onMovieClick)
                     } else {
                         MovieSection(row, onMovieClick)
