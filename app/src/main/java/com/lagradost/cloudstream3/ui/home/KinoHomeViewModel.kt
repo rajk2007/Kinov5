@@ -66,6 +66,10 @@ class KinoHomeViewModel : ViewModel() {
             val prime = content.firstOrNull { it.api.name.contains("PrimeVideo", true) || it.api.name.contains("Prime Video", true) }
             val hotstar = content.firstOrNull { it.api.name.contains("Hotstar", true) }
             val rows = buildHomeRows(netflix, prime, hotstar)
+            Log.d("KINO_HOME", "Content counts: ${content.associate { it.api.name to it.allItems.size }}")
+            if (rows.none { it.items.isNotEmpty() }) {
+                _error.value = "No content available from Netflix, Prime Video, or Hotstar"
+            }
             _homeRows.value = rows
             _heroBannerItems.value = rows.take(2).flatMap { it.items }.distinctBy { it.displayTitle() }.take(7).map(::hero)
             _networkState.value = NetworkState.Online

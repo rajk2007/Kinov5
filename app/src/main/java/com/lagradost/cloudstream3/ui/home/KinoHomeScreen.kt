@@ -81,7 +81,7 @@ fun KinoHomeScreen(
                 if (networkState != KinoHomeViewModel.NetworkState.Online && !loading) {
                     item { NetworkHint(networkState) }
                 }
-                items(rows, key = { it.sectionType.name }) { row ->
+                items(rows.filter { it.items.isNotEmpty() }, key = { it.sectionType.name }) { row ->
                     if (row.sectionType in setOf(
                             HomeSectionType.TOP_NETFLIX_SERIES,
                             HomeSectionType.TOP_PRIME_MOVIES,

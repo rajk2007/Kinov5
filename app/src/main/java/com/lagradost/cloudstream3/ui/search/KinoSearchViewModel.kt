@@ -112,9 +112,13 @@ class KinoSearchViewModel : ViewModel() {
     private suspend fun searchProviders(searchQuery: String) {
         _isLoading.value = true
         _results.value = emptyList()
-        val providers = APIHolder.apis.toList().sortedBy { getProviderPriority(it.name) }
-        Log.d("SEARCH_DEBUG", "All providers: ${providers.map { it.name }}")
-        Log.d("SEARCH_DEBUG", "Hotstar loaded: ${providers.any { it.name.contains("Hotstar", true) }}")
+        val providers = APIHolder.apis.filter { api ->
+            api.name.contains("Netflix", true) ||
+                api.name.contains("PrimeVideo", true) ||
+                api.name.contains("Prime Video", true) ||
+                api.name.contains("Hotstar", true)
+        }.sortedBy { getProviderPriority(it.name) }
+        Log.d("SEARCH_DEBUG", "Search providers: ${providers.map { it.name }}")
         val masterList = mutableListOf<KinoSearchResult>()
         try {
             coroutineScope {
