@@ -79,25 +79,15 @@ class KinoHomeViewModel : ViewModel() {
         _networkState.value = NetworkState.Loading
         try {
             val providers = waitForProviders()
-            val results = providers.map { api ->
-                async { api to fetchProviderContent(api) }
-            }.awaitAll()
-            val istream = results.firstOrNull { it.first == providers.firstOrNull() }?.second.orEmpty()
-            var anime = results.filter { it.first != providers.firstOrNull() }.flatMap { it.second }
-            if (anime.isEmpty()) {
-                val animeApi = providers.firstOrNull { it.name.contains("Ani", true) }
-                if (animeApi != null) {
-                    anime = runCatching {
-                        when (val response = APIRepository(animeApi).search("anime", 1)) {
-                            is Resource.Success -> response.value?.items.orEmpty().map { it.toMovieResult(animeApi) }
-                            else -> emptyList()
-                        }
-                    }.getOrDefault(emptyList())
-                }
-            }
-            if (istream.isEmpty()) error("IStreamFlare returned no homepage items")
+            val content = providers.map { api -> async { api to fetchProviderContent(api) } }.awaitAll().toMap()
+            val netflix = providers.firstOrNull { it.name.contains("Netflix", true) }?.let(content::get).orEmpty()
+            val prime = providers.firstOrNull {
+                it.name.contains("PrimeVideo", true) || it.name.contains("Prime Video", true)
+            }?.let(content::get).orEmpty()
+            val hotstar = providers.firstOrNull { it.name.contains("Hotstar", true) }?.let(content::get).orEmpty()
+            if (netflix.isEmpty()) error("Netflix returned no homepage items")
 
-            val sections = buildSections(istream, anime)
+            val sections = buildSections(netflix, prime, hotstar)
             _homeRows.value = orderSections(sections)
             val releases = sections[HomeSectionType.NEW_RELEASES].orEmpty()
             _heroBannerItems.value = releases.take(7).map { hero(it) }
@@ -113,17 +103,23 @@ class KinoHomeViewModel : ViewModel() {
     private suspend fun waitForProviders(): List<MainAPI> {
         repeat(60) {
             val found = APIHolder.apis.filter { api ->
-                api.name.contains("IStreamFlare", true) || api.name.contains("IStream Flare", true) ||
-                    api.name.contains("IStreamplay", true) || api.name.contains("AniVortex", true) ||
-                    api.name.contains("Ani Vortex", true)
+                api.name.contains("Netflix", true) || api.name.contains("PrimeVideo", true) ||
+                    api.name.contains("Prime Video", true) || api.name.contains("Hotstar", true)
             }
-            val istream = found.firstOrNull { it.name.contains("IStream", true) }
-            val anime = found.firstOrNull { it.name.contains("Ani", true) }
-            if (istream != null) return listOf(istream, anime).filterNotNull().distinct()
+            val netflix = found.firstOrNull { it.name.contains("Netflix", true) }
+            val prime = found.firstOrNull {
+                it.name.contains("PrimeVideo", true) || it.name.contains("Prime Video", true)
+            }
+            val hotstar = found.firstOrNull { it.name.contains("Hotstar", true) }
+            if (netflix != null && prime != null && hotstar != null) {
+                return listOf(netflix, prime, hotstar).distinct()
+            }
             delay(500)
         }
-        return APIHolder.apis.filter { it.name.contains("IStream", true) || it.name.contains("AniVortex", true) }
-            .distinct()
+        return APIHolder.apis.filter {
+            it.name.contains("Netflix", true) || it.name.contains("PrimeVideo", true) ||
+                it.name.contains("Prime Video", true) || it.name.contains("Hotstar", true)
+        }.distinct()
     }
 
     private suspend fun fetchProviderContent(api: MainAPI): List<MovieResult> = runCatching {
@@ -140,10 +136,16 @@ class KinoHomeViewModel : ViewModel() {
         vote_average = score?.toDouble()
     )
 
-    private fun buildSections(istream: List<MovieResult>, anime: List<MovieResult>): Map<HomeSectionType, List<MovieResult>> {
-        val uniqueIStream = istream.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
-        val uniqueAnime = anime.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
-        val all = uniqueIStream + uniqueAnime
+    private fun buildSections(
+        netflix: List<MovieResult>,
+        prime: List<MovieResult>,
+        hotstar: List<MovieResult>
+    ): Map<HomeSectionType, List<MovieResult>> {
+        val uniqueNetflix = netflix.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
+        val uniquePrime = prime.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
+        val uniqueHotstar = hotstar.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
+        val general = uniqueNetflix + uniquePrime
+        val all = general + uniqueHotstar
         val sections = HomeSectionType.entries.associateWith { mutableListOf<MovieResult>() }
         fun add(type: HomeSectionType, movie: MovieResult) { sections.getValue(type).add(movie) }
         fun textOf(movie: MovieResult): String = listOfNotNull(movie.title, movie.name).joinToString(" ").lowercase()
@@ -163,7 +165,7 @@ class KinoHomeViewModel : ViewModel() {
         val indian = setOf("indian", "bollywood", "hindi", "tamil", "telugu", "bengali", "malayalam", "kannada", "marathi", "punjabi")
         val korean = setOf("korean", "k-drama", "k drama", "korea")
         val emotional = setOf("emotional", "tearjerker", "family drama", "inspirational", "heartwarming", "coming of age")
-        uniqueIStream.forEach { movie ->
+        all.forEach { movie ->
             if (matches(movie, psychological)) add(HomeSectionType.PSYCHOLOGICAL, movie)
             if (matches(movie, mindBending)) add(HomeSectionType.MIND_BENDING, movie)
             if (matches(movie, romance) && !matches(movie, romanceExcludes)) add(HomeSectionType.ROMANCE_PICKS, movie)
@@ -177,9 +179,9 @@ class KinoHomeViewModel : ViewModel() {
             if (movie.media_type == "tv" || textOf(movie).hasAny("series", "season")) add(HomeSectionType.BINGE_WORTHY, movie)
             if (movie.vote_average != null && movie.vote_average >= 8.0) add(HomeSectionType.HIDDEN_GEMS, movie)
         }
-        uniqueIStream.take(20).forEach { add(HomeSectionType.TRENDING_NOW, it) }
-        uniqueIStream.filter(::isRecentlyReleased).take(20).forEach { add(HomeSectionType.NEW_RELEASES, it) }
-        uniqueAnime.take(20).forEach { add(HomeSectionType.ANIME_SPOTLIGHT, it) }
+        uniqueNetflix.take(20).forEach { add(HomeSectionType.TRENDING_NOW, it) }
+        uniqueNetflix.filter(::isRecentlyReleased).take(20).forEach { add(HomeSectionType.NEW_RELEASES, it) }
+        uniqueHotstar.take(20).forEach { add(HomeSectionType.INDIAN_HITS, it) }
         all.sortedByDescending { it.vote_average ?: 0.0 }.take(10).forEach { add(HomeSectionType.TOP_10_TODAY, it) }
         all.sortedByDescending { it.vote_average ?: 0.0 }.take(20).forEach { add(HomeSectionType.KINO_RECOMMENDS, it) }
         return sections.mapValues { (_, values) -> values.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }.take(20) }

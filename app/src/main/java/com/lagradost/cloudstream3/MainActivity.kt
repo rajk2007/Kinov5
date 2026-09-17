@@ -484,32 +484,29 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         onColorSelectedEvent.invoke(Pair(dialogId, color))
     }
 
-private fun autoInstallRepositories() {
-        val prefs = getSharedPreferences("kino_setup_v11", MODE_PRIVATE)
-        val hasAniVortex = APIHolder.apis.any {
-            it.name.contains("AniVortex", ignoreCase = true) ||
-                it.name.contains("Ani Vortex", ignoreCase = true)
+    private fun autoInstallRepositories() {
+        val prefs = getSharedPreferences("kino_setup_v13", MODE_PRIVATE)
+        val hasNetflix = APIHolder.apis.any { it.name.contains("Netflix", ignoreCase = true) }
+        val hasPrimeVideo = APIHolder.apis.any {
+            it.name.contains("PrimeVideo", ignoreCase = true) ||
+                it.name.contains("Prime Video", ignoreCase = true)
         }
-        val hasIStreamFlare = APIHolder.apis.any {
-            it.name.contains("IStreamFlare", ignoreCase = true) ||
-                it.name.contains("IStream Flare", ignoreCase = true) ||
-                it.name.contains("IStreamplay", ignoreCase = true)
-        }
-        if (hasAniVortex && hasIStreamFlare && prefs.getBoolean("repos_installed_v11", false)) return
+        val hasHotstar = APIHolder.apis.any { it.name.contains("Hotstar", ignoreCase = true) }
+        if (hasNetflix && hasPrimeVideo && hasHotstar && prefs.getBoolean("repos_installed_v13", false)) return
 
         ioSafe {
             withContext(Dispatchers.Main) { showToast("Setting up providers...") }
-            val phisher = RepositoryData(
-                name = "Phisher",
-                url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json"
+            val allForU = RepositoryData(
+                name = "AllForU",
+                url = "https://raw.githubusercontent.com/RVRBEAST76/allforu-repo/builds/repo.json"
             )
             try {
-                if (RepositoryManager.getRepositories().none { it.url == phisher.url }) {
-                    RepositoryManager.addRepository(phisher)
+                if (RepositoryManager.getRepositories().none { it.url == allForU.url }) {
+                    RepositoryManager.addRepository(allForU)
                 }
 
-                val wantedPlugins = setOf("anivortex", "ani vortex", "istreamflare", "istream flare", "istreamplay")
-                RepositoryManager.getRepoPlugins(phisher.url)?.forEach { (repoUrl, sitePlugin) ->
+                val wantedPlugins = setOf("netflix", "primevideo", "prime video", "hotstar")
+                RepositoryManager.getRepoPlugins(allForU.url)?.forEach { (repoUrl, sitePlugin) ->
                     val matches = sitePlugin.name.lowercase() in wantedPlugins ||
                         sitePlugin.internalName.lowercase() in wantedPlugins
                     if (matches) {
@@ -531,6 +528,8 @@ private fun autoInstallRepositories() {
                 }
 
                 val oldRepoUrls = listOf(
+                    "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json",
+                    "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/repo.json",
                     "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/refs/heads/builds/CNC.json",
                     "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/builds/CNC.json",
                     "https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json",
@@ -542,17 +541,14 @@ private fun autoInstallRepositories() {
                 }
 
                 PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
-                val anivortexLoaded = APIHolder.allProviders.any {
-                    it.name.contains("AniVortex", ignoreCase = true) || it.name.contains("Ani Vortex", ignoreCase = true)
+                val netflixLoaded = APIHolder.allProviders.any { it.name.contains("Netflix", true) }
+                val primeLoaded = APIHolder.allProviders.any {
+                    it.name.contains("PrimeVideo", true) || it.name.contains("Prime Video", true)
                 }
-                val istreamflareLoaded = APIHolder.allProviders.any {
-                    it.name.contains("IStreamFlare", ignoreCase = true) ||
-                        it.name.contains("IStream Flare", ignoreCase = true) ||
-                        it.name.contains("IStreamplay", ignoreCase = true)
-                }
-                Log.i(TAG, "Provider status: AniVortex=$anivortexLoaded, IStreamFlare=$istreamflareLoaded, total=${APIHolder.allProviders.size}")
-                if (anivortexLoaded && istreamflareLoaded) {
-                    prefs.edit().putBoolean("repos_installed_v11", true).apply()
+                val hotstarLoaded = APIHolder.allProviders.any { it.name.contains("Hotstar", true) }
+                Log.i(TAG, "Provider status: Netflix=$netflixLoaded, PrimeVideo=$primeLoaded, Hotstar=$hotstarLoaded, total=${APIHolder.allProviders.size}")
+                if (netflixLoaded && primeLoaded && hotstarLoaded) {
+                    prefs.edit().putBoolean("repos_installed_v13", true).apply()
                 }
                 withContext(Dispatchers.Main) {
                     onAllPluginsLoaded(true)

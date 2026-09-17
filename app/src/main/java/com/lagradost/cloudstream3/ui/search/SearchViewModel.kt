@@ -170,11 +170,10 @@ class SearchViewModel : ViewModel() {
     }
 
     private fun providerPriority(apiName: String): Int = when {
-        apiName.contains("IStreamFlare", ignoreCase = true) ||
-            apiName.contains("IStream Flare", ignoreCase = true) ||
-            apiName.contains("IStreamplay", ignoreCase = true) -> 1
-        apiName.contains("AniVortex", ignoreCase = true) ||
-            apiName.contains("Ani Vortex", ignoreCase = true) -> 2
+        apiName.contains("Netflix", ignoreCase = true) -> 1
+        apiName.contains("PrimeVideo", ignoreCase = true) ||
+            apiName.contains("Prime Video", ignoreCase = true) ||
+            apiName.contains("Hotstar", ignoreCase = true) -> 2
         else -> 3
     }
 
