@@ -49,6 +49,7 @@ fun getProviderPriority(apiName: String): Int {
         name.contains("netflix") -> 1
         name.contains("primevideo") || name.contains("prime video") -> 2
         name.contains("hotstar") -> 3
+        name.contains("disney") -> 4
         else -> 4
     }
 }
@@ -116,7 +117,8 @@ class KinoSearchViewModel : ViewModel() {
             api.name.contains("Netflix", true) ||
                 api.name.contains("PrimeVideo", true) ||
                 api.name.contains("Prime Video", true) ||
-                api.name.contains("Hotstar", true)
+                api.name.contains("Hotstar", true) ||
+                api.name.contains("Disney", true)
         }.sortedBy { getProviderPriority(it.name) }
         Log.d("SEARCH_DEBUG", "Search providers: ${providers.map { it.name }}")
         val masterList = mutableListOf<KinoSearchResult>()
@@ -144,7 +146,7 @@ class KinoSearchViewModel : ViewModel() {
             val repository = APIRepository(api)
             var resource = withTimeoutOrNull(8_000L) { repository.search(searchQuery, 1) }
             var results = (resource as? Resource.Success)?.value?.items.orEmpty()
-            if (results.isEmpty() && api.name.contains("Hotstar", true)) {
+            if (results.isEmpty() && (api.name.contains("Hotstar", true) || api.name.contains("Disney", true))) {
                 Log.d("SEARCH_DEBUG", "${api.name} returned no regular results; trying quick search")
                 resource = withTimeoutOrNull(8_000L) { repository.quickSearch(searchQuery) }
                 results = (resource as? Resource.Success)?.value?.items.orEmpty()

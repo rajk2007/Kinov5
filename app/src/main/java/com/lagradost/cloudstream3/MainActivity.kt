@@ -487,7 +487,12 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     private fun autoInstallRepositories() {
         val prefs = getSharedPreferences("kino_setup_v14", MODE_PRIVATE)
         val allForUUrl = "https://raw.githubusercontent.com/RVRBEAST76/allforu-repo/builds/repo.json"
-        val wantedPlugins = setOf("netflix", "primevideo", "prime video", "hotstar")
+        val wantedPlugins = setOf(
+            "netflix",
+            "primevideo", "prime video",
+            "hotstar",
+            "disneyplus", "disney plus", "disney+"
+        )
 
         ioSafe {
             withContext(Dispatchers.Main) { showToast("Setting up providers...") }
@@ -534,8 +539,16 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 val hasNetflix = loadedProviders.any { it.name.contains("Netflix", true) }
                 val hasPrime = loadedProviders.any { it.name.contains("PrimeVideo", true) || it.name.contains("Prime Video", true) }
                 val hasHotstar = loadedProviders.any { it.name.contains("Hotstar", true) }
+                val hasDisney = loadedProviders.any {
+                    it.name.contains("DisneyPlus", true) ||
+                        it.name.contains("Disney Plus", true) ||
+                        it.name.contains("Disney+", true) ||
+                        it.name.contains("Disney", true)
+                }
                 Log.i(TAG, "Loaded providers: ${loadedProviders.map { it.name }}")
-                if (hasNetflix && hasPrime && hasHotstar) prefs.edit().putBoolean("repos_installed_v14", true).apply()
+                if (hasNetflix && hasPrime && (hasHotstar || hasDisney)) {
+                    prefs.edit().putBoolean("repos_installed_v14", true).apply()
+                }
 
                 withContext(Dispatchers.Main) {
                     onAllPluginsLoaded(true)

@@ -65,13 +65,22 @@ class KinoHomeViewModel : ViewModel() {
             val netflix = content.firstOrNull { it.api.name.contains("Netflix", true) }
             val prime = content.firstOrNull { it.api.name.contains("PrimeVideo", true) || it.api.name.contains("Prime Video", true) }
             val hotstar = content.firstOrNull { it.api.name.contains("Hotstar", true) }
-            val rows = buildHomeRows(netflix, prime, hotstar)
+            val disney = content.firstOrNull { it.api.name.contains("Disney", true) }
+            var hotstarContent = hotstar
+            if (hotstarContent == null || hotstarContent.allItems.isEmpty()) {
+                Log.e("HOME_DEBUG", "Hotstar unavailable or empty; trying DisneyPlus fallback")
+                if (disney != null && disney.allItems.isNotEmpty()) {
+                    hotstarContent = disney
+                    Log.e("HOME_DEBUG", "Using DisneyPlus content as Hotstar fallback: ${disney.allItems.size} items")
+                }
+            }
+            val rows = buildHomeRows(netflix, prime, hotstarContent)
             Log.d("KINO_HOME", "Content counts: ${content.associate { it.api.name to it.allItems.size }}")
             if (rows.none { it.items.isNotEmpty() }) {
                 _error.value = "No content available from Netflix, Prime Video, or Hotstar"
             }
             _homeRows.value = rows
-            _heroBannerItems.value = rows.take(2).flatMap { it.items }.distinctBy { it.displayTitle() }.take(7).map(::hero)
+            _heroBannerItems.value = prepareHeroBanner(content.flatMap { it.allItems })
             _networkState.value = NetworkState.Online
         } catch (error: Throwable) {
             _error.value = error.message ?: "Unable to load content"
@@ -84,28 +93,42 @@ class KinoHomeViewModel : ViewModel() {
             val providers = APIHolder.apis.toList()
             val wanted = providers.filter { api ->
                 api.name.contains("Netflix", true) || api.name.contains("PrimeVideo", true) ||
-                    api.name.contains("Prime Video", true) || api.name.contains("Hotstar", true)
+                    api.name.contains("Prime Video", true) || api.name.contains("Hotstar", true) ||
+                    api.name.contains("Disney", true)
             }.distinctBy { it.name }
             if (wanted.isNotEmpty()) return wanted
             delay(500)
         }
         return APIHolder.apis.filter { api ->
-            api.name.contains("Netflix", true) || api.name.contains("Prime", true) || api.name.contains("Hotstar", true)
+            api.name.contains("Netflix", true) || api.name.contains("Prime", true) ||
+                api.name.contains("Hotstar", true) || api.name.contains("Disney", true)
         }.distinctBy { it.name }
     }
 
-    private suspend fun fetchProviderContent(api: MainAPI): ProviderHomeContent = try {
-        when (val response = APIRepository(api).getMainPage(1)) {
-            is Resource.Success -> ProviderHomeContent(api, response.value.orEmpty().flatMap { page ->
-                page?.items.orEmpty().map { list: HomePageList ->
-                    list.name to list.list.map { it.toMovieResult(api) }
+    private suspend fun fetchProviderContent(api: MainAPI): ProviderHomeContent {
+        return try {
+            Log.e("FETCH_DEBUG", "Fetching from: ${api.name} (${api.javaClass.name}), url=${api.mainUrl}")
+            when (val response = APIRepository(api).getMainPage(1)) {
+                is Resource.Success -> {
+                    val sections = response.value.orEmpty().flatMap { page ->
+                        page?.items.orEmpty().map { list: HomePageList ->
+                            val items = list.list.map { it.toMovieResult(api) }
+                            Log.e("FETCH_DEBUG", "${api.name} section '${list.name}': ${items.size} items")
+                            list.name to items
+                        }
+                    }
+                    Log.e("FETCH_DEBUG", "${api.name}: got ${sections.sumOf { it.second.size }} total items")
+                    ProviderHomeContent(api, sections)
                 }
-            })
-            else -> ProviderHomeContent(api, emptyList())
+                else -> {
+                    Log.e("FETCH_DEBUG", "${api.name}: failed with ${response::class.simpleName}")
+                    ProviderHomeContent(api, emptyList())
+                }
+            }
+        } catch (error: Exception) {
+            Log.e("FETCH_DEBUG", "${api.name} homepage exception: ${error.message}", error)
+            ProviderHomeContent(api, emptyList())
         }
-    } catch (error: Exception) {
-        Log.e("KINO_HOME", "${api.name} homepage failed: ${error.message}")
-        ProviderHomeContent(api, emptyList())
     }
 
     private fun SearchResponse.toMovieResult(api: MainAPI) = MovieResult(
@@ -120,12 +143,28 @@ class KinoHomeViewModel : ViewModel() {
             val matched = provider.sections.filter { section -> words.any { section.first.contains(it, true) } }.flatMap { it.second }
             return (matched.ifEmpty { provider.allItems }).distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }.take(20)
         }
+        fun pickPrimeByType(provider: ProviderHomeContent?, series: Boolean): List<MovieResult> {
+            if (provider == null) return emptyList()
+            val matchingSections = provider.sections.filter { (name, _) ->
+                val lower = name.lowercase()
+                if (series) {
+                    (lower.contains("series") || lower.contains("tv")) && !lower.contains("movie")
+                } else {
+                    lower.contains("movie") && !lower.contains("series") && !lower.contains("tv")
+                }
+            }.flatMap { it.second }
+            val typedItems = provider.allItems.filter { item ->
+                if (series) item.media_type.equals("tv", true) else item.media_type.equals("movie", true)
+            }
+            return (matchingSections.ifEmpty { typedItems })
+                .distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }.take(20)
+        }
         return listOf(
             HomeRow("New on Netflix", pick(netflix, "new", "latest", "release", "recent"), HomeSectionType.NEW_NETFLIX),
             HomeRow("Latest Releases", pick(hotstar, "new", "latest", "release", "recent"), HomeSectionType.LATEST_HOTSTAR),
             HomeRow("Top 10 Series in Netflix Today", pick(netflix, "top 10", "series"), HomeSectionType.TOP_NETFLIX_SERIES),
-            HomeRow("Top 10 Movies in Prime Video", pick(prime, "top 10", "movie"), HomeSectionType.TOP_PRIME_MOVIES),
-            HomeRow("Top 10 Series in Prime Video", pick(prime, "top 10", "series"), HomeSectionType.TOP_PRIME_SERIES),
+            HomeRow("Top 10 Movies in Prime Video", pickPrimeByType(prime, series = false), HomeSectionType.TOP_PRIME_MOVIES),
+            HomeRow("Top 10 Series in Prime Video", pickPrimeByType(prime, series = true), HomeSectionType.TOP_PRIME_SERIES),
             HomeRow("K-Dramas", pick(netflix, "k-drama", "korean", "korea"), HomeSectionType.K_DRAMAS),
             HomeRow("Korean", pick(hotstar, "korean", "korea"), HomeSectionType.KOREAN),
             HomeRow("Comedy Movies", pick(hotstar, "comedy"), HomeSectionType.COMEDY_MOVIES),
@@ -143,6 +182,17 @@ class KinoHomeViewModel : ViewModel() {
         movie = movie, backdropUrl = movie.backdrop_path ?: movie.poster_path, title = movie.displayTitle(),
         year = movie.release_date?.take(4) ?: movie.first_air_date?.take(4), rating = movie.vote_average?.let { "%.1f".format(it) }, genre = null
     )
+
+    private fun prepareHeroBanner(allContent: List<MovieResult>): List<HeroBannerItem> {
+        val unique = allContent.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
+        val newReleases = unique.filter { movie ->
+            val text = "${movie.displayTitle()} ${movie.release_date ?: ""}".lowercase()
+            text.contains("new") || text.contains("latest") || text.contains("recent")
+        }
+        val heroContent = if (newReleases.size >= 5) newReleases else (newReleases + unique).distinctBy { it.displayTitle() }
+        Log.e("HERO_DEBUG", "Hero banner items: ${heroContent.size}")
+        return heroContent.take(7).map(::hero)
+    }
 
     private fun isNetworkAvailable(): Boolean {
         val context = CloudStreamApp.context ?: return false
