@@ -118,24 +118,36 @@ private fun HomeHeader(onSearchClick: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) -> Unit) {
+    if (items.isEmpty()) return
+
     val pagerState = rememberPagerState(pageCount = { items.size })
-    LaunchedEffect(items) {
-        if (items.size > 1) while (true) {
-            delay(5_000)
-            pagerState.animateScrollToPage((pagerState.currentPage + 1) % items.size)
+    LaunchedEffect(items.size) {
+        if (items.size > 1) {
+            while (true) {
+                delay(5_000)
+                pagerState.animateScrollToPage((pagerState.currentPage + 1) % items.size)
+            }
         }
     }
-    Column(modifier = Modifier.padding(bottom = 18.dp)) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .height(350.dp)
+    ) {
         HorizontalPager(
             state = pagerState,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            pageSpacing = 10.dp,
-            modifier = Modifier.fillMaxWidth().height(200.dp)
+            modifier = Modifier.fillMaxSize()
         ) { page ->
-            val item = items[page]
-                Box(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { onMovieClick(item.movie) }) {
+            val item = items[page % items.size]
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onMovieClick(item.movie) }
+            ) {
                 AsyncImage(
-                    model = item.backdropUrl,
+                    model = item.backdropUrl ?: item.movie.poster_path ?: "",
                     contentDescription = item.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -143,20 +155,31 @@ private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(40.dp)
+                        .height(60.dp)
                         .align(Alignment.BottomCenter)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC08090C))))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color(0xFF080808))
+                            )
+                        )
                 )
             }
         }
+
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            items.indices.forEach { index ->
+            repeat(items.size) { index ->
+                val color = if (pagerState.currentPage == index) KinoRed else Color.White.copy(alpha = .33f)
                 Box(
-                    Modifier.padding(horizontal = 3.dp).size(if (pagerState.currentPage == index) 18.dp else 6.dp, 6.dp)
-                        .clip(CircleShape).background(if (pagerState.currentPage == index) KinoRed else Color.White.copy(alpha = .35f))
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .size(8.dp)
                 )
             }
         }

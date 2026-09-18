@@ -80,7 +80,7 @@ class KinoHomeViewModel : ViewModel() {
                 _error.value = "No content available from Netflix, Prime Video, or Hotstar"
             }
             _homeRows.value = rows
-            _heroBannerItems.value = prepareHeroBanner(content.flatMap { it.allItems })
+            _heroBannerItems.value = prepareHeroBanner(rows)
             _networkState.value = NetworkState.Online
         } catch (error: Throwable) {
             _error.value = error.message ?: "Unable to load content"
@@ -178,20 +178,31 @@ class KinoHomeViewModel : ViewModel() {
         )
     }
 
-    private fun hero(movie: MovieResult) = HeroBannerItem(
-        movie = movie, backdropUrl = movie.backdrop_path ?: movie.poster_path, title = movie.displayTitle(),
-        year = movie.release_date?.take(4) ?: movie.first_air_date?.take(4), rating = movie.vote_average?.let { "%.1f".format(it) }, genre = null
-    )
+    private fun prepareHeroBanner(rows: List<HomeRow>): List<HeroBannerItem> {
+        // Get content from the first few rows (New on Netflix, Latest Releases, etc.).
+        val topRows = rows.take(3)
 
-    private fun prepareHeroBanner(allContent: List<MovieResult>): List<HeroBannerItem> {
-        val unique = allContent.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
-        val newReleases = unique.filter { movie ->
-            val text = "${movie.displayTitle()} ${movie.release_date ?: ""}".lowercase()
-            text.contains("new") || text.contains("latest") || text.contains("recent")
+        // Combine content from these rows.
+        val heroContent = topRows
+            .flatMap { it.items }
+            .distinctBy { it.displayTitle() }
+            .take(7)
+
+        Log.e("HERO_DEBUG", "Hero content: ${heroContent.size} items")
+        heroContent.forEach {
+            Log.e("HERO_DEBUG", "  - ${it.displayTitle()}")
         }
-        val heroContent = if (newReleases.size >= 5) newReleases else (newReleases + unique).distinctBy { it.displayTitle() }
-        Log.e("HERO_DEBUG", "Hero banner items: ${heroContent.size}")
-        return heroContent.take(7).map(::hero)
+
+        return heroContent.map { movie ->
+            HeroBannerItem(
+                movie = movie,
+                backdropUrl = movie.backdrop_path ?: movie.poster_path,
+                title = movie.displayTitle(),
+                year = movie.release_date?.take(4) ?: movie.first_air_date?.take(4),
+                rating = movie.vote_average?.toString(),
+                genre = null
+            )
+        }
     }
 
     private fun isNetworkAvailable(): Boolean {
