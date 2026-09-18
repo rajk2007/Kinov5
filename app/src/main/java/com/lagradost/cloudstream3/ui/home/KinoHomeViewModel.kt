@@ -80,7 +80,11 @@ class KinoHomeViewModel : ViewModel() {
                 _error.value = "No content available from Netflix, Prime Video, or Hotstar"
             }
             _homeRows.value = rows
-            _heroBannerItems.value = prepareHeroBanner(rows)
+            _heroBannerItems.value = prepareHeroBanner(
+                netflix?.allItems.orEmpty(),
+                prime?.allItems.orEmpty(),
+                hotstarContent?.allItems.orEmpty()
+            )
             _networkState.value = NetworkState.Online
         } catch (error: Throwable) {
             _error.value = error.message ?: "Unable to load content"
@@ -178,22 +182,32 @@ class KinoHomeViewModel : ViewModel() {
         )
     }
 
-    private fun prepareHeroBanner(rows: List<HomeRow>): List<HeroBannerItem> {
-        // Get content from the first few rows (New on Netflix, Latest Releases, etc.).
-        val topRows = rows.take(3)
-
-        // Combine content from these rows.
-        val heroContent = topRows
-            .flatMap { it.items }
-            .distinctBy { it.displayTitle() }
-            .take(7)
-
-        Log.e("HERO_DEBUG", "Hero content: ${heroContent.size} items")
-        heroContent.forEach {
-            Log.e("HERO_DEBUG", "  - ${it.displayTitle()}")
+    private fun prepareHeroBanner(
+        netflixContent: List<MovieResult>,
+        primeContent: List<MovieResult>,
+        hotstarContent: List<MovieResult>
+    ): List<HeroBannerItem> {
+        fun latestFrom(content: List<MovieResult>): List<MovieResult> {
+            val latest = content.filter { movie ->
+                val text = movie.displayTitle().lowercase()
+                text.contains("new") || text.contains("latest") ||
+                    text.contains("recent") || text.contains("recently added")
+            }.take(2)
+            return if (latest.isNotEmpty()) latest else content.take(2)
         }
 
-        return heroContent.map { movie ->
+        val finalItems = (latestFrom(netflixContent) +
+            latestFrom(primeContent) +
+            latestFrom(hotstarContent))
+            .distinctBy { it.displayTitle() }
+            .take(6)
+
+        Log.e("HERO_DEBUG", "Hero banner items: ${finalItems.size}")
+        finalItems.forEach { item ->
+            Log.e("HERO_DEBUG", "  - ${item.displayTitle()} (from: ${item.providerApiName})")
+        }
+
+        return finalItems.map { movie ->
             HeroBannerItem(
                 movie = movie,
                 backdropUrl = movie.backdrop_path ?: movie.poster_path,
