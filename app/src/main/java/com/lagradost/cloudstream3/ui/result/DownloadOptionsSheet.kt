@@ -79,7 +79,19 @@ fun DownloadOptionsSheet(
     val normalized = remember(links) {
         links.map { link ->
             val q = link.effectiveQuality()
-            if (q != link.quality) link.copy(quality = q) else link
+            if (q != link.quality) {
+                ExtractorLink(
+                    source = link.source,
+                    name = link.name,
+                    url = link.url,
+                    referer = link.referer,
+                    quality = q,
+                    headers = link.headers,
+                    extractorData = link.extractorData,
+                    type = link.type,
+                    audioTracks = link.audioTracks
+                )
+            } else link
         }
     }
 

@@ -235,12 +235,22 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             val fixed = if (link.quality == Qualities.Unknown.value || link.quality == 0) {
                                 val parsedQuality = parseQualityFromLinkName(link.name)
                                 val qualityInt = if (parsedQuality != null) {
-                                    getQualityFromName(parsedQuality)
-                                } else {
-                                    link.quality
-                                }
-                                link.copy(quality = qualityInt)
-                            } else link
+                                getQualityFromName(parsedQuality)
+                            } else {
+                                link.quality
+                            }
+                            ExtractorLink(
+                                source = link.source,
+                                name = link.name,
+                                url = link.url,
+                                referer = link.referer,
+                                quality = qualityInt,
+                                headers = link.headers,
+                                extractorData = link.extractorData,
+                                type = link.type,
+                                audioTracks = link.audioTracks
+                            )
+                        } else link
                             links.add(fixed)
                         }
                     }
