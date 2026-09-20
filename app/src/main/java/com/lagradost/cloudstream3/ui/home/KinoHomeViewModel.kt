@@ -15,8 +15,6 @@ import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,12 +28,21 @@ enum class HomeSectionType {
     US_TV_SHOWS, HOTSTAR_SPECIALS, PRIME_ORIGINALS, HORROR_STORIES
 }
 
-data class HomeRow(val title: String, val items: List<MovieResult>, val sectionType: HomeSectionType, val isPersonalized: Boolean = false)
-data class HeroBannerItem(val movie: MovieResult, val backdropUrl: String?, val title: String, val year: String?, val rating: String?, val genre: String?)
+data class HomeRow(
+    val title: String,
+    val items: List<MovieResult>,
+    val sectionType: HomeSectionType,
+    val isPersonalized: Boolean = false
+)
 
-private data class ProviderHomeContent(val api: MainAPI, val sections: List<Pair<String, List<MovieResult>>>) {
-    val allItems: List<MovieResult> get() = sections.flatMap { it.second }.distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }
-}
+data class HeroBannerItem(
+    val movie: MovieResult,
+    val backdropUrl: String?,
+    val title: String,
+    val year: String?,
+    val rating: String?,
+    val genre: String?
+)
 
 class KinoHomeViewModel : ViewModel() {
     enum class NetworkState { Loading, Online, Slow, Offline }
@@ -54,160 +61,99 @@ class KinoHomeViewModel : ViewModel() {
     init { loadData() }
     fun retry() = loadData()
 
+    private fun isBingeCloud(api: MainAPI): Boolean =
+        api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+
     private fun loadData() = viewModelScope.launch(Dispatchers.IO) {
         _isLoading.value = true
         _error.value = null
         _networkState.value = NetworkState.Loading
         try {
-            val providers = waitForProviders()
-            Log.d("KINO_HOME", "Providers loaded: ${providers.map { it.name }}")
-            val content = providers.map { api -> async { fetchProviderContent(api) } }.awaitAll()
-            val netflix = content.firstOrNull { it.api.name.contains("Netflix", true) }
-            val prime = content.firstOrNull { it.api.name.contains("PrimeVideo", true) || it.api.name.contains("Prime Video", true) }
-            val hotstar = content.firstOrNull { it.api.name.contains("Hotstar", true) }
-            val disney = content.firstOrNull { it.api.name.contains("Disney", true) }
-            var hotstarContent = hotstar
-            if (hotstarContent == null || hotstarContent.allItems.isEmpty()) {
-                Log.e("HOME_DEBUG", "Hotstar unavailable or empty; trying DisneyPlus fallback")
-                if (disney != null && disney.allItems.isNotEmpty()) {
-                    hotstarContent = disney
-                    Log.e("HOME_DEBUG", "Using DisneyPlus content as Hotstar fallback: ${disney.allItems.size} items")
-                }
+            var bingeCloudApi: MainAPI? = APIHolder.apis.firstOrNull(::isBingeCloud)
+            repeat(60) {
+                if (bingeCloudApi != null) return@repeat
+                delay(500)
+                bingeCloudApi = APIHolder.apis.firstOrNull(::isBingeCloud)
             }
-            val rows = buildHomeRows(netflix, prime, hotstarContent)
-            Log.d("KINO_HOME", "Content counts: ${content.associate { it.api.name to it.allItems.size }}")
-            if (rows.none { it.items.isNotEmpty() }) {
-                _error.value = "No content available from Netflix, Prime Video, or Hotstar"
+
+            Log.d("KINO_HOME", "BingeCloud API: ${bingeCloudApi?.name ?: "NOT FOUND"}")
+            if (bingeCloudApi == null) {
+                _error.value = "BingeCloud provider not loaded."
+                _networkState.value = if (isNetworkAvailable()) NetworkState.Slow else NetworkState.Offline
+                return@launch
+            }
+
+            val sections = fetchProviderSections(bingeCloudApi!!)
+            val rows = buildHomeRowsFromBingeCloud(sections)
+            val allItems = rows.flatMap { it.items }.distinctBy { itemKey(it) }
+            Log.d("KINO_HOME", "BingeCloud sections: ${sections.keys}; items: ${allItems.size}")
+            if (allItems.isEmpty()) {
+                _error.value = "No content available from BingeCloud"
             }
             _homeRows.value = rows
-            _heroBannerItems.value = prepareHeroBanner(
-                netflix?.allItems.orEmpty(),
-                prime?.allItems.orEmpty(),
-                hotstarContent?.allItems.orEmpty()
-            )
+            _heroBannerItems.value = prepareHeroBanner(allItems)
             _networkState.value = NetworkState.Online
         } catch (error: Throwable) {
             _error.value = error.message ?: "Unable to load content"
             _networkState.value = if (isNetworkAvailable()) NetworkState.Slow else NetworkState.Offline
-        } finally { _isLoading.value = false }
-    }
-
-    private suspend fun waitForProviders(): List<MainAPI> {
-        repeat(60) {
-            val providers = APIHolder.apis.toList()
-            val wanted = providers.filter { api ->
-                api.name.contains("Netflix", true) || api.name.contains("PrimeVideo", true) ||
-                    api.name.contains("Prime Video", true) || api.name.contains("Hotstar", true) ||
-                    api.name.contains("Disney", true)
-            }.distinctBy { it.name }
-            if (wanted.isNotEmpty()) return wanted
-            delay(500)
+        } finally {
+            _isLoading.value = false
         }
-        return APIHolder.apis.filter { api ->
-            api.name.contains("Netflix", true) || api.name.contains("Prime", true) ||
-                api.name.contains("Hotstar", true) || api.name.contains("Disney", true)
-        }.distinctBy { it.name }
     }
 
-    private suspend fun fetchProviderContent(api: MainAPI): ProviderHomeContent {
-        return try {
-            Log.e("FETCH_DEBUG", "Fetching from: ${api.name} (${api.javaClass.name}), url=${api.mainUrl}")
-            when (val response = APIRepository(api).getMainPage(1)) {
-                is Resource.Success -> {
-                    val sections = response.value.orEmpty().flatMap { page ->
-                        page?.items.orEmpty().map { list: HomePageList ->
-                            val items = list.list.map { it.toMovieResult(api) }
-                            Log.e("FETCH_DEBUG", "${api.name} section '${list.name}': ${items.size} items")
-                            list.name to items
+    private suspend fun fetchProviderSections(api: MainAPI): Map<String, List<MovieResult>> {
+        val sections = linkedMapOf<String, List<MovieResult>>()
+        try {
+            when (val response = APIRepository(api).getMainPage(page = 1)) {
+                is Resource.Success -> response.value.orEmpty().flatMap { it?.items.orEmpty() }
+                    .forEach { page: HomePageList ->
+                        val items = page.list.map { it.toMovieResult(api) }
+                        if (items.isNotEmpty()) {
+                            sections[page.name] = items.distinctBy(::itemKey)
+                            Log.d("KINO_HOME", "BingeCloud section '${page.name}': ${items.size} items")
                         }
                     }
-                    Log.e("FETCH_DEBUG", "${api.name}: got ${sections.sumOf { it.second.size }} total items")
-                    ProviderHomeContent(api, sections)
-                }
-                else -> {
-                    Log.e("FETCH_DEBUG", "${api.name}: failed with ${response::class.simpleName}")
-                    ProviderHomeContent(api, emptyList())
-                }
+                else -> Log.e("KINO_HOME", "BingeCloud homepage request failed")
             }
         } catch (error: Exception) {
-            Log.e("FETCH_DEBUG", "${api.name} homepage exception: ${error.message}", error)
-            ProviderHomeContent(api, emptyList())
+            Log.e("KINO_HOME", "BingeCloud homepage exception: ${error.message}", error)
         }
+        return sections
     }
 
     private fun SearchResponse.toMovieResult(api: MainAPI) = MovieResult(
-        id = id ?: url.hashCode(), title = name, poster_path = posterUrl, backdrop_path = posterUrl,
-        providerUrl = url, providerApiName = apiName.ifBlank { api.name },
-        media_type = if (type == TvType.TvSeries) "tv" else "movie", vote_average = score?.toDouble()
+        id = id ?: url.hashCode(),
+        title = name,
+        poster_path = posterUrl,
+        backdrop_path = posterUrl,
+        providerUrl = url,
+        providerApiName = apiName.ifBlank { api.name },
+        media_type = if (type == TvType.TvSeries) "tv" else "movie",
+        vote_average = score?.toDouble()
     )
 
-    private fun buildHomeRows(netflix: ProviderHomeContent?, prime: ProviderHomeContent?, hotstar: ProviderHomeContent?): List<HomeRow> {
-        fun pick(provider: ProviderHomeContent?, vararg words: String): List<MovieResult> {
-            if (provider == null) return emptyList()
-            val matched = provider.sections.filter { section -> words.any { section.first.contains(it, true) } }.flatMap { it.second }
-            return (matched.ifEmpty { provider.allItems }).distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }.take(20)
-        }
-        fun pickPrimeByType(provider: ProviderHomeContent?, series: Boolean): List<MovieResult> {
-            if (provider == null) return emptyList()
-            val matchingSections = provider.sections.filter { (name, _) ->
-                val lower = name.lowercase()
-                if (series) {
-                    (lower.contains("series") || lower.contains("tv")) && !lower.contains("movie")
-                } else {
-                    lower.contains("movie") && !lower.contains("series") && !lower.contains("tv")
-                }
-            }.flatMap { it.second }
-            val typedItems = provider.allItems.filter { item ->
-                if (series) item.media_type.equals("tv", true) else item.media_type.equals("movie", true)
-            }
-            return (matchingSections.ifEmpty { typedItems })
-                .distinctBy { "${it.providerApiName}:${it.providerUrl ?: it.id}" }.take(20)
-        }
-        return listOf(
-            HomeRow("New on Netflix", pick(netflix, "new", "latest", "release", "recent"), HomeSectionType.NEW_NETFLIX),
-            HomeRow("Latest Releases", pick(hotstar, "new", "latest", "release", "recent"), HomeSectionType.LATEST_HOTSTAR),
-            HomeRow("Top 10 Series in Netflix Today", pick(netflix, "top 10", "series"), HomeSectionType.TOP_NETFLIX_SERIES),
-            HomeRow("Top 10 Movies in Prime Video", pickPrimeByType(prime, series = false), HomeSectionType.TOP_PRIME_MOVIES),
-            HomeRow("Top 10 Series in Prime Video", pickPrimeByType(prime, series = true), HomeSectionType.TOP_PRIME_SERIES),
-            HomeRow("K-Dramas", pick(netflix, "k-drama", "korean", "korea"), HomeSectionType.K_DRAMAS),
-            HomeRow("Korean", pick(hotstar, "korean", "korea"), HomeSectionType.KOREAN),
-            HomeRow("Comedy Movies", pick(hotstar, "comedy"), HomeSectionType.COMEDY_MOVIES),
-            HomeRow("Sci-Fi Films", pick(prime, "sci-fi", "science fiction"), HomeSectionType.SCI_FI_FILMS),
-            HomeRow("Horror Films", pick(prime, "horror"), HomeSectionType.HORROR_FILMS),
-            HomeRow("Crowd Pleasers", pick(netflix, "crowd", "popular", "pleaser"), HomeSectionType.CROWD_PLEASERS),
-            HomeRow("US TV Shows", pick(netflix, "us tv", "american", "show"), HomeSectionType.US_TV_SHOWS),
-            HomeRow("Hotstar Specials", pick(hotstar, "special", "original"), HomeSectionType.HOTSTAR_SPECIALS),
-            HomeRow("Featured Originals: Series", pick(prime, "original", "featured", "series"), HomeSectionType.PRIME_ORIGINALS),
-            HomeRow("Horror Stories", pick(hotstar, "horror", "scary"), HomeSectionType.HORROR_STORIES)
-        )
-    }
+    private fun itemKey(item: MovieResult): String =
+        "${item.providerApiName}:${item.providerUrl ?: item.id}"
 
-    private fun prepareHeroBanner(
-        netflixContent: List<MovieResult>,
-        primeContent: List<MovieResult>,
-        hotstarContent: List<MovieResult>
-    ): List<HeroBannerItem> {
-        fun latestFrom(content: List<MovieResult>): List<MovieResult> {
-            val latest = content.filter { movie ->
-                val text = movie.displayTitle().lowercase()
-                text.contains("new") || text.contains("latest") ||
-                    text.contains("recent") || text.contains("recently added")
-            }.take(2)
-            return if (latest.isNotEmpty()) latest else content.take(2)
+    private fun buildHomeRowsFromBingeCloud(
+        sections: Map<String, List<MovieResult>
+    ): List<HomeRow> = sections.map { (name, items) ->
+        val lower = name.lowercase()
+        val type = when {
+            "trending" in lower || "popular" in lower -> HomeSectionType.CROWD_PLEASERS
+            "netflix" in lower || "new" in lower || "latest" in lower -> HomeSectionType.NEW_NETFLIX
+            "prime" in lower -> HomeSectionType.TOP_PRIME_MOVIES
+            "korean" in lower || "k-drama" in lower -> HomeSectionType.KOREAN
+            "comedy" in lower -> HomeSectionType.COMEDY_MOVIES
+            "sci-fi" in lower || "science fiction" in lower -> HomeSectionType.SCI_FI_FILMS
+            "horror" in lower -> HomeSectionType.HORROR_FILMS
+            else -> HomeSectionType.CROWD_PLEASERS
         }
+        HomeRow(name, items.take(20), type)
+    }.filter { it.items.isNotEmpty() }
 
-        val finalItems = (latestFrom(netflixContent) +
-            latestFrom(primeContent) +
-            latestFrom(hotstarContent))
-            .distinctBy { it.displayTitle() }
-            .take(6)
-
-        Log.e("HERO_DEBUG", "Hero banner items: ${finalItems.size}")
-        finalItems.forEach { item ->
-            Log.e("HERO_DEBUG", "  - ${item.displayTitle()} (from: ${item.providerApiName})")
-        }
-
-        return finalItems.map { movie ->
+    private fun prepareHeroBanner(content: List<MovieResult>): List<HeroBannerItem> =
+        content.take(6).map { movie ->
             HeroBannerItem(
                 movie = movie,
                 backdropUrl = movie.backdrop_path ?: movie.poster_path,
@@ -217,7 +163,6 @@ class KinoHomeViewModel : ViewModel() {
                 genre = null
             )
         }
-    }
 
     private fun isNetworkAvailable(): Boolean {
         val context = CloudStreamApp.context ?: return false

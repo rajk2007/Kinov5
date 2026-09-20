@@ -46,11 +46,8 @@ fun getSearchRelevanceScore(title: String, query: String): Int {
 fun getProviderPriority(apiName: String): Int {
     val name = apiName.lowercase()
     return when {
-        name.contains("netflix") -> 1
-        name.contains("primevideo") || name.contains("prime video") -> 2
-        name.contains("hotstar") -> 3
-        name.contains("disney") -> 4
-        else -> 4
+        name.contains("bingecloud") || name.contains("binge cloud") -> 1
+        else -> 2
     }
 }
 
@@ -113,13 +110,17 @@ class KinoSearchViewModel : ViewModel() {
     private suspend fun searchProviders(searchQuery: String) {
         _isLoading.value = true
         _results.value = emptyList()
-        val providers = APIHolder.apis.filter { api ->
-            api.name.contains("Netflix", true) ||
-                api.name.contains("PrimeVideo", true) ||
-                api.name.contains("Prime Video", true) ||
-                api.name.contains("Hotstar", true) ||
-                api.name.contains("Disney", true)
-        }.sortedBy { getProviderPriority(it.name) }
+        var bingeCloud = APIHolder.apis.firstOrNull { api ->
+            api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+        }
+        repeat(60) {
+            if (bingeCloud != null) return@repeat
+            kotlinx.coroutines.delay(500)
+            bingeCloud = APIHolder.apis.firstOrNull { api ->
+                api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+            }
+        }
+        val providers = listOfNotNull(bingeCloud)
         Log.d("SEARCH_DEBUG", "Search providers: ${providers.map { it.name }}")
         val masterList = mutableListOf<KinoSearchResult>()
         try {
@@ -144,13 +145,8 @@ class KinoSearchViewModel : ViewModel() {
         return try {
             Log.d("SEARCH_DEBUG", "Searching ${api.name} for: $searchQuery")
             val repository = APIRepository(api)
-            var resource = withTimeoutOrNull(8_000L) { repository.search(searchQuery, 1) }
+            val resource = withTimeoutOrNull(8_000L) { repository.search(searchQuery, 1) }
             var results = (resource as? Resource.Success)?.value?.items.orEmpty()
-            if (results.isEmpty() && (api.name.contains("Hotstar", true) || api.name.contains("Disney", true))) {
-                Log.d("SEARCH_DEBUG", "${api.name} returned no regular results; trying quick search")
-                resource = withTimeoutOrNull(8_000L) { repository.quickSearch(searchQuery) }
-                results = (resource as? Resource.Success)?.value?.items.orEmpty()
-            }
             Log.d("SEARCH_DEBUG", "${api.name} returned ${results.size} results")
             results.map { response ->
                 KinoSearchResult(response.name, response.url, response.apiName.ifBlank { api.name }, response.posterUrl,

@@ -485,69 +485,70 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
     private fun autoInstallRepositories() {
-        val prefs = getSharedPreferences("kino_setup_v14", MODE_PRIVATE)
-        val allForUUrl = "https://raw.githubusercontent.com/RVRBEAST76/allforu-repo/builds/repo.json"
-        val wantedPlugins = setOf(
-            "netflix",
-            "primevideo", "prime video",
-            "hotstar",
-            "disneyplus", "disney plus", "disney+"
-        )
+        val prefs = getSharedPreferences("kino_setup_v15", MODE_PRIVATE)
+        val flummoxRepoUrl = "https://raw.githubusercontent.com/FlummoxGamer/FLUMMOX-Repo/builds/repo.json"
+        val hasBingeCloud = APIHolder.apis.any { api ->
+            api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+        }
+
+        if (hasBingeCloud && prefs.getBoolean("repos_installed_v15", false)) return
 
         ioSafe {
-            withContext(Dispatchers.Main) { showToast("Setting up providers...") }
+            withContext(Dispatchers.Main) { showToast("Setting up BingeCloud...") }
             try {
                 RepositoryManager.getRepositories()
-                    .filter { it.url.contains("phisher98", true) || it.url.contains("cloudstream-extensions-phisher", true) }
+                    .filter {
+                        it.url.contains("allforu-repo", true) ||
+                            it.url.contains("RVRBEAST76", true) ||
+                            it.url.contains("phisher98", true) ||
+                            it.url.contains("cloudstream-extensions-phisher", true)
+                    }
                     .forEach { oldRepo ->
                         RepositoryManager.removeRepository(this@MainActivity, oldRepo)
                         Log.i(TAG, "Removed old repository: ${oldRepo.name}")
                     }
 
-                val oldPluginNames = listOf("AniVortex", "IStreamFlare", "IStreamplay", "Cricify", "CineFreak", "MovieBox")
+                if (RepositoryManager.getRepositories().none { it.url == flummoxRepoUrl }) {
+                    RepositoryManager.addRepository(RepositoryData(name = "FLUMMOX", url = flummoxRepoUrl))
+                }
+
+                RepositoryManager.getRepoPlugins(flummoxRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
+                    Log.i(TAG, "Installing BingeCloud extension: ${sitePlugin.name} (${sitePlugin.internalName})")
+                    val installed = runCatching {
+                        PluginManager.downloadPlugin(
+                            activity = this@MainActivity,
+                            pluginUrl = sitePlugin.url,
+                            pluginHash = sitePlugin.fileHash,
+                            internalName = sitePlugin.internalName,
+                            repositoryUrl = repoUrl,
+                            loadPlugin = true
+                        )
+                    }.getOrElse { logError(it); false }
+                    Log.i(TAG, "Installed ${sitePlugin.name}: $installed")
+                }
+
+                val oldPluginNames = listOf(
+                    "Netflix", "PrimeVideo", "Prime Video", "Hotstar", "DisneyPlus", "Disney",
+                    "AniVortex", "IStreamFlare", "IStreamplay", "Cricify", "CineFreak"
+                )
                 File(filesDir, "Extensions").walkBottomUp().forEach { file ->
                     if (file.isFile && (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
-                        oldPluginNames.any { file.name.contains(it, true) || file.absolutePath.contains(it, true) }) {
+                        oldPluginNames.any { name -> file.name.contains(name, true) || file.absolutePath.contains(name, true) }) {
                         if (file.delete()) Log.i(TAG, "Deleted old plugin: ${file.name}")
-                    }
-                }
-
-                if (RepositoryManager.getRepositories().none { it.url == allForUUrl }) {
-                    RepositoryManager.addRepository(RepositoryData(name = "AllForU", url = allForUUrl))
-                }
-
-                RepositoryManager.getRepoPlugins(allForUUrl)?.forEach { (repoUrl, sitePlugin) ->
-                    val pluginName = sitePlugin.name.trim().lowercase()
-                    val internalName = sitePlugin.internalName.trim().lowercase()
-                    if (pluginName in wantedPlugins || internalName in wantedPlugins) {
-                        val installed = runCatching {
-                            PluginManager.downloadPlugin(
-                                activity = this@MainActivity,
-                                pluginUrl = sitePlugin.url,
-                                pluginHash = sitePlugin.fileHash,
-                                internalName = sitePlugin.internalName,
-                                repositoryUrl = repoUrl,
-                                loadPlugin = true
-                            )
-                        }.getOrElse { logError(it); false }
-                        Log.i(TAG, "Installed ${sitePlugin.name}: $installed")
                     }
                 }
 
                 PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
                 val loadedProviders = APIHolder.allProviders
-                val hasNetflix = loadedProviders.any { it.name.contains("Netflix", true) }
-                val hasPrime = loadedProviders.any { it.name.contains("PrimeVideo", true) || it.name.contains("Prime Video", true) }
-                val hasHotstar = loadedProviders.any { it.name.contains("Hotstar", true) }
-                val hasDisney = loadedProviders.any {
-                    it.name.contains("DisneyPlus", true) ||
-                        it.name.contains("Disney Plus", true) ||
-                        it.name.contains("Disney+", true) ||
-                        it.name.contains("Disney", true)
-                }
                 Log.i(TAG, "Loaded providers: ${loadedProviders.map { it.name }}")
-                if (hasNetflix && hasPrime && (hasHotstar || hasDisney)) {
-                    prefs.edit().putBoolean("repos_installed_v14", true).apply()
+                val bingeCloudLoaded = loadedProviders.any { api ->
+                    api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+                }
+                if (bingeCloudLoaded) {
+                    prefs.edit().putBoolean("repos_installed_v15", true).apply()
+                    Log.i(TAG, "BingeCloud successfully installed")
+                } else {
+                    Log.e(TAG, "BingeCloud failed to load; available providers: ${loadedProviders.map { it.name }}")
                 }
 
                 withContext(Dispatchers.Main) {
