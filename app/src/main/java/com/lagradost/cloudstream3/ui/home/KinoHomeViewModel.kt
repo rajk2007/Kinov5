@@ -15,6 +15,7 @@ import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,12 +58,24 @@ class KinoHomeViewModel : ViewModel() {
     val error: StateFlow<String?> = _error.asStateFlow()
     private val _networkState = MutableStateFlow(NetworkState.Loading)
     val networkState: StateFlow<NetworkState> = _networkState.asStateFlow()
+    private var loadJob: Job? = null
 
-    init { loadData() }
-    fun retry() = loadData()
+    init {
+        loadJob = loadData()
+    }
+
+    fun retry() {
+        if (loadJob?.isActive == true) {
+            Log.d("KINO_HOME", "Ignoring retry while home is already loading")
+            return
+        }
+        loadJob = loadData()
+    }
 
     private fun isBingeCloud(api: MainAPI): Boolean =
-        api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+        api.name.contains("BingeCloud", true) ||
+            api.name.contains("Binge Cloud", true) ||
+            api.name.contains("binge", true)
 
     private fun loadData() = viewModelScope.launch(Dispatchers.IO) {
         _isLoading.value = true
@@ -70,9 +83,10 @@ class KinoHomeViewModel : ViewModel() {
         _networkState.value = NetworkState.Loading
         try {
             var bingeCloudApi: MainAPI? = APIHolder.apis.firstOrNull(::isBingeCloud)
-            repeat(60) {
-                if (bingeCloudApi != null) return@repeat
+            var attempts = 0
+            while (bingeCloudApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
                 delay(500)
+                attempts++
                 bingeCloudApi = APIHolder.apis.firstOrNull(::isBingeCloud)
             }
 
@@ -93,7 +107,7 @@ class KinoHomeViewModel : ViewModel() {
             _homeRows.value = rows
             _heroBannerItems.value = prepareHeroBanner(allItems)
             _networkState.value = NetworkState.Online
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             _error.value = error.message ?: "Unable to load content"
             _networkState.value = if (isNetworkAvailable()) NetworkState.Slow else NetworkState.Offline
         } finally {
@@ -108,10 +122,8 @@ class KinoHomeViewModel : ViewModel() {
                 is Resource.Success -> response.value.orEmpty().flatMap { it?.items.orEmpty() }
                     .forEach { page: HomePageList ->
                         val items = page.list.map { it.toMovieResult(api) }
-                        if (items.isNotEmpty()) {
-                            sections[page.name] = items.distinctBy(::itemKey)
-                            Log.d("KINO_HOME", "BingeCloud section '${page.name}': ${items.size} items")
-                        }
+                        sections[page.name] = items.distinctBy(::itemKey)
+                        Log.d("KINO_HOME", "BingeCloud section '${page.name}': ${items.size} items")
                     }
                 else -> Log.e("KINO_HOME", "BingeCloud homepage request failed")
             }
@@ -149,8 +161,8 @@ class KinoHomeViewModel : ViewModel() {
             "horror" in lower -> HomeSectionType.HORROR_FILMS
             else -> HomeSectionType.CROWD_PLEASERS
         }
-        HomeRow(name, items.take(20), type)
-    }.filter { it.items.isNotEmpty() }
+        HomeRow(name, items, type)
+    }
 
     private fun prepareHeroBanner(content: List<MovieResult>): List<HeroBannerItem> =
         content.take(6).map { movie ->
@@ -168,5 +180,9 @@ class KinoHomeViewModel : ViewModel() {
         val context = CloudStreamApp.context ?: return false
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         return manager.activeNetwork?.let { manager.getNetworkCapabilities(it) != null } == true
+    }
+
+    private companion object {
+        const val PROVIDER_LOOKUP_ATTEMPTS = 30
     }
 }

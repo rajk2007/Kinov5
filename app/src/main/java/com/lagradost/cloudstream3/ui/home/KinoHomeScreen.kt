@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -81,7 +82,7 @@ fun KinoHomeScreen(
                 if (networkState != KinoHomeViewModel.NetworkState.Online && !loading) {
                     item { NetworkHint(networkState) }
                 }
-                items(rows.filter { it.items.isNotEmpty() }, key = { it.sectionType.name }) { row ->
+                itemsIndexed(rows, key = { index, row -> "${index}:${row.sectionType.name}:${row.title}" }) { _, row ->
                     if (row.sectionType in setOf(
                             HomeSectionType.TOP_NETFLIX_SERIES,
                             HomeSectionType.TOP_PRIME_MOVIES,
