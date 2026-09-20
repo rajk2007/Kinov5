@@ -90,6 +90,7 @@ import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialogInstant
@@ -181,11 +182,15 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     }
 
     private fun showDownloadBottomSheet(ep: ResultEpisode) {
-        val (_, path) = context?.getBasePath() ?: return
-        if (path == null) {
-            Toast.makeText(requireContext(), "Please set a download folder first", Toast.LENGTH_LONG).show()
-            requirePathForActions(listOf(ACTION_DOWNLOAD_MIRROR to ep))
-            return
+        // Ensure a default internal path exists (no user folder picker)
+        val ctx = context ?: return
+        val settings = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        val pathKey = getString(com.lagradost.cloudstream3.R.string.download_path_key)
+        if (settings.getString(pathKey, null).isNullOrBlank()) {
+            val downloadDir = ctx.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
+                ?.apply { mkdirs() }?.absolutePath
+                ?: java.io.File(ctx.filesDir, "downloads").apply { mkdirs() }.absolutePath
+            settings.edit().putString(pathKey, downloadDir).apply()
         }
 
         val pageUrl = arguments?.getString("url") ?: run {
@@ -201,20 +206,23 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             try {
                 val api = APIHolder.getApiFromNameNull(apiName)
                 if (api == null) {
-                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Provider not found", Toast.LENGTH_SHORT).show() }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(requireContext(), "Provider not found", Toast.LENGTH_SHORT).show()
+                    }
                     return@launch
                 }
 
                 val response = APIRepository(api).load(pageUrl)
                 if (response !is Resource.Success || response.value == null) {
-                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Failed to load page", Toast.LENGTH_SHORT).show() }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(requireContext(), "Failed to load page", Toast.LENGTH_SHORT).show()
+                    }
                     return@launch
                 }
                 val loadResponse = response.value!!
 
-                // FIX: Use ep.data, but fallback to pageUrl if ep.data is invalid/blank
                 val dataString = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-                android.util.Log.d("KinoDownload", "loadLinks data='$dataString' api=$apiName page=$pageUrl")
+                android.util.Log.d("KinoDownload", "loadLinks data='$dataString' api=$apiName")
 
                 val links = mutableListOf<ExtractorLink>()
                 val ok = APIRepository(api).loadLinks(
@@ -222,23 +230,29 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     isCasting = false,
                     subtitleCallback = { },
                     callback = { link ->
-                        // Allow VIDEO, M3U8, and DASH. Exclude TORRENT/MAGNET.
                         if (link.type != ExtractorLinkType.TORRENT && link.type != ExtractorLinkType.MAGNET) {
-                            links.add(link)
+                            // Force quality from name if missing
+                            val fixed = if (link.quality == Qualities.Unknown.value || link.quality == 0) {
+                                val parsedQuality = parseQualityFromLinkName(link.name)
+                                val qualityInt = if (parsedQuality != null) {
+                                    getQualityFromName(parsedQuality)
+                                } else {
+                                    link.quality
+                                }
+                                link.copy(quality = qualityInt)
+                            } else link
+                            links.add(fixed)
                         }
                     }
                 )
 
-                if (!ok) {
+                if (!ok || links.isEmpty()) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(requireContext(), "loadLinks failed (see logcat)", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
-                }
-
-                if (links.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(requireContext(), "No downloadable links found.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            requireContext(),
+                            if (!ok) "loadLinks failed" else "No downloadable links found",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                     return@launch
                 }
@@ -268,7 +282,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             links = listOf(link)
                                         ).toWrapper()
                                         DownloadQueueManager.addToQueue(wrapper)
-                                        Toast.makeText(requireContext(), "Queued", Toast.LENGTH_SHORT).show()
+                                        // Immediate feedback
+                                        Toast.makeText(requireContext(), "Download started", Toast.LENGTH_SHORT).show()
                                     },
                                     onDismiss = { dialog.dismiss() }
                                 )
@@ -287,7 +302,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             }
         }
     }
-
     private val pathPicker = getChooseFolderLauncher { uri, path ->
         if (uri == null) {
             /** No path selected, clear the list without acting on it, canceling */

@@ -22,15 +22,49 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.getQualityFromName
+
+/** Extract 480p / 720p / 1080p / 2160p / 4K from link name */
+fun parseQualityFromLinkName(name: String): String? {
+    val qualityRegex = Regex("""\b(144|240|360|480|720|1080|1440|2160)p\b|\b4[kK]\b""", RegexOption.IGNORE_CASE)
+    val match = qualityRegex.find(name)?.value ?: return null
+    return if (match.equals("4k", true)) "4K" else match.lowercase()
+}
+
+/** Extract language token after •MB / • / source markers */
+fun parseLanguageFromLinkName(name: String): String? {
+    val afterDot = Regex("""[•·]\s*(?:MB\s+)?([A-Za-z][\w\s-]{1,20})""", RegexOption.IGNORE_CASE)
+        .find(name)?.groupValues?.getOrNull(1)?.trim()
+    if (!afterDot.isNullOrBlank() && !afterDot.matches(Regex("""\d{3,4}p|4k""", RegexOption.IGNORE_CASE))) {
+        return afterDot.split(Regex("""\s+""")).firstOrNull()?.replaceFirstChar { it.uppercase() }
+    }
+    val knownLangs = listOf(
+        "Hindi", "English", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali",
+        "Marathi", "Gujarati", "Punjabi", "Urdu", "Dual", "Multi"
+    )
+    for (lang in knownLangs) {
+        if (name.contains(lang, ignoreCase = true)) return lang
+    }
+    return null
+}
+
+/** Prefer real quality int; fall back to parsing the name */
+fun ExtractorLink.effectiveQuality(): Int {
+    if (quality != Qualities.Unknown.value && quality != 0) return quality
+    val fromName = parseQualityFromLinkName(name) ?: return Qualities.Unknown.value
+    return getQualityFromName(fromName)
+}
 
 fun ExtractorLink.languageKey(): String {
-    val q = Qualities.getStringByInt(quality)
+    parseLanguageFromLinkName(name)?.let { return it }
+    val qStr = Qualities.getStringByInt(effectiveQuality()).ifBlank {
+        parseQualityFromLinkName(name) ?: ""
+    }
     return name
         .replace(source, "", ignoreCase = true)
-        .replace(q, "", ignoreCase = true)
-        .replace(Regex("""\b\d{3,4}\s*p\b""", RegexOption.IGNORE_CASE), "")
-        .replace(Regex("""\b\d{3,4}\b"""), "")
-        .replace(Regex("""[-–—_|\[\](){}:]"""), " ")
+        .replace(qStr, "", ignoreCase = true)
+        .replace(Regex("""\b\d{3,4}\s*p\b|\b4[kK]\b""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""[•·\-–—_|\[\](){}:]"""), " ")
         .replace(Regex("""\s+"""), " ")
         .trim()
         .ifBlank { source.ifBlank { "Unknown" } }
@@ -42,15 +76,24 @@ fun DownloadOptionsSheet(
     onDownload: (ExtractorLink) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val groupedLinks = remember(links) {
-        links.groupBy { it.languageKey() }
+    val normalized = remember(links) {
+        links.map { link ->
+            val q = link.effectiveQuality()
+            if (q != link.quality) link.copy(quality = q) else link
+        }
+    }
+
+    val groupedLinks = remember(normalized) {
+        normalized.groupBy { it.languageKey() }
             .mapValues { (_, g) -> g.distinctBy { it.quality }.sortedByDescending { it.quality } }
             .toSortedMap(String.CASE_INSENSITIVE_ORDER)
     }
     val languages = groupedLinks.keys.toList()
     var selectedLanguage by remember { mutableStateOf(languages.firstOrNull() ?: "") }
     val qualities = groupedLinks[selectedLanguage] ?: emptyList()
-    var selectedQuality by remember(selectedLanguage) { mutableStateOf(qualities.firstOrNull()?.quality ?: 0) }
+    var selectedQuality by remember(selectedLanguage) {
+        mutableStateOf(qualities.firstOrNull()?.quality ?: 0)
+    }
 
     Column(
         modifier = Modifier
@@ -58,6 +101,7 @@ fun DownloadOptionsSheet(
             .background(Color(0xFF121212))
             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
     ) {
+        // Drag handle
         Box(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
@@ -67,8 +111,12 @@ fun DownloadOptionsSheet(
                 .clip(RoundedCornerShape(2.dp))
                 .background(Color.Gray)
         )
+
+        // Header
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -77,6 +125,8 @@ fun DownloadOptionsSheet(
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
         }
+
+        // Language section
         Text(
             "Language",
             color = Color.White,
@@ -111,7 +161,10 @@ fun DownloadOptionsSheet(
                 }
             }
         }
+
         Spacer(Modifier.height(16.dp))
+
+        // Quality section
         Text(
             "Quality",
             color = Color.White,
@@ -127,7 +180,8 @@ fun DownloadOptionsSheet(
                 val isSelected = link.quality == selectedQuality
                 val bgColor = if (isSelected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)
                 val borderColor = if (isSelected) Color(0xFFE50914) else Color(0xFF333333)
-                val qualityStr = Qualities.getStringByInt(link.quality)
+                val qualityStr = parseQualityFromLinkName(link.name)
+                    ?: Qualities.getStringByInt(link.quality).ifBlank { "Unknown" }
                 val badgeText = when (link.quality) {
                     Qualities.P2160.value -> "4K"
                     Qualities.P1440.value -> "QHD"
@@ -146,7 +200,13 @@ fun DownloadOptionsSheet(
                         .clickable { selectedQuality = link.quality }
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    Text(qualityStr, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
+                    Text(
+                        qualityStr,
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.width(70.dp)
+                    )
                     Spacer(Modifier.width(8.dp))
                     if (badgeText.isNotBlank()) {
                         Box(
@@ -175,7 +235,10 @@ fun DownloadOptionsSheet(
                 }
             }
         }
+
         Spacer(Modifier.height(16.dp))
+
+        // Download button
         Button(
             onClick = {
                 qualities.find { it.quality == selectedQuality }?.let { onDownload(it) }
