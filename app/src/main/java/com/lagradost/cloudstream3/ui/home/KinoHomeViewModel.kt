@@ -136,7 +136,7 @@ class KinoHomeViewModel : ViewModel() {
         "${item.providerApiName}:${item.providerUrl ?: item.id}"
 
     private fun buildHomeRowsFromBingeCloud(
-        sections: Map<String, List<MovieResult>
+        sections: Map<String, List<MovieResult>>
     ): List<HomeRow> = sections.map { (name, items) ->
         val lower = name.lowercase()
         val type = when {
