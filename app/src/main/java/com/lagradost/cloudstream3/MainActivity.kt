@@ -198,6 +198,7 @@ import kotlin.system.exitProcess
 import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -487,13 +488,33 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     private fun autoInstallRepositories() {
         val prefs = getSharedPreferences("kino_setup_v15", MODE_PRIVATE)
         val flummoxRepoUrl = "https://raw.githubusercontent.com/FlummoxGamer/FLUMMOX-Repo/builds/repo.json"
-        val hasBingeCloud = APIHolder.apis.any { api ->
-            api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+        val alreadyInstalled = prefs.getBoolean("repos_installed_v15", false)
+        Log.i(TAG, "Flag 'repos_installed_v15': $alreadyInstalled")
+        if (alreadyInstalled) {
+            Log.i(TAG, "BingeCloud already installed, skipping installation")
+            return
         }
 
-        if (hasBingeCloud && prefs.getBoolean("repos_installed_v15", false)) return
-
         ioSafe {
+            // Give the normal plugin-loading path time to populate APIHolder before installing.
+            delay(2_000)
+            val hasBingeCloud = APIHolder.apis.any { api ->
+                api.name.contains("BingeCloud", true) ||
+                    api.name.contains("Binge Cloud", true) ||
+                    api.name.contains("binge", true)
+            }
+            Log.i(TAG, "BingeCloud in APIs: $hasBingeCloud")
+            Log.i(TAG, "All APIs: ${APIHolder.apis.map { it.name }}")
+            if (hasBingeCloud) {
+                prefs.edit().putBoolean("repos_installed_v15", true).apply()
+                Log.i(TAG, "BingeCloud already loaded, saving flag and skipping installation")
+                withContext(Dispatchers.Main) {
+                    onAllPluginsLoaded(true)
+                    afterPluginsLoadedEvent.invoke(true)
+                    mainPluginsLoadedEvent.invoke(true)
+                }
+                return@ioSafe
+            }
             withContext(Dispatchers.Main) { showToast("Setting up BingeCloud...") }
             try {
                 RepositoryManager.getRepositories()

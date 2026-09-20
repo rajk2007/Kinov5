@@ -134,7 +134,7 @@ private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .height(350.dp)
+            .height(420.dp)
     ) {
         HorizontalPager(
             state = pagerState,

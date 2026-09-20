@@ -81,31 +81,27 @@ class KinoHomeViewModel : ViewModel() {
         _isLoading.value = true
         _error.value = null
         _networkState.value = NetworkState.Loading
+        val cachedRowsSnapshot = cachedRows
+        val cachedHeroSnapshot = cachedHeroItems
+        if (cachedRowsSnapshot != null &&
+            System.currentTimeMillis() - cacheTimestamp < CACHE_DURATION
+        ) {
+            Log.d("KINO_HOME", "Using cached home data (${cachedRowsSnapshot.size} rows)")
+            _homeRows.value = cachedRowsSnapshot
+            _heroBannerItems.value = cachedHeroSnapshot.orEmpty()
+            _networkState.value = NetworkState.Online
+            _isLoading.value = false
+            launch { refreshDataInBackground() }
+            return@launch
+        }
         try {
-            var bingeCloudApi: MainAPI? = APIHolder.apis.firstOrNull(::isBingeCloud)
-            var attempts = 0
-            while (bingeCloudApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
-                delay(500)
-                attempts++
-                bingeCloudApi = APIHolder.apis.firstOrNull(::isBingeCloud)
-            }
-
-            Log.d("KINO_HOME", "BingeCloud API: ${bingeCloudApi?.name ?: "NOT FOUND"}")
-            if (bingeCloudApi == null) {
-                _error.value = "BingeCloud provider not loaded."
-                _networkState.value = if (isNetworkAvailable()) NetworkState.Slow else NetworkState.Offline
-                return@launch
-            }
-
-            val sections = fetchProviderSections(bingeCloudApi!!)
-            val rows = buildHomeRowsFromBingeCloud(sections)
-            val allItems = rows.flatMap { it.items }.distinctBy { itemKey(it) }
-            Log.d("KINO_HOME", "BingeCloud sections: ${sections.keys}; items: ${allItems.size}")
-            if (allItems.isEmpty()) {
-                _error.value = "No content available from BingeCloud"
-            }
+            val (rows, heroItems) = fetchHomeData()
             _homeRows.value = rows
-            _heroBannerItems.value = prepareHeroBanner(allItems)
+            _heroBannerItems.value = heroItems
+            cachedRows = rows
+            cachedHeroItems = heroItems
+            cacheTimestamp = System.currentTimeMillis()
+            Log.d("KINO_HOME", "Saved home cache (${rows.size} rows)")
             _networkState.value = NetworkState.Online
         } catch (error: Exception) {
             _error.value = error.message ?: "Unable to load content"
@@ -113,6 +109,41 @@ class KinoHomeViewModel : ViewModel() {
         } finally {
             _isLoading.value = false
         }
+    }
+
+    private suspend fun refreshDataInBackground() {
+        try {
+            val (rows, heroItems) = fetchHomeData()
+            cachedRows = rows
+            cachedHeroItems = heroItems
+            cacheTimestamp = System.currentTimeMillis()
+            _homeRows.value = rows
+            _heroBannerItems.value = heroItems
+            _networkState.value = NetworkState.Online
+            Log.d("KINO_HOME", "Background home refresh complete")
+        } catch (error: Exception) {
+            Log.d("KINO_HOME", "Background home refresh failed: ${error.message}")
+        }
+    }
+
+    private suspend fun fetchHomeData(): Pair<List<HomeRow>, List<HeroBannerItem>> {
+        var bingeCloudApi: MainAPI? = APIHolder.apis.firstOrNull(::isBingeCloud)
+        var attempts = 0
+        while (bingeCloudApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
+            delay(500)
+            attempts++
+            bingeCloudApi = APIHolder.apis.firstOrNull(::isBingeCloud)
+        }
+
+        Log.d("KINO_HOME", "BingeCloud API: ${bingeCloudApi?.name ?: "NOT FOUND"}")
+        if (bingeCloudApi == null) throw IllegalStateException("BingeCloud provider not loaded.")
+
+        val sections = fetchProviderSections(bingeCloudApi)
+        val rows = buildHomeRowsFromBingeCloud(sections)
+        val allItems = rows.flatMap { it.items }.distinctBy { itemKey(it) }
+        Log.d("KINO_HOME", "BingeCloud sections: ${sections.keys}; items: ${allItems.size}")
+        if (allItems.isEmpty()) throw IllegalStateException("No content available from BingeCloud")
+        return rows to prepareHeroBanner(allItems)
     }
 
     private suspend fun fetchProviderSections(api: MainAPI): Map<String, List<MovieResult>> {
@@ -183,6 +214,13 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private companion object {
+        const val CACHE_DURATION = 30 * 60 * 1000L
+        @Volatile
+        var cachedRows: List<HomeRow>? = null
+        @Volatile
+        var cachedHeroItems: List<HeroBannerItem>? = null
+        @Volatile
+        var cacheTimestamp: Long = 0L
         const val PROVIDER_LOOKUP_ATTEMPTS = 30
     }
 }
