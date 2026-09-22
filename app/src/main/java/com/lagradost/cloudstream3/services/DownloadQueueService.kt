@@ -217,6 +217,7 @@ class DownloadQueueService : Service() {
 
                 }
                 .collect { (_, queue, currentDownloads) ->
+                    Log.e("DL_DEBUG", "Queue processing: queue=${queue.size}, instances=${_downloadInstances.value.size}, currentDownloads=${currentDownloads.size}")
                     // Remove completed or failed
                     val newInstances = _downloadInstances.updateAndGet { currentInstances ->
                         currentInstances.filterNot { it.isCompleted || it.isFailed || it.isCancelled }
@@ -235,8 +236,10 @@ class DownloadQueueService : Service() {
                     // Cant start multiple downloads at once. If this is rerun it may start too many downloads.
                     if (newDownloads > 0) {
                         _downloadInstances.update { instances ->
+                            Log.e("DL_DEBUG", "Popping item from queue; capacity=$newDownloads")
                             val downloadInstance = DownloadQueueManager.popQueue(context)
                             if (downloadInstance != null) {
+                                Log.e("DL_DEBUG", "Starting download for id=${downloadInstance.downloadQueueWrapper.id}")
                                 downloadInstance.startDownload()
                                 instances + downloadInstance
                             } else {
@@ -277,6 +280,7 @@ class DownloadQueueService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.e("DL_DEBUG", "DownloadQueueService onStartCommand startId=$startId, jobActive=${queueJob?.isActive}")
         if (queueJob?.isActive != true) {
             startQueueJob()
         }
@@ -296,6 +300,7 @@ class DownloadQueueService : Service() {
                     isRunning && (instances.isNotEmpty() || queue.isNotEmpty()) && lastError == null
                 }
                 .collect { (_, queue, currentDownloads) ->
+                    Log.e("DL_DEBUG", "Restarted queue processing: queue=${queue.size}, instances=${_downloadInstances.value.size}, currentDownloads=${currentDownloads.size}")
                     val newInstances = _downloadInstances.updateAndGet { currentInstances ->
                         currentInstances.filterNot { it.isCompleted || it.isFailed || it.isCancelled }
                     }
@@ -304,8 +309,10 @@ class DownloadQueueService : Service() {
                     val newDownloads = minOf(maxOf(0, maxDownloads - currentInstanceCount), queue.size)
                     if (newDownloads > 0) {
                         _downloadInstances.update { instances ->
+                            Log.e("DL_DEBUG", "Restarted queue popping item; capacity=$newDownloads")
                             val downloadInstance = DownloadQueueManager.popQueue(context)
                             if (downloadInstance != null) {
+                                Log.e("DL_DEBUG", "Restarted queue starting id=${downloadInstance.downloadQueueWrapper.id}")
                                 downloadInstance.startDownload()
                                 instances + downloadInstance
                             } else instances

@@ -25,6 +25,7 @@ import com.lagradost.cloudstream3.utils.ProbedQuality
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.QualityProbe
 import com.lagradost.cloudstream3.utils.heightToQualitiesInt
+import com.lagradost.cloudstream3.utils.formatFileSize
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -60,7 +61,14 @@ fun ExtractorLink.languageKey(): String {
         .replace(Regex("\\s+"), " ").trim().ifBlank { source.ifBlank { "Unknown" } }
 }
 
-data class QualityOption(val label: String, val width: Int, val height: Int, val link: ExtractorLink, val variantUrl: String)
+data class QualityOption(
+    val label: String,
+    val width: Int,
+    val height: Int,
+    val link: ExtractorLink,
+    val variantUrl: String,
+    val estimatedSizeBytes: Long? = null,
+)
 
 @Composable
 fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink) -> Unit, onDismiss: () -> Unit) {
@@ -79,7 +87,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink)
     }
 
     val qualityOptions = remember(probedQualities, selectedLinks) {
-        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption(probed.label, probed.width, probed.height, link, probed.variantUrl) } }
+        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption(probed.label, probed.width, probed.height, link, probed.variantUrl, probed.estimatedSizeBytes) } }
             .distinctBy { it.height to it.variantUrl }.sortedByDescending { it.height }.ifEmpty {
                 selectedLinks.map { link -> QualityOption(parseQualityFromLinkName(link.name) ?: "Original Quality", 0, 0, link, link.url) }
             }
@@ -108,7 +116,12 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink)
                     val selected = option.variantUrl == selectedUrl
                     val display = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedUrl = option.variantUrl }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                            Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            option.estimatedSizeBytes?.let { bytes ->
+                                Text("≈ ${formatFileSize(bytes)}", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        }
                         Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (selected) Color(0xFFE50914) else Color.Gray, CircleShape).padding(3.dp)) { if (selected) Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFE50914))) }
                     }
                 }

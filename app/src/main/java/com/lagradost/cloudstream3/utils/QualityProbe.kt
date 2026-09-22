@@ -2,11 +2,17 @@ package com.lagradost.cloudstream3.utils
 
 import android.media.MediaMetadataRetriever
 import android.util.Log
+import android.util.Xml
 import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.app
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import org.xmlpull.v1.XmlPullParser
+import java.io.StringReader
 import java.net.URI
+import java.util.Locale
 
 /** A quality discovered from the media stream rather than from an extractor link name. */
 data class ProbedQuality(
@@ -15,6 +21,7 @@ data class ProbedQuality(
     val bandwidth: Int?,
     val variantUrl: String,
     val label: String,
+    val estimatedSizeBytes: Long? = null,
 )
 
 fun heightToQualityLabel(height: Int): String = when {
@@ -37,25 +44,41 @@ fun heightToQualitiesInt(height: Int): Int = when {
     else -> Qualities.Unknown.value
 }
 
+fun calculateEstimatedSize(bandwidth: Int?, durationSeconds: Long?): Long? {
+    if (bandwidth == null || durationSeconds == null || durationSeconds <= 0) return null
+    return bandwidth.toLong().coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
+}
+
+fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1_000_000_000 -> String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
+    bytes >= 1_000_000 -> String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+    bytes >= 1_000 -> String.format(Locale.US, "%.1f KB", bytes / 1_000.0)
+    else -> "$bytes B"
+}
+
 object QualityProbe {
+    private const val PROBE_TIMEOUT_MS = 10_000L
+
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
-        runCatching {
-            when {
-                link.type == ExtractorLinkType.M3U8 || link.url.contains(".m3u8", true) -> probeHls(link)
-                link.type == ExtractorLinkType.DASH || link.url.contains(".mpd", true) -> listOf(
-                    ProbedQuality(0, 0, null, link.url, "Auto (DASH)")
-                )
-                else -> probeProgressive(link)
+        try {
+            withTimeout(PROBE_TIMEOUT_MS) {
+                when {
+                    link.type == ExtractorLinkType.M3U8 || link.url.contains(".m3u8", true) -> probeHlsQualities(link)
+                    link.type == ExtractorLinkType.DASH || link.url.contains(".mpd", true) -> probeDashQualities(link)
+                    else -> probeProgressive(link)
+                }
             }
-        }.getOrElse { error ->
-            Log.w("QualityProbe", "Probe failed for ${link.url.take(120)}", error)
-            listOf(ProbedQuality(0, 0, null, link.url, parseQualityFromName(link.name) ?: "Original Quality"))
+        } catch (e: TimeoutCancellationException) {
+            Log.w("QualityProbe", "Probe timed out for ${link.url.take(120)}")
+            fallback(link)
+        } catch (e: Exception) {
+            Log.w("QualityProbe", "Probe failed for ${link.url.take(120)}", e)
+            fallback(link)
         }
     }
 
-    private suspend fun probeHls(link: ExtractorLink): List<ProbedQuality> {
-        val headers = link.headers + mapOf("User-Agent" to (link.headers["User-Agent"] ?: USER_AGENT)) +
-                if (link.referer.isBlank()) emptyMap() else mapOf("Referer" to link.referer)
+    private suspend fun probeHlsQualities(link: ExtractorLink): List<ProbedQuality> {
+        val headers = requestHeaders(link)
         val playlist = app.get(link.url, headers = headers).text
         val lines = playlist.lines()
         val results = mutableListOf<ProbedQuality>()
@@ -68,33 +91,94 @@ object QualityProbe {
             if (resolution != null && next != null) {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
-                results += ProbedQuality(width, height, bandwidth, resolve(link.url, next), heightToQualityLabel(height))
+                val variantUrl = resolve(link.url, next)
+                val duration = fetchHlsDuration(variantUrl, headers)
+                results += ProbedQuality(width, height, bandwidth, variantUrl, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, duration))
             }
         }
-        return results.distinctBy { it.height to it.variantUrl }.sortedByDescending { it.height }.ifEmpty {
-            listOf(ProbedQuality(0, 0, null, link.url, parseQualityFromName(link.name) ?: "Auto"))
-        }
+        return results.distinctBy { it.height to it.variantUrl }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
     }
+
+    /** Parse the MPD with an XML pull parser, including attributes inherited from AdaptationSet. */
+    private suspend fun probeDashQualities(link: ExtractorLink): List<ProbedQuality> {
+        val response = app.get(link.url, headers = requestHeaders(link))
+        val mpd = response.text
+        Log.d("QualityProbe", "MPD content length=${mpd.length}")
+        val parser = Xml.newPullParser().apply {
+            setInput(StringReader(mpd))
+        }
+        val results = mutableListOf<ProbedQuality>()
+        var manifestDuration: Long? = null
+        var adaptationWidth = 0
+        var adaptationHeight = 0
+        var adaptationBandwidth: Int? = null
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType != XmlPullParser.START_TAG) continue
+            when (parser.name) {
+                "MPD" -> manifestDuration = parseIsoDurationSeconds(parser.getAttributeValue(null, "mediaPresentationDuration"))
+                "AdaptationSet" -> {
+                    adaptationWidth = parser.getAttributeValue(null, "width")?.toIntOrNull() ?: 0
+                    adaptationHeight = parser.getAttributeValue(null, "height")?.toIntOrNull() ?: 0
+                    adaptationBandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull()
+                }
+                "Representation" -> {
+                    val width = parser.getAttributeValue(null, "width")?.toIntOrNull() ?: adaptationWidth
+                    val height = parser.getAttributeValue(null, "height")?.toIntOrNull() ?: adaptationHeight
+                    val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
+                    if (height > 0) {
+                        results += ProbedQuality(width, height, bandwidth, link.url, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, manifestDuration))
+                    }
+                }
+            }
+        }
+        return results.distinctBy { it.height }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
+    }
+
+    private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Long? = runCatching {
+        val playlist = app.get(url, headers = headers).text
+        Regex("#EXTINF:([\\d.]+),").findAll(playlist).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }.toLong().takeIf { it > 0 }
+    }.getOrNull()
 
     private fun probeProgressive(link: ExtractorLink): List<ProbedQuality> {
         val retriever = MediaMetadataRetriever()
         return try {
-            retriever.setDataSource(link.url, link.headers +
-                    if (link.referer.isBlank()) emptyMap() else mapOf("Referer" to link.referer))
+            retriever.setDataSource(link.url, requestHeaders(link))
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
             val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
-            listOf(ProbedQuality(width, height, null, link.url,
-                if (height > 0) heightToQualityLabel(height) else parseQualityFromName(link.name) ?: "Original Quality"))
+            listOf(ProbedQuality(width, height, null, link.url, if (height > 0) heightToQualityLabel(height) else parseQualityFromLinkName(link.name) ?: "Original Quality"))
         } finally {
             retriever.release()
         }
     }
 
+    private fun requestHeaders(link: ExtractorLink): Map<String, String> = buildMap {
+        putAll(link.headers)
+        put("User-Agent", link.headers["User-Agent"] ?: USER_AGENT)
+        if (link.referer.isNotBlank()) put("Referer", link.referer)
+    }
+
+    private fun fallback(link: ExtractorLink): List<ProbedQuality> = listOf(
+        ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Original Quality")
+    )
+
     private fun resolve(base: String, child: String): String = runCatching { URI(base).resolve(child).toString() }.getOrDefault(child)
 
-    private fun parseQualityFromName(name: String): String? {
-        val match = Regex("\\b(144|240|360|480|720|1080|1440|2160)p\\b|\\b4[kK]\\b").find(name)
-            ?.value ?: return null
+    private fun parseIsoDurationSeconds(value: String?): Long? {
+        if (value.isNullOrBlank()) return null
+        val match = Regex("PT(?:(\\d+(?:\\.\\d+)?)H)?(?:(\\d+(?:\\.\\d+)?)M)?(?:(\\d+(?:\\.\\d+)?)S)?").matchEntire(value) ?: return null
+        val hours = match.groupValues[1].toDoubleOrNull() ?: 0.0
+        val minutes = match.groupValues[2].toDoubleOrNull() ?: 0.0
+        val seconds = match.groupValues[3].toDoubleOrNull() ?: 0.0
+        return (hours * 3600 + minutes * 60 + seconds).toLong().takeIf { it > 0 }
+    }
+
+    private fun parseQualityFromLinkName(name: String): String? {
+        val match = Regex("\\b(144|240|360|480|720|1080|1440|2160)p\\b|\\b4[kK]\\b", RegexOption.IGNORE_CASE).find(name)?.value ?: return null
         return if (match.equals("4k", true)) "4K" else match.lowercase()
     }
+}
+
+fun parseQualityFromLinkName(name: String): String? = QualityProbe.run {
+    Regex("\\b(144|240|360|480|720|1080|1440|2160)p\\b|\\b4[kK]\\b", RegexOption.IGNORE_CASE).find(name)?.value
+        ?.let { if (it.equals("4k", true)) "4K" else it.lowercase() }
 }
