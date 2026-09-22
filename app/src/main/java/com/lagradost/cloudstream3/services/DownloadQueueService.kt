@@ -146,11 +146,15 @@ class DownloadQueueService : Service() {
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     override fun onCreate() {
+        super.onCreate()
         isRunning = true
         val context: Context = this // To make code more readable
 
         Log.d(TAG, "Download queue service started.")
+        Log.e("DL_DEBUG", "═════════════════════════════")
         Log.e("DL_DEBUG", "DownloadQueueService onCreate")
+        Log.e("DL_DEBUG", "Initial queue size=${DownloadQueueManager.queue.value.size}, active instances=${_downloadInstances.value.size}")
+        Log.e("DL_DEBUG", "═════════════════════════════")
         this.createNotificationChannel(
             DOWNLOAD_QUEUE_CHANNEL_ID,
             DOWNLOAD_QUEUE_CHANNEL_NAME,
@@ -273,6 +277,8 @@ class DownloadQueueService : Service() {
     }
 
     override fun onDestroy() {
+        Log.e("DL_DEBUG", "DownloadQueueService onDestroy; queue=${DownloadQueueManager.queue.value.size}, instances=${_downloadInstances.value.size}")
+        queueJob?.cancel()
         Log.d(TAG, "Download queue service stopped.")
         downloadEvent -= downloadEventListener
         isRunning = false

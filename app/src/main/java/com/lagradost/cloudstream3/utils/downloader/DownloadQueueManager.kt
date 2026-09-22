@@ -171,17 +171,24 @@ object DownloadQueueManager {
     }
 
     private fun startQueueService(context: Context?) {
+        Log.e("DL_DEBUG", "startQueueService called; contextNull=${context == null}, serviceRunning=${DownloadQueueService.isRunning}")
         if (context == null) {
-            Log.d(TAG, "Cannot start download queue service, null context.")
+            Log.e("DL_DEBUG", "Cannot start download queue service: null context")
             return
         }
         if (DownloadQueueService.isRunning) {
-            Log.d(TAG, "Download queue service is already running.")
+            Log.e("DL_DEBUG", "Download queue service already running")
             return
         }
         ioSafe {
-            val intent = DownloadQueueService.getIntent(context)
-            ContextCompat.startForegroundService(context, intent)
+            try {
+                Log.e("DL_DEBUG", "Starting foreground download queue service")
+                val intent = DownloadQueueService.getIntent(context)
+                ContextCompat.startForegroundService(context, intent)
+                Log.e("DL_DEBUG", "Foreground service start request sent")
+            } catch (e: Exception) {
+                Log.e("DL_DEBUG", "Failed to start foreground download queue service", e)
+            }
         }
     }
 
@@ -229,7 +236,9 @@ object DownloadQueueManager {
             return@safe
         }
 
-        Log.e("DL_DEBUG", "addToQueue called for id=${downloadQueueWrapper.id}")
+        Log.e("DL_DEBUG", "═════════════════════════════")
+        Log.e("DL_DEBUG", "addToQueue CALLED for id=${downloadQueueWrapper.id}")
+        Log.e("DL_DEBUG", "Episode=${downloadQueueWrapper.downloadItem?.episode?.name}, api=${downloadQueueWrapper.downloadItem?.apiName}")
         Log.e("DL_DEBUG", "Queue size before: ${queue.value.size}")
 
         val fileInfo = getDownloadFileInfo(context, downloadQueueWrapper.id)
@@ -250,10 +259,11 @@ object DownloadQueueManager {
             com.lagradost.cloudstream3.MainActivity.lastError = null
             startQueueService(context)
             Log.e("DL_DEBUG", "Queue size after: ${queue.value.size}")
-            Log.e("DL_DEBUG", "Starting service for id=${downloadQueueWrapper.id}")
+            Log.e("DL_DEBUG", "Queue service requested for id=${downloadQueueWrapper.id}")
         } else {
             Log.w(TAG, "addToQueue failed: ${downloadQueueWrapper.id} already in queue or downloading")
         }
+        Log.e("DL_DEBUG", "═════════════════════════════")
     }
 
 

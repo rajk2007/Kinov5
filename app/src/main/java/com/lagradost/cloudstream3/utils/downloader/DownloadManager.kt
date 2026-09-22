@@ -1872,7 +1872,13 @@ object VideoDownloadManager {
         }
 
         fun startDownload() {
-            Log.e("DL_DEBUG", "startDownload called for id=${downloadQueueWrapper.id}")
+            val item = downloadQueueWrapper.downloadItem
+            Log.e("DL_DEBUG", "═════════════════════════════")
+            Log.e("DL_DEBUG", "startDownload CALLED for id=${downloadQueueWrapper.id}")
+            Log.e("DL_DEBUG", "Episode=${item?.episode?.name}, links=${item?.links?.size}, resume=${downloadQueueWrapper.resumePackage != null}")
+            item?.links?.forEach { link ->
+                Log.e("DL_DEBUG", "Link name=${link.name}, type=${link.type}, url=${link.url.take(120)}, headers=${link.headers}, referer=${link.referer}")
+            }
             setKey(KEY_RESUME_IN_QUEUE, downloadQueueWrapper.id.toString(), downloadQueueWrapper)
 
             ioSafe {
@@ -1893,7 +1899,6 @@ object VideoDownloadManager {
                 } catch (e: Exception) {
                     Log.e("DL_DEBUG", "Download failed for id=${downloadQueueWrapper.id}: ${e.message}", e)
                     isFailed = true
-                    throw e
                 }
             }
         }

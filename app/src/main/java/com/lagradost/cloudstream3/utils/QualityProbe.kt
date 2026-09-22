@@ -57,30 +57,64 @@ fun formatFileSize(bytes: Long): String = when {
 }
 
 object QualityProbe {
-    private const val PROBE_TIMEOUT_MS = 10_000L
+    private const val TAG = "QualityProbe"
+    private const val PROBE_TIMEOUT_MS = 5_000L
 
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
+        logLink(link)
         try {
             withTimeout(PROBE_TIMEOUT_MS) {
                 when {
                     link.type == ExtractorLinkType.M3U8 || link.url.contains(".m3u8", true) -> probeHlsQualities(link)
                     link.type == ExtractorLinkType.DASH || link.url.contains(".mpd", true) -> probeDashQualities(link)
-                    else -> probeProgressive(link)
+                    link.url.contains("manifest", true) || link.url.contains("playlist", true) -> {
+                        runCatching { probeHlsQualities(link) }
+                            .getOrElse { runCatching { probeDashQualities(link) }.getOrElse { probeProgressive(link) } }
+                    }
+                    else -> {
+                        // HDH and similar providers sometimes omit the type and extension.
+                        runCatching { probeHlsQualities(link) }
+                            .getOrElse {
+                                runCatching { probeDashQualities(link) }
+                                    .getOrElse { probeProgressive(link) }
+                            }
+                    }
                 }
             }
         } catch (e: TimeoutCancellationException) {
-            Log.w("QualityProbe", "Probe timed out for ${link.url.take(120)}")
+            Log.e(TAG, "Probe timed out after ${PROBE_TIMEOUT_MS}ms; using immediate fallback for ${link.url.take(120)}")
             fallback(link)
         } catch (e: Exception) {
-            Log.w("QualityProbe", "Probe failed for ${link.url.take(120)}", e)
+            Log.e(TAG, "Probe failed for ${link.url.take(120)}; using fallback", e)
             fallback(link)
         }
     }
 
+    private fun logLink(link: ExtractorLink) {
+        Log.e(TAG, "═════════════════════════════")
+        Log.e(TAG, "Probing link: name=${link.name}, type=${link.type}, source=${link.source}")
+        Log.e(TAG, "URL: ${link.url}")
+        Log.e(TAG, "Headers: ${link.headers}")
+        Log.e(TAG, "Referer: ${link.referer}")
+        Log.e(TAG, "═════════════════════════════")
+    }
+
     private suspend fun probeHlsQualities(link: ExtractorLink): List<ProbedQuality> {
         val headers = requestHeaders(link)
-        val playlist = app.get(link.url, headers = headers).text
-        val lines = playlist.lines()
+        val response = app.get(link.url, headers = headers, allowRedirects = true)
+        val content = response.text
+        Log.e(TAG, "Probe response: code=${response.code}, contentType=${response.headers["Content-Type"]}, finalUrl=${response.url}")
+        Log.e(TAG, "Probe content: length=${content.length}, first200=${content.take(200)}")
+
+        if (content.contains("<MPD", true) || content.contains("<?xml", true) && content.contains("MPD", true)) {
+            Log.w(TAG, "Response is DASH despite HLS/unknown link metadata; switching parser")
+            return parseDashQualities(link, content)
+        }
+        if (!content.contains("#EXTM3U", true)) {
+            throw IllegalArgumentException("Response is not an HLS playlist")
+        }
+
+        val lines = content.lines()
         val results = mutableListOf<ProbedQuality>()
         lines.forEachIndexed { index, line ->
             if (!line.startsWith("#EXT-X-STREAM-INF:", true)) return@forEachIndexed
@@ -91,7 +125,7 @@ object QualityProbe {
             if (resolution != null && next != null) {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
-                val variantUrl = resolve(link.url, next)
+                val variantUrl = resolve(response.url, next)
                 val duration = fetchHlsDuration(variantUrl, headers)
                 results += ProbedQuality(width, height, bandwidth, variantUrl, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, duration))
             }
@@ -101,12 +135,14 @@ object QualityProbe {
 
     /** Parse the MPD with an XML pull parser, including attributes inherited from AdaptationSet. */
     private suspend fun probeDashQualities(link: ExtractorLink): List<ProbedQuality> {
-        val response = app.get(link.url, headers = requestHeaders(link))
-        val mpd = response.text
-        Log.d("QualityProbe", "MPD content length=${mpd.length}")
-        val parser = Xml.newPullParser().apply {
-            setInput(StringReader(mpd))
-        }
+        val response = app.get(link.url, headers = requestHeaders(link), allowRedirects = true)
+        Log.e(TAG, "DASH response: code=${response.code}, contentType=${response.headers["Content-Type"]}, finalUrl=${response.url}")
+        return parseDashQualities(link, response.text)
+    }
+
+    private fun parseDashQualities(link: ExtractorLink, mpd: String): List<ProbedQuality> {
+        Log.d(TAG, "MPD content length=${mpd.length}")
+        val parser = Xml.newPullParser().apply { setInput(StringReader(mpd)) }
         val results = mutableListOf<ProbedQuality>()
         var manifestDuration: Long? = null
         var adaptationWidth = 0
@@ -125,9 +161,7 @@ object QualityProbe {
                     val width = parser.getAttributeValue(null, "width")?.toIntOrNull() ?: adaptationWidth
                     val height = parser.getAttributeValue(null, "height")?.toIntOrNull() ?: adaptationHeight
                     val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
-                    if (height > 0) {
-                        results += ProbedQuality(width, height, bandwidth, link.url, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, manifestDuration))
-                    }
+                    if (height > 0) results += ProbedQuality(width, height, bandwidth, link.url, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, manifestDuration))
                 }
             }
         }
@@ -135,7 +169,7 @@ object QualityProbe {
     }
 
     private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Long? = runCatching {
-        val playlist = app.get(url, headers = headers).text
+        val playlist = app.get(url, headers = headers, allowRedirects = true).text
         Regex("#EXTINF:([\\d.]+),").findAll(playlist).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }.toLong().takeIf { it > 0 }
     }.getOrNull()
 
@@ -158,7 +192,7 @@ object QualityProbe {
     }
 
     private fun fallback(link: ExtractorLink): List<ProbedQuality> = listOf(
-        ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Original Quality")
+        ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Auto")
     )
 
     private fun resolve(base: String, child: String): String = runCatching { URI(base).resolve(child).toString() }.getOrDefault(child)
