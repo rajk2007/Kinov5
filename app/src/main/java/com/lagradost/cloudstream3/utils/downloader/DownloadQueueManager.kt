@@ -175,6 +175,10 @@ object DownloadQueueManager {
             Log.d(TAG, "Cannot start download queue service, null context.")
             return
         }
+        if (DownloadQueueService.isRunning) {
+            Log.d(TAG, "Download queue service is already running.")
+            return
+        }
         ioSafe {
             val intent = DownloadQueueService.getIntent(context)
             ContextCompat.startForegroundService(context, intent)
@@ -225,6 +229,9 @@ object DownloadQueueManager {
             return@safe
         }
 
+        Log.e("DL_DEBUG", "addToQueue called for id=${downloadQueueWrapper.id}")
+        Log.e("DL_DEBUG", "Queue size before: ${queue.value.size}")
+
         val fileInfo = getDownloadFileInfo(context, downloadQueueWrapper.id)
         val isComplete = fileInfo != null &&
                 fileInfo.totalBytes > 0 &&
@@ -242,7 +249,8 @@ object DownloadQueueManager {
             } catch (_: Exception) {}
             com.lagradost.cloudstream3.MainActivity.lastError = null
             startQueueService(context)
-            Log.d(TAG, "queued id=${downloadQueueWrapper.id}")
+            Log.e("DL_DEBUG", "Queue size after: ${queue.value.size}")
+            Log.e("DL_DEBUG", "Starting service for id=${downloadQueueWrapper.id}")
         } else {
             Log.w(TAG, "addToQueue failed: ${downloadQueueWrapper.id} already in queue or downloading")
         }

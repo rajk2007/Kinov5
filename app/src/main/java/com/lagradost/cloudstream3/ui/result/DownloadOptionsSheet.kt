@@ -21,250 +21,106 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ProbedQuality
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.QualityProbe
+import com.lagradost.cloudstream3.utils.heightToQualitiesInt
 import com.lagradost.cloudstream3.utils.getQualityFromName
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 
-/** Extract 480p / 720p / 1080p / 2160p / 4K from link name */
 fun parseQualityFromLinkName(name: String): String? {
-    val qualityRegex = Regex("""\b(144|240|360|480|720|1080|1440|2160)p\b|\b4[kK]\b""", RegexOption.IGNORE_CASE)
-    val match = qualityRegex.find(name)?.value ?: return null
+    val match = Regex("\\b(144|240|360|480|720|1080|1440|2160)p\\b|\\b4[kK]\\b", RegexOption.IGNORE_CASE)
+        .find(name)?.value ?: return null
     return if (match.equals("4k", true)) "4K" else match.lowercase()
 }
 
-/** Extract language token after •MB / • / source markers */
 fun parseLanguageFromLinkName(name: String): String? {
     val afterDot = Regex("""[•·]\s*(?:MB\s+)?([A-Za-z][\w\s-]{1,20})""", RegexOption.IGNORE_CASE)
         .find(name)?.groupValues?.getOrNull(1)?.trim()
     if (!afterDot.isNullOrBlank() && !afterDot.matches(Regex("""\d{3,4}p|4k""", RegexOption.IGNORE_CASE))) {
-        return afterDot.split(Regex("""\s+""")).firstOrNull()?.replaceFirstChar { it.uppercase() }
+        return afterDot.split(Regex("\\s+")).firstOrNull()?.replaceFirstChar { it.uppercase() }
     }
-    val knownLangs = listOf(
-        "Hindi", "English", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali",
-        "Marathi", "Gujarati", "Punjabi", "Urdu", "Dual", "Multi"
-    )
-    for (lang in knownLangs) {
-        if (name.contains(lang, ignoreCase = true)) return lang
-    }
+    listOf("Hindi", "English", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali", "Marathi", "Gujarati", "Punjabi", "Urdu", "Dual", "Multi")
+        .firstOrNull { name.contains(it, ignoreCase = true) }?.let { return it }
     return null
 }
 
-/** Prefer real quality int; fall back to parsing the name */
 fun ExtractorLink.effectiveQuality(): Int {
     if (quality != Qualities.Unknown.value && quality != 0) return quality
-    val fromName = parseQualityFromLinkName(name) ?: return Qualities.Unknown.value
-    return getQualityFromName(fromName)
+    return parseQualityFromLinkName(name)?.let(::getQualityFromName) ?: Qualities.Unknown.value
 }
 
 fun ExtractorLink.languageKey(): String {
     parseLanguageFromLinkName(name)?.let { return it }
-    val qStr = Qualities.getStringByInt(effectiveQuality()).ifBlank {
-        parseQualityFromLinkName(name) ?: ""
-    }
-    return name
-        .replace(source, "", ignoreCase = true)
-        .replace(qStr, "", ignoreCase = true)
+    val qStr = Qualities.getStringByInt(effectiveQuality()).ifBlank { parseQualityFromLinkName(name) ?: "" }
+    return name.replace(source, "", ignoreCase = true).replace(qStr, "", ignoreCase = true)
         .replace(Regex("""\b\d{3,4}\s*p\b|\b4[kK]\b""", RegexOption.IGNORE_CASE), "")
-        .replace(Regex("""[•·\-–—_|\[\](){}:]"""), " ")
-        .replace(Regex("""\s+"""), " ")
-        .trim()
-        .ifBlank { source.ifBlank { "Unknown" } }
+        .replace(Regex("""[•·\-–—_|\[\](){ } :]"""), " ")
+        .replace(Regex("\\s+"), " ").trim().ifBlank { source.ifBlank { "Unknown" } }
 }
 
+data class QualityOption(val label: String, val width: Int, val height: Int, val link: ExtractorLink, val variantUrl: String)
+
 @Composable
-fun DownloadOptionsSheet(
-    links: List<ExtractorLink>,
-    onDownload: (ExtractorLink) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val normalized = remember(links) {
-        links.map { link ->
-            val q = link.effectiveQuality()
-            if (q != link.quality) {
-                ExtractorLink(
-                    source = link.source,
-                    name = link.name,
-                    url = link.url,
-                    referer = link.referer,
-                    quality = q,
-                    headers = link.headers,
-                    extractorData = link.extractorData,
-                    type = link.type,
-                    audioTracks = link.audioTracks
-                )
-            } else link
-        }
-    }
-
-    val groupedLinks = remember(normalized) {
-        normalized.groupBy { it.languageKey() }
-            .mapValues { (_, g) -> g.distinctBy { it.quality }.sortedByDescending { it.quality } }
-            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
-    }
+fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink) -> Unit, onDismiss: () -> Unit) {
+    val normalized = remember(links) { links.map { link -> if (link.effectiveQuality() != link.quality) ExtractorLink(link.source, link.name, link.url, link.referer, link.effectiveQuality(), link.headers, link.extractorData, link.type, link.audioTracks) else link } }
+    val groupedLinks = remember(normalized) { normalized.groupBy { it.languageKey() }.mapValues { (_, group) -> group.distinctBy { it.url }.sortedByDescending { it.effectiveQuality() } }.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
     val languages = groupedLinks.keys.toList()
-    var selectedLanguage by remember { mutableStateOf(languages.firstOrNull() ?: "") }
-    val qualities = groupedLinks[selectedLanguage] ?: emptyList()
-    var selectedQuality by remember(selectedLanguage) {
-        mutableStateOf(qualities.firstOrNull()?.quality ?: 0)
+    var selectedLanguage by remember(languages) { mutableStateOf(languages.firstOrNull() ?: "") }
+    val selectedLinks = groupedLinks[selectedLanguage].orEmpty()
+    var probedQualities by remember(selectedLanguage) { mutableStateOf<Map<ExtractorLink, List<ProbedQuality>>>(emptyMap()) }
+    var isProbing by remember(selectedLanguage) { mutableStateOf(true) }
+
+    LaunchedEffect(selectedLanguage, selectedLinks) {
+        isProbing = true
+        probedQualities = selectedLinks.map { link -> async { link to QualityProbe.probeVideoQualities(link) } }.awaitAll().toMap()
+        isProbing = false
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF121212))
-            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-    ) {
-        // Drag handle
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(top = 8.dp)
-                .width(40.dp)
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.Gray)
-        )
+    val qualityOptions = remember(probedQualities, selectedLinks) {
+        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption(probed.label, probed.width, probed.height, link, probed.variantUrl) } }
+            .distinctBy { it.height to it.variantUrl }.sortedByDescending { it.height }.ifEmpty {
+                selectedLinks.map { link -> QualityOption(parseQualityFromLinkName(link.name) ?: "Original Quality", 0, 0, link, link.url) }
+            }
+    }
+    var selectedUrl by remember(selectedLanguage, qualityOptions) { mutableStateOf(qualityOptions.firstOrNull()?.variantUrl.orEmpty()) }
+    val selectedOption = qualityOptions.firstOrNull { it.variantUrl == selectedUrl }
 
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    Column(Modifier.fillMaxWidth().background(Color(0xFF121212)).clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Text("Download Options", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close", tint = Color.White) }
+        }
+        Text("Language", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(languages) { language ->
+                val selected = language == selectedLanguage
+                Text(language, color = if (selected) Color.White else Color.LightGray, modifier = Modifier.clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedLanguage = language }.padding(12.dp, 8.dp))
             }
         }
-
-        // Language section
-        Text(
-            "Language",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(languages) { lang ->
-                val isSelected = lang == selectedLanguage
-                val bgColor = if (isSelected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)
-                val borderColor = if (isSelected) Color(0xFFE50914) else Color(0xFF333333)
-                val textColor = if (isSelected) Color.White else Color.LightGray
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-                        .background(bgColor)
-                        .clickable { selectedLanguage = lang }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    if (isSelected) {
-                        Box(Modifier.size(16.dp).clip(CircleShape).background(Color(0xFFE50914)))
-                        Spacer(Modifier.width(6.dp))
-                    }
-                    Text(lang, color = textColor, fontSize = 14.sp)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Quality section
-        Text(
-            "Quality",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
-        )
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            qualities.forEach { link ->
-                val isSelected = link.quality == selectedQuality
-                val bgColor = if (isSelected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)
-                val borderColor = if (isSelected) Color(0xFFE50914) else Color(0xFF333333)
-                val qualityStr = parseQualityFromLinkName(link.name)
-                    ?: Qualities.getStringByInt(link.quality).ifBlank { "Unknown" }
-                val badgeText = when (link.quality) {
-                    Qualities.P2160.value -> "4K"
-                    Qualities.P1440.value -> "QHD"
-                    Qualities.P1080.value -> "FHD"
-                    Qualities.P720.value -> "HD"
-                    Qualities.P480.value -> "SD"
-                    else -> ""
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-                        .background(bgColor)
-                        .clickable { selectedQuality = link.quality }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    Text(
-                        qualityStr,
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(70.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    if (badgeText.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFFE50914))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(badgeText, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(link.source, color = Color.Gray, fontSize = 14.sp)
-                    Spacer(Modifier.weight(1f))
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .border(2.dp, if (isSelected) Color(0xFFE50914) else Color.Gray, CircleShape)
-                            .padding(3.dp)
-                    ) {
-                        if (isSelected) {
-                            Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFE50914)))
-                        }
+        Text("Quality", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp))
+        if (isProbing) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(20.dp), color = Color(0xFFE50914)); Text("Detecting available qualities…", color = Color.Gray) }
+        } else {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                qualityOptions.forEach { option ->
+                    val selected = option.variantUrl == selectedUrl
+                    val display = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedUrl = option.variantUrl }.padding(16.dp, 12.dp), Alignment.CenterVertically) {
+                        Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (selected) Color(0xFFE50914) else Color.Gray, CircleShape).padding(3.dp)) { if (selected) Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFE50914))) }
                     }
                 }
             }
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Download button
-        Button(
-            onClick = {
-                qualities.find { it.quality == selectedQuality }?.let { onDownload(it) }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp)
-                .height(50.dp),
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
-            Spacer(Modifier.width(8.dp))
-            Text("Download", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Button(onClick = {
+            selectedOption?.let { option ->
+                val downloadLink = if (option.variantUrl != option.link.url) ExtractorLink(option.link.source, option.link.name, option.variantUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
+                onDownload(downloadLink)
+            }
+        }, enabled = selectedOption != null && !isProbing, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
+            Icon(Icons.Default.PlayArrow, null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Download", color = Color.White, fontWeight = FontWeight.Bold)
         }
     }
 }

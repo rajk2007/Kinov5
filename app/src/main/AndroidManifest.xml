@@ -100,10 +100,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".services.VideoDownloadService"
+            android:exported="false" />
+
         <receiver
-            android:name=".utils.VideoDownloadManager$DownloadResumeReceiver"
+            android:name=".utils.downloader.VideoDownloadManager$DownloadResumeReceiver"
             android:enabled="true"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />

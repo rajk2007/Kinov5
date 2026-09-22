@@ -150,6 +150,7 @@ class DownloadQueueService : Service() {
         val context: Context = this // To make code more readable
 
         Log.d(TAG, "Download queue service started.")
+        Log.e("DL_DEBUG", "DownloadQueueService onCreate")
         this.createNotificationChannel(
             DOWNLOAD_QUEUE_CHANNEL_ID,
             DOWNLOAD_QUEUE_CHANNEL_NAME,

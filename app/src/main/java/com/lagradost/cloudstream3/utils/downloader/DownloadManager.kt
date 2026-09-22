@@ -1872,20 +1872,28 @@ object VideoDownloadManager {
         }
 
         fun startDownload() {
-            Log.d(TAG, "Starting download ${downloadQueueWrapper.id}")
+            Log.e("DL_DEBUG", "startDownload called for id=${downloadQueueWrapper.id}")
             setKey(KEY_RESUME_IN_QUEUE, downloadQueueWrapper.id.toString(), downloadQueueWrapper)
 
             ioSafe {
-                if (downloadQueueWrapper.resumePackage != null) {
-                    downloadFromResume()
-                    // Load links if they are not already loaded
-                } else if (downloadQueueWrapper.downloadItem != null && downloadQueueWrapper.downloadItem.links.isNullOrEmpty()) {
-                    downloadEpisodeWithoutLinks()
-                } else if (downloadQueueWrapper.downloadItem?.links != null) {
-                    downloadEpisodeWithLinks(
-                        sortUrls(downloadQueueWrapper.downloadItem.links.toSet()),
-                        downloadQueueWrapper.downloadItem.subs
-                    )
+                try {
+                    if (downloadQueueWrapper.resumePackage != null) {
+                        downloadFromResume()
+                    } else if (downloadQueueWrapper.downloadItem != null && downloadQueueWrapper.downloadItem.links.isNullOrEmpty()) {
+                        downloadEpisodeWithoutLinks()
+                    } else if (downloadQueueWrapper.downloadItem?.links != null) {
+                        downloadEpisodeWithLinks(
+                            sortUrls(downloadQueueWrapper.downloadItem.links.toSet()),
+                            downloadQueueWrapper.downloadItem.subs
+                        )
+                    } else {
+                        isFailed = true
+                    }
+                    Log.e("DL_DEBUG", "Download start completed for id=${downloadQueueWrapper.id}")
+                } catch (e: Exception) {
+                    Log.e("DL_DEBUG", "Download failed for id=${downloadQueueWrapper.id}: ${e.message}", e)
+                    isFailed = true
+                    throw e
                 }
             }
         }
