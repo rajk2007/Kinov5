@@ -147,7 +147,6 @@ class DownloadQueueService : Service() {
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
         val context: Context = this // To make code more readable
 
         Log.d(TAG, "Download queue service started.")
@@ -155,19 +154,26 @@ class DownloadQueueService : Service() {
         Log.e("DL_DEBUG", "DownloadQueueService onCreate")
         Log.e("DL_DEBUG", "Initial queue size=${DownloadQueueManager.queue.value.size}, active instances=${_downloadInstances.value.size}")
         Log.e("DL_DEBUG", "═════════════════════════════")
-        this.createNotificationChannel(
-            DOWNLOAD_QUEUE_CHANNEL_ID,
-            DOWNLOAD_QUEUE_CHANNEL_NAME,
-            DOWNLOAD_QUEUE_CHANNEL_DESCRIPTION
-        )
-        if (SDK_INT >= 29) {
-            startForeground(
-                DOWNLOAD_QUEUE_NOTIFICATION_ID,
-                baseNotification.build(),
-                FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        try {
+            this.createNotificationChannel(
+                DOWNLOAD_QUEUE_CHANNEL_ID,
+                DOWNLOAD_QUEUE_CHANNEL_NAME,
+                DOWNLOAD_QUEUE_CHANNEL_DESCRIPTION
             )
-        } else {
-            startForeground(DOWNLOAD_QUEUE_NOTIFICATION_ID, baseNotification.build())
+            if (SDK_INT >= 29) {
+                startForeground(
+                    DOWNLOAD_QUEUE_NOTIFICATION_ID,
+                    baseNotification.build(),
+                    FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(DOWNLOAD_QUEUE_NOTIFICATION_ID, baseNotification.build())
+            }
+            isRunning = true
+        } catch (t: Throwable) {
+            isRunning = false
+            Log.e("DL_DEBUG", "DownloadQueueService onCreate failed", t)
+            throw t
         }
 
         downloadEvent += downloadEventListener
@@ -244,7 +250,13 @@ class DownloadQueueService : Service() {
                             val downloadInstance = DownloadQueueManager.popQueue(context)
                             if (downloadInstance != null) {
                                 Log.e("DL_DEBUG", "Starting download for id=${downloadInstance.downloadQueueWrapper.id}")
-                                downloadInstance.startDownload()
+                                try {
+                                    downloadInstance.startDownload()
+                                } catch (t: Throwable) {
+                                    Log.e("DL_DEBUG", "Download startup failed", t)
+                                    VideoDownloadManager.downloadStatus[downloadInstance.downloadQueueWrapper.id] = VideoDownloadManager.DownloadType.IsFailed
+                                    VideoDownloadManager.downloadStatusEvent.invoke(downloadInstance.downloadQueueWrapper.id to VideoDownloadManager.DownloadType.IsFailed)
+                                }
                                 instances + downloadInstance
                             } else {
                                 instances
@@ -319,7 +331,13 @@ class DownloadQueueService : Service() {
                             val downloadInstance = DownloadQueueManager.popQueue(context)
                             if (downloadInstance != null) {
                                 Log.e("DL_DEBUG", "Restarted queue starting id=${downloadInstance.downloadQueueWrapper.id}")
-                                downloadInstance.startDownload()
+                                try {
+                                    downloadInstance.startDownload()
+                                } catch (t: Throwable) {
+                                    Log.e("DL_DEBUG", "Restarted download startup failed", t)
+                                    VideoDownloadManager.downloadStatus[downloadInstance.downloadQueueWrapper.id] = VideoDownloadManager.DownloadType.IsFailed
+                                    VideoDownloadManager.downloadStatusEvent.invoke(downloadInstance.downloadQueueWrapper.id to VideoDownloadManager.DownloadType.IsFailed)
+                                }
                                 instances + downloadInstance
                             } else instances
                         }

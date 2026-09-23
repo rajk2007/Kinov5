@@ -1876,6 +1876,8 @@ object VideoDownloadManager {
             Log.e("DL_DEBUG", "═════════════════════════════")
             Log.e("DL_DEBUG", "startDownload CALLED for id=${downloadQueueWrapper.id}")
             Log.e("DL_DEBUG", "Episode=${item?.episode?.name}, links=${item?.links?.size}, resume=${downloadQueueWrapper.resumePackage != null}")
+            downloadStatus[downloadQueueWrapper.id] = DownloadType.IsDownloading
+            downloadStatusEvent.invoke(downloadQueueWrapper.id to DownloadType.IsDownloading)
             item?.links?.forEach { link ->
                 Log.e("DL_DEBUG", "Link name=${link.name}, type=${link.type}, url=${link.url.take(120)}, headers=${link.headers}, referer=${link.referer}")
             }

@@ -176,10 +176,6 @@ object DownloadQueueManager {
             Log.e("DL_DEBUG", "Cannot start download queue service: null context")
             return
         }
-        if (DownloadQueueService.isRunning) {
-            Log.e("DL_DEBUG", "Download queue service already running")
-            return
-        }
         ioSafe {
             try {
                 Log.e("DL_DEBUG", "Starting foreground download queue service")

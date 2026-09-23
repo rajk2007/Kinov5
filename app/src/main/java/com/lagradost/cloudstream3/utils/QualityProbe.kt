@@ -1,6 +1,5 @@
 package com.lagradost.cloudstream3.utils
 
-import android.media.MediaMetadataRetriever
 import android.util.Log
 import android.util.Xml
 import com.lagradost.cloudstream3.USER_AGENT
@@ -22,6 +21,7 @@ data class ProbedQuality(
     val variantUrl: String,
     val label: String,
     val estimatedSizeBytes: Long? = null,
+    val selectionKey: String,
 )
 
 fun heightToQualityLabel(height: Int): String = when {
@@ -69,14 +69,14 @@ object QualityProbe {
                     link.type == ExtractorLinkType.DASH || link.url.contains(".mpd", true) -> probeDashQualities(link)
                     link.url.contains("manifest", true) || link.url.contains("playlist", true) -> {
                         runCatching { probeHlsQualities(link) }
-                            .getOrElse { runCatching { probeDashQualities(link) }.getOrElse { probeProgressive(link) } }
+                            .getOrElse { runCatching { probeDashQualities(link) }.getOrElse { probeProgressiveSafe(link) } }
                     }
                     else -> {
                         // HDH and similar providers sometimes omit the type and extension.
                         runCatching { probeHlsQualities(link) }
                             .getOrElse {
                                 runCatching { probeDashQualities(link) }
-                                    .getOrElse { probeProgressive(link) }
+                                    .getOrElse { probeProgressiveSafe(link) }
                             }
                     }
                 }
@@ -102,8 +102,13 @@ object QualityProbe {
     private suspend fun probeHlsQualities(link: ExtractorLink): List<ProbedQuality> {
         val headers = requestHeaders(link)
         val response = app.get(link.url, headers = headers, allowRedirects = true)
+        val contentType = response.headers["Content-Type"].orEmpty()
+        Log.e(TAG, "Probe response: code=${response.code}, contentType=$contentType, finalUrl=${response.url}")
+        if (!contentType.contains("mpegurl", true) && !contentType.contains("xml", true) && !contentType.contains("text", true)) {
+            Log.w(TAG, "Response is not a playlist content type: $contentType")
+            return probeProgressiveSafe(link)
+        }
         val content = response.text
-        Log.e(TAG, "Probe response: code=${response.code}, contentType=${response.headers["Content-Type"]}, finalUrl=${response.url}")
         Log.e(TAG, "Probe content: length=${content.length}, first200=${content.take(200)}")
 
         if (content.contains("<MPD", true) || content.contains("<?xml", true) && content.contains("MPD", true)) {
@@ -127,10 +132,10 @@ object QualityProbe {
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
                 val duration = fetchHlsDuration(variantUrl, headers)
-                results += ProbedQuality(width, height, bandwidth, variantUrl, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, duration))
+                results += ProbedQuality(width, height, bandwidth, variantUrl, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, duration), "hls-${height}-${variantUrl.hashCode()}")
             }
         }
-        return results.distinctBy { it.height to it.variantUrl }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
+        return results.distinctBy { it.selectionKey }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
     }
 
     /** Parse the MPD with an XML pull parser, including attributes inherited from AdaptationSet. */
@@ -161,11 +166,14 @@ object QualityProbe {
                     val width = parser.getAttributeValue(null, "width")?.toIntOrNull() ?: adaptationWidth
                     val height = parser.getAttributeValue(null, "height")?.toIntOrNull() ?: adaptationHeight
                     val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
-                    if (height > 0) results += ProbedQuality(width, height, bandwidth, link.url, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, manifestDuration))
+                    if (height > 0) {
+                        val selectionKey = "dash-${height}-${bandwidth ?: 0}-${results.size}"
+                        results += ProbedQuality(width, height, bandwidth, "${link.url}#track=$height", heightToQualityLabel(height), calculateEstimatedSize(bandwidth, manifestDuration), selectionKey)
+                    }
                 }
             }
         }
-        return results.distinctBy { it.height }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
+        return results.distinctBy { it.selectionKey }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
     }
 
     private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Long? = runCatching {
@@ -173,15 +181,14 @@ object QualityProbe {
         Regex("#EXTINF:([\\d.]+),").findAll(playlist).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }.toLong().takeIf { it > 0 }
     }.getOrNull()
 
-    private fun probeProgressive(link: ExtractorLink): List<ProbedQuality> {
-        val retriever = MediaMetadataRetriever()
+    private suspend fun probeProgressiveSafe(link: ExtractorLink): List<ProbedQuality> {
         return try {
-            retriever.setDataSource(link.url, requestHeaders(link))
-            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
-            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
-            listOf(ProbedQuality(width, height, null, link.url, if (height > 0) heightToQualityLabel(height) else parseQualityFromLinkName(link.name) ?: "Original Quality"))
-        } finally {
-            retriever.release()
+            val response = app.head(link.url, headers = requestHeaders(link), timeout = PROBE_TIMEOUT_MS / 1000)
+            val contentLength = response.headers["Content-Length"]?.toLongOrNull()
+            listOf(ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Original Quality", contentLength, "prog-${link.url.hashCode()}"))
+        } catch (e: Exception) {
+            Log.w(TAG, "Progressive HEAD probe failed; using fallback", e)
+            fallback(link)
         }
     }
 
@@ -192,7 +199,7 @@ object QualityProbe {
     }
 
     private fun fallback(link: ExtractorLink): List<ProbedQuality> = listOf(
-        ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Auto")
+        ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Auto", selectionKey = "fallback-${link.url.hashCode()}")
     )
 
     private fun resolve(base: String, child: String): String = runCatching { URI(base).resolve(child).toString() }.getOrDefault(child)

@@ -29,6 +29,8 @@ import com.lagradost.cloudstream3.utils.formatFileSize
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 
 fun parseQualityFromLinkName(name: String): String? {
     val match = Regex("\\b(144|240|360|480|720|1080|1440|2160)p\\b|\\b4[kK]\\b", RegexOption.IGNORE_CASE)
@@ -62,6 +64,7 @@ fun ExtractorLink.languageKey(): String {
 }
 
 data class QualityOption(
+    val id: String,
     val label: String,
     val width: Int,
     val height: Int,
@@ -82,18 +85,27 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink)
 
     LaunchedEffect(selectedLanguage, selectedLinks) {
         isProbing = true
-        probedQualities = selectedLinks.map { link -> async { link to QualityProbe.probeVideoQualities(link) } }.awaitAll().toMap()
-        isProbing = false
+        try {
+            withTimeout(8_000L) {
+                probedQualities = selectedLinks.map { link -> async { link to QualityProbe.probeVideoQualities(link) } }.awaitAll().toMap()
+            }
+        } catch (_: TimeoutCancellationException) {
+            probedQualities = selectedLinks.associateWith { link ->
+                listOf(ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Auto", selectionKey = "timeout-${link.url.hashCode()}"))
+            }
+        } finally {
+            isProbing = false
+        }
     }
 
     val qualityOptions = remember(probedQualities, selectedLinks) {
-        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption(probed.label, probed.width, probed.height, link, probed.variantUrl, probed.estimatedSizeBytes) } }
-            .distinctBy { it.height to it.variantUrl }.sortedByDescending { it.height }.ifEmpty {
-                selectedLinks.map { link -> QualityOption(parseQualityFromLinkName(link.name) ?: "Original Quality", 0, 0, link, link.url) }
+        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, probed.estimatedSizeBytes) } }
+            .distinctBy { it.id }.sortedByDescending { it.height }.ifEmpty {
+                selectedLinks.map { link -> QualityOption("${link.url}|fallback", parseQualityFromLinkName(link.name) ?: "Original Quality", 0, 0, link, link.url) }
             }
     }
-    var selectedUrl by remember(selectedLanguage, qualityOptions) { mutableStateOf(qualityOptions.firstOrNull()?.variantUrl.orEmpty()) }
-    val selectedOption = qualityOptions.firstOrNull { it.variantUrl == selectedUrl }
+    var selectedId by remember(selectedLanguage, qualityOptions) { mutableStateOf(qualityOptions.firstOrNull()?.id.orEmpty()) }
+    val selectedOption = qualityOptions.firstOrNull { it.id == selectedId }
 
     Column(Modifier.fillMaxWidth().background(Color(0xFF121212)).clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))) {
         Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
@@ -113,9 +125,9 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink)
         } else {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 qualityOptions.forEach { option ->
-                    val selected = option.variantUrl == selectedUrl
+                    val selected = option.id == selectedId
                     val display = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedUrl = option.variantUrl }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             option.estimatedSizeBytes?.let { bytes ->
@@ -129,7 +141,8 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink)
         }
         Button(onClick = {
             selectedOption?.let { option ->
-                val downloadLink = if (option.variantUrl != option.link.url) ExtractorLink(option.link.source, option.link.name, option.variantUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
+                val realUrl = option.variantUrl.substringBefore("#track=")
+                val downloadLink = if (realUrl != option.link.url || option.height > 0) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
                 onDownload(downloadLink)
             }
         }, enabled = selectedOption != null && !isProbing, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
