@@ -281,6 +281,7 @@ object DirectDownloadManager {
                     connection?.disconnect()
                 }
             }
+            throw IOException("Download failed after $MAX_RETRIES attempts.")
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
             return true
