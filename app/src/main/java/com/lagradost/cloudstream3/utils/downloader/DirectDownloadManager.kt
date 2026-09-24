@@ -55,9 +55,12 @@ enum class DirectDownloadStatus { PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILE
 
 private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L
 
-/** DASH is not supported here; signed direct URLs must still be treated as files. */
+/** Only actual DASH manifests are unsupported; signed direct URLs must still be treated as files. */
 fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean =
-    !isDirectFileUrl(url) && link.type == ExtractorLinkType.DASH && url.contains(".mpd", ignoreCase = true)
+    url.contains(".mpd", ignoreCase = true) && !isDirectFileUrl(url)
+
+/** Removes probe-only URL fragments before a URL is used for an HTTP request. */
+fun cleanDownloadUrl(url: String): String = url.substringBefore("#")
 
 private fun isDirectFileUrl(url: String): Boolean {
     val normalized = url.lowercase()
@@ -103,11 +106,25 @@ object DirectDownloadManager {
         selectedHeight: Int = 0,
     ): Boolean {
         initialize(context)
-        if (!validateUrl(link.url)) {
+        Log.e(TAG, "URL_DEBUG original link URL: ${link.url}")
+        val downloadUrl = cleanDownloadUrl(link.url)
+        Log.e(TAG, "URL_DEBUG clean URL for download: $downloadUrl")
+        val downloadLink = if (downloadUrl == link.url) link else ExtractorLink(
+            source = link.source,
+            name = link.name,
+            url = downloadUrl,
+            referer = link.referer,
+            quality = link.quality,
+            headers = link.headers,
+            extractorData = link.extractorData,
+            type = link.type,
+            audioTracks = link.audioTracks,
+        )
+        if (!validateUrl(downloadUrl)) {
             Toast.makeText(context, "Invalid download URL. The link may have expired.", Toast.LENGTH_LONG).show()
             return false
         }
-        if (isUnsupportedDirectDownload(link)) {
+        if (isUnsupportedDirectDownload(downloadLink)) {
             Toast.makeText(context, "DASH links are not supported for direct download.", Toast.LENGTH_LONG).show()
             return false
         }
@@ -116,7 +133,7 @@ object DirectDownloadManager {
         val item = DirectDownloadItem(
             id = downloadId,
             title = title,
-            url = link.url,
+            url = downloadUrl,
             fileName = sanitizeFileName(fileName).ifBlank { "download_$downloadId" },
             posterUrl = posterUrl,
             apiName = apiName,
@@ -124,8 +141,8 @@ object DirectDownloadManager {
         )
         _activeDownloads.value = _activeDownloads.value + (downloadId to item)
         downloadJobs[downloadId] = downloadScope.launch {
-            if (isHls(link)) downloadHlsVideo(context.applicationContext, downloadId, link, item)
-            else executeDownload(context.applicationContext, downloadId, link)
+            if (isHls(downloadLink)) downloadHlsVideo(context.applicationContext, downloadId, downloadLink, item)
+            else executeDownload(context.applicationContext, downloadId, downloadLink)
         }
         showDownloadNotification(item)
         Log.d(TAG, "Download started: $title")

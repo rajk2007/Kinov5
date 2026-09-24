@@ -49,18 +49,20 @@ fun calculateEstimatedSize(bandwidth: Int?, durationSeconds: Long?): Long? {
     return bandwidth.toLong().coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
 }
 
-/** Classifies the transport represented by a link, using the URL as the source of truth. */
+/** Classifies the transport represented by a link, using URL evidence before extractor metadata. */
 fun getActualLinkType(link: ExtractorLink): String {
     val url = link.url.lowercase(Locale.US)
     return when {
-        url.contains(".m3u8") || link.type == ExtractorLinkType.M3U8 -> "HLS"
+        url.contains(".m3u8") -> "HLS"
         url.contains(".mkv") -> "DIRECT_MKV"
         url.contains(".mp4") -> "DIRECT_MP4"
         url.contains(".webm") -> "DIRECT_WEBM"
         url.contains("cloudflarestorage.com") || url.contains("r2.cloudflarestorage.com") -> "DIRECT_FILE"
         url.contains("x-amz-signature") || url.contains("x-amz-credential") -> "DIRECT_FILE"
-        url.contains(".mpd") || link.type == ExtractorLinkType.DASH -> "DASH"
-        else -> "UNKNOWN"
+        url.contains(".mpd") -> "DASH"
+        link.type == ExtractorLinkType.M3U8 -> "HLS"
+        link.type == ExtractorLinkType.DASH -> "DASH"
+        else -> "DIRECT_FILE"
     }
 }
 
@@ -109,9 +111,12 @@ object QualityProbe {
     }
 
     private fun logLink(link: ExtractorLink) {
+        val url = link.url.lowercase(Locale.US)
         Log.e(TAG, "═════════════════════════════")
-        Log.e(TAG, "Probing link: name=${link.name}, type=${link.type}, source=${link.source}")
+        Log.e(TAG, "LINK_DEBUG name=${link.name}")
+        Log.e(TAG, "LINK_DEBUG type=${link.type}, actualType=${getActualLinkType(link)}, source=${link.source}")
         Log.e(TAG, "URL: ${link.url}")
+        Log.e(TAG, "LINK_DEBUG contains .mpd=${url.contains(".mpd")}, .m3u8=${url.contains(".m3u8")}, .mkv=${url.contains(".mkv")}, cloudflarestorage=${url.contains("cloudflarestorage.com")}, x-amz-signature=${url.contains("x-amz-signature")}")
         Log.e(TAG, "Headers: ${link.headers}")
         Log.e(TAG, "Referer: ${link.referer}")
         Log.e(TAG, "═════════════════════════════")

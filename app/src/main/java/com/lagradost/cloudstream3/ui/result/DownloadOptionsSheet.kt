@@ -27,6 +27,7 @@ import com.lagradost.cloudstream3.utils.QualityProbe
 import com.lagradost.cloudstream3.utils.heightToQualitiesInt
 import com.lagradost.cloudstream3.utils.formatFileSize
 import com.lagradost.cloudstream3.utils.getQualityFromName
+import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import com.lagradost.cloudstream3.utils.downloader.isUnsupportedDirectDownload
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -146,7 +147,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
         }
         Button(onClick = {
             selectedOption?.let { option ->
-                val realUrl = option.variantUrl.substringBefore("#track=")
+                val realUrl = cleanDownloadUrl(option.variantUrl)
                 val downloadLink = if (realUrl != option.link.url || option.height > 0) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
                 onDownload(downloadLink, option.height)
             }
