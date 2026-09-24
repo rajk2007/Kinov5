@@ -280,6 +280,27 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                     links = links,
                                     onDownload = { link, selectedHeight ->
                                         dialog.dismiss()
+                                        val reResolveLink: suspend () -> ExtractorLink? = {
+                                            try {
+                                                val freshLinks = mutableListOf<ExtractorLink>()
+                                                APIRepository(api).loadLinks(
+                                                    data = dataString,
+                                                    isCasting = false,
+                                                    subtitleCallback = { },
+                                                    callback = { freshLink ->
+                                                        if (freshLink.type != ExtractorLinkType.TORRENT &&
+                                                            freshLink.type != ExtractorLinkType.MAGNET &&
+                                                            (freshLink.source == link.source || freshLink.name.contains(link.name, ignoreCase = true))) {
+                                                            freshLinks.add(freshLink)
+                                                        }
+                                                    }
+                                                )
+                                                freshLinks.firstOrNull { it.source == link.source } ?: freshLinks.firstOrNull()
+                                            } catch (e: Exception) {
+                                                android.util.Log.e("KinoDownload", "Re-resolve failed", e)
+                                                null
+                                            }
+                                        }
                                         val started = DirectDownloadManager.startDownload(
                                             context = requireContext(),
                                             link = link,
@@ -288,6 +309,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             posterUrl = loadResponse.posterUrl,
                                             apiName = apiName,
                                             selectedHeight = selectedHeight,
+                                            reResolveLink = reResolveLink,
                                         )
                                         if (started) {
                                             Toast.makeText(

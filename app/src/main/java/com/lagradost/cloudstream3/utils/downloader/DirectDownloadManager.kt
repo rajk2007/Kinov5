@@ -56,17 +56,28 @@ enum class DirectDownloadStatus { PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILE
 private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L
 
 /** Only actual DASH manifests are unsupported; signed direct URLs must still be treated as files. */
-fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean =
-    url.contains(".mpd", ignoreCase = true) && !isDirectFileUrl(url)
+fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean {
+    // A direct-file signal on either the selected variant or original link wins.
+    if (isDirectFileUrl(url) || isDirectFileUrl(link.url)) return false
+    // Only reject when both representations are DASH manifests.
+    return url.contains(".mpd", ignoreCase = true) &&
+        link.url.contains(".mpd", ignoreCase = true)
+}
 
 /** Removes probe-only URL fragments before a URL is used for an HTTP request. */
 fun cleanDownloadUrl(url: String): String = url.substringBefore("#")
 
 private fun isDirectFileUrl(url: String): Boolean {
     val normalized = url.lowercase()
-    return normalized.contains(".mkv") || normalized.contains(".mp4") ||
-        normalized.contains(".webm") || normalized.contains("cloudflarestorage.com") ||
-        normalized.contains("x-amz-signature") || normalized.contains("x-amz-credential")
+    // A manifest is never a direct file, even when hosted on a signed R2 URL.
+    if (normalized.contains(".mpd")) return false
+    if (normalized.contains(".mkv") || normalized.contains(".mp4") || normalized.contains(".webm")) return true
+    if (normalized.contains("cloudflarestorage.com") ||
+        normalized.contains("x-amz-signature") ||
+        normalized.contains("x-amz-credential")) {
+        return true
+    }
+    return false
 }
 
 private data class HlsVariant(
@@ -83,6 +94,7 @@ object DirectDownloadManager {
     private const val TAG = "DirectDownload"
     private const val CHANNEL_ID = "kino_downloads"
     private const val MAX_RETRIES = 3
+    private const val MAX_RESOLVE_RETRIES = 2
 
     private val _activeDownloads = MutableStateFlow<Map<String, DirectDownloadItem>>(emptyMap())
     val activeDownloads: StateFlow<Map<String, DirectDownloadItem>> = _activeDownloads.asStateFlow()
@@ -104,6 +116,7 @@ object DirectDownloadManager {
         posterUrl: String? = null,
         apiName: String = "Unknown",
         selectedHeight: Int = 0,
+        reResolveLink: (suspend () -> ExtractorLink?)? = null,
     ): Boolean {
         initialize(context)
         Log.e(TAG, "URL_DEBUG original link URL: ${link.url}")
@@ -141,8 +154,26 @@ object DirectDownloadManager {
         )
         _activeDownloads.value = _activeDownloads.value + (downloadId to item)
         downloadJobs[downloadId] = downloadScope.launch {
-            if (isHls(downloadLink)) downloadHlsVideo(context.applicationContext, downloadId, downloadLink, item)
-            else executeDownload(context.applicationContext, downloadId, downloadLink)
+            var currentLink = downloadLink
+            var resolveAttempt = 0
+            while (currentCoroutineContext().isActive) {
+                if (isHls(currentLink)) {
+                    downloadHlsVideo(context.applicationContext, downloadId, currentLink, item)
+                    return@launch
+                }
+                val result = executeDownload(context.applicationContext, downloadId, currentLink)
+                if (result || reResolveLink == null || resolveAttempt >= MAX_RESOLVE_RETRIES) return@launch
+                resolveAttempt++
+                Log.d(TAG, "Re-resolving expired download URL (attempt $resolveAttempt/$MAX_RESOLVE_RETRIES)")
+                val freshLink = reResolveLink() ?: run {
+                    updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = "Could not refresh download link. Please try again.") }
+                    showFailedNotification(downloadId, "Could not refresh download link. Please try again.")
+                    return@launch
+                }
+                currentLink = freshLink
+                updateItem(downloadId) { it.copy(url = cleanDownloadUrl(freshLink.url), status = DirectDownloadStatus.PENDING, error = null) }
+                delay(1_000L)
+            }
         }
         showDownloadNotification(item)
         Log.d(TAG, "Download started: $title")
@@ -183,8 +214,8 @@ object DirectDownloadManager {
         appContext?.let { cancelNotification(downloadId, it) }
     }
 
-    private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink) {
-        val item = _activeDownloads.value[downloadId] ?: return
+    private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink): Boolean {
+        val item = _activeDownloads.value[downloadId] ?: return true
         val outputFile = File(getDownloadDir(context), outputName(item.fileName))
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
         var attempt = 0
@@ -237,7 +268,7 @@ object DirectDownloadManager {
                     if (totalBytes > 0L && tempFile.length() < totalBytes) throw IOException("Connection ended before the file completed.")
                     finalizeDownload(downloadId, outputFile, tempFile)
                     showCompletedNotification(downloadId, outputFile)
-                    return
+                    return true
                 } catch (error: SocketTimeoutException) {
                     attempt++
                     if (attempt >= MAX_RETRIES) throw IOException("Download timed out after $MAX_RETRIES attempts.", error)
@@ -252,10 +283,17 @@ object DirectDownloadManager {
             }
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+            return true
         } catch (error: Exception) {
-            Log.e(TAG, "Download failed: ${item.title}", error)
-            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
-            showFailedNotification(downloadId, error.message ?: "Unknown error")
+            // Return retryable HTTP expiry/auth failures to startDownload so it can
+            // obtain a fresh signed URL before marking the item failed.
+            val retryable = error.message?.contains(Regex("\\b(401|403|404)\\b")) == true
+            if (!retryable) {
+                Log.e(TAG, "Download failed: ${item.title}", error)
+                updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
+                showFailedNotification(downloadId, error.message ?: "Unknown error")
+            }
+            return !retryable
         }
     }
 

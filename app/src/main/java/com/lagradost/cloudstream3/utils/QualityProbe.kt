@@ -53,13 +53,15 @@ fun calculateEstimatedSize(bandwidth: Int?, durationSeconds: Long?): Long? {
 fun getActualLinkType(link: ExtractorLink): String {
     val url = link.url.lowercase(Locale.US)
     return when {
+        // URL extensions are the strongest evidence and must win over host heuristics.
         url.contains(".m3u8") -> "HLS"
+        url.contains(".mpd") -> "DASH"
         url.contains(".mkv") -> "DIRECT_MKV"
         url.contains(".mp4") -> "DIRECT_MP4"
         url.contains(".webm") -> "DIRECT_WEBM"
-        url.contains("cloudflarestorage.com") || url.contains("r2.cloudflarestorage.com") -> "DIRECT_FILE"
-        url.contains("x-amz-signature") || url.contains("x-amz-credential") -> "DIRECT_FILE"
-        url.contains(".mpd") -> "DASH"
+        url.contains("cloudflarestorage.com") ||
+            url.contains("x-amz-signature") ||
+            url.contains("x-amz-credential") -> "DIRECT_FILE"
         link.type == ExtractorLinkType.M3U8 -> "HLS"
         link.type == ExtractorLinkType.DASH -> "DASH"
         else -> "DIRECT_FILE"
@@ -205,6 +207,15 @@ object QualityProbe {
     }.getOrNull()
 
     private suspend fun probeProgressiveSafe(link: ExtractorLink): List<ProbedQuality> {
+        val url = link.url.lowercase(Locale.US)
+        // Signed R2/S3 URLs are ephemeral and commonly reject HEAD. Avoid consuming
+        // or invalidating the URL during probing and use the original link instead.
+        if (url.contains("cloudflarestorage.com") ||
+            url.contains("x-amz-signature") ||
+            url.contains("x-amz-credential")) {
+            Log.d(TAG, "Skipping HEAD for signed URL: ${link.url.take(60)}")
+            return fallback(link)
+        }
         return try {
             val response = app.head(link.url, headers = requestHeaders(link), timeout = PROBE_TIMEOUT_MS / 1000)
             val contentLength = response.headers["Content-Length"]?.toLongOrNull()
