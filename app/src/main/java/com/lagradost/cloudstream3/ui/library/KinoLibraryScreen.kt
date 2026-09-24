@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 
 @Composable
 fun KinoLibraryScreen(
@@ -29,7 +31,21 @@ fun KinoLibraryScreen(
 ) {
     val continueWatching by viewModel.continueWatching.collectAsState()
     val downloads by viewModel.downloads.collectAsState()
+    val directDownloads by DirectDownloadManager.activeDownloads.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val allDownloads = remember(downloads, directDownloads) {
+        downloads + directDownloads.values.map { item ->
+            KinoLibraryItem(
+                name = item.title,
+                url = item.url,
+                apiName = item.apiName,
+                posterUrl = item.posterUrl,
+                downloadedBytes = item.downloadedBytes,
+                totalBytes = item.totalBytes,
+                progress = item.progress / 100f,
+            )
+        }
+    }
 
     LaunchedEffect(Unit) { viewModel.loadData(context) }
 
@@ -67,7 +83,7 @@ fun KinoLibraryScreen(
             Text("Downloads", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
         }
-        if (downloads.isEmpty()) {
+        if (allDownloads.isEmpty()) {
             item {
                 Text(
                     "No downloads yet. Download movies to watch offline.",
@@ -77,7 +93,7 @@ fun KinoLibraryScreen(
                 )
             }
         } else {
-            items(downloads) { media -> LibraryDownloadRow(media, onMediaClick) }
+            items(allDownloads) { media -> LibraryDownloadRow(media, onMediaClick) }
         }
         item { Spacer(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) }
     }

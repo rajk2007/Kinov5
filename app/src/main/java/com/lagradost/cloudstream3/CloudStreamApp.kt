@@ -16,6 +16,7 @@ import com.lagradost.api.setContext
 import com.lagradost.cloudstream3.BuildConfig
 import com.lagradost.cloudstream3.mvvm.safe
 import com.lagradost.cloudstream3.mvvm.safeAsync
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.plugins.PluginManager
 import com.lagradost.cloudstream3.ui.settings.Globals.EMULATOR
 import com.lagradost.cloudstream3.ui.settings.Globals.TV
@@ -73,6 +74,7 @@ class CloudStreamApp : Application(), SingletonImageLoader.Factory {
         Thread.setDefaultUncaughtExceptionHandler(KinoCrashHandler(this))
         super.onCreate()
         context = applicationContext // Strong, long-lived reference
+        DirectDownloadManager.initialize(this)
         // If we want to initialize Coil as early as possible, maybe when
         // loading an image or GIF in a splash screen activity.
         // buildImageLoader(applicationContext)

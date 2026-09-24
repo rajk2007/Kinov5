@@ -107,7 +107,7 @@ import com.lagradost.cloudstream3.utils.UIHelper.setListViewHeightBasedOnItems
 import com.lagradost.cloudstream3.utils.UIHelper.setNavigationBarColorCompat
 import com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement.getBasePath
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
-import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager
 import com.lagradost.cloudstream3.utils.getImageFromDrawable
 import com.lagradost.cloudstream3.utils.setText
@@ -280,20 +280,19 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                     links = links,
                                     onDownload = { link ->
                                         dialog.dismiss()
-                                        val wrapper = DownloadObjects.DownloadQueueItem(
-                                            episode = ep,
-                                            isMovie = loadResponse is MovieLoadResponse,
-                                            resultName = loadResponse.name,
-                                            resultType = loadResponse.type ?: com.lagradost.cloudstream3.TvType.Movie,
-                                            resultPoster = loadResponse.posterUrl,
+                                        DirectDownloadManager.startDownload(
+                                            context = requireContext(),
+                                            link = link,
+                                            title = loadResponse.name,
+                                            fileName = "${loadResponse.name}_${System.currentTimeMillis()}",
+                                            posterUrl = loadResponse.posterUrl,
                                             apiName = apiName,
-                                            resultId = loadResponse.getId(),
-                                            resultUrl = pageUrl,
-                                            links = listOf(link)
-                                        ).toWrapper()
-                                        DownloadQueueManager.addToQueue(wrapper)
-                                        // Immediate feedback
-                                        Toast.makeText(requireContext(), "Download started", Toast.LENGTH_SHORT).show()
+                                        )
+                                        Toast.makeText(
+                                            requireContext(),
+                                            "Download started: ${loadResponse.name}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     },
                                     onDismiss = { dialog.dismiss() }
                                 )
