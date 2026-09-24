@@ -49,6 +49,23 @@ fun calculateEstimatedSize(bandwidth: Int?, durationSeconds: Long?): Long? {
     return bandwidth.toLong().coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
 }
 
+/** Classifies the transport represented by a link, using the URL as the source of truth. */
+fun getActualLinkType(link: ExtractorLink): String {
+    val url = link.url.lowercase(Locale.US)
+    return when {
+        url.contains(".m3u8") || link.type == ExtractorLinkType.M3U8 -> "HLS"
+        url.contains(".mkv") -> "DIRECT_MKV"
+        url.contains(".mp4") -> "DIRECT_MP4"
+        url.contains(".webm") -> "DIRECT_WEBM"
+        url.contains("cloudflarestorage.com") || url.contains("r2.cloudflarestorage.com") -> "DIRECT_FILE"
+        url.contains("x-amz-signature") || url.contains("x-amz-credential") -> "DIRECT_FILE"
+        url.contains(".mpd") || link.type == ExtractorLinkType.DASH -> "DASH"
+        else -> "UNKNOWN"
+    }
+}
+
+fun isDirectFileLink(link: ExtractorLink): Boolean = getActualLinkType(link).startsWith("DIRECT_")
+
 fun formatFileSize(bytes: Long): String = when {
     bytes >= 1_000_000_000 -> String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
     bytes >= 1_000_000 -> String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
@@ -65,8 +82,9 @@ object QualityProbe {
         try {
             withTimeout(PROBE_TIMEOUT_MS) {
                 when {
-                    link.type == ExtractorLinkType.M3U8 || link.url.contains(".m3u8", true) -> probeHlsQualities(link)
-                    link.type == ExtractorLinkType.DASH || link.url.contains(".mpd", true) -> probeDashQualities(link)
+                    getActualLinkType(link) == "HLS" -> probeHlsQualities(link)
+                    getActualLinkType(link) == "DASH" -> probeDashQualities(link)
+                    getActualLinkType(link).startsWith("DIRECT_") -> probeProgressiveSafe(link)
                     link.url.contains("manifest", true) || link.url.contains("playlist", true) -> {
                         runCatching { probeHlsQualities(link) }
                             .getOrElse { runCatching { probeDashQualities(link) }.getOrElse { probeProgressiveSafe(link) } }

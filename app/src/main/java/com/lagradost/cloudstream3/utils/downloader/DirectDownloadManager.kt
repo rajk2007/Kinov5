@@ -26,6 +26,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -53,7 +54,14 @@ private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L
 
 /** DASH is not currently supported; HLS is downloaded segment-by-segment. */
 fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean =
-    link.type == ExtractorLinkType.DASH || url.contains(".mpd", ignoreCase = true)
+    !isDirectFileUrl(url) && link.type == ExtractorLinkType.DASH && url.contains(".mpd", ignoreCase = true)
+
+private fun isDirectFileUrl(url: String): Boolean {
+    val normalized = url.lowercase()
+    return normalized.contains(".mkv") || normalized.contains(".mp4") || normalized.contains(".webm") ||
+        normalized.contains("cloudflarestorage.com") || normalized.contains("x-amz-signature") ||
+        normalized.contains("x-amz-credential")
+}
 
 /** Direct file downloader that intentionally bypasses the queue service. */
 object DirectDownloadManager {
@@ -146,90 +154,92 @@ object DirectDownloadManager {
     }
 
     private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink) {
-        var connection: HttpURLConnection? = null
         val item = _activeDownloads.value[downloadId] ?: return
         val outputFile = File(getDownloadDir(context), outputName(item.fileName))
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
+        val maxRetries = 3
         try {
-            connection = (URL(link.url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15_000
-                readTimeout = 60_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", link.headers["User-Agent"] ?: USER_AGENT)
-                link.headers.forEach { (key, value) ->
-                    if (!key.equals("User-Agent", ignoreCase = true)) setRequestProperty(key, value)
-                }
-                if (link.referer.isNotBlank()) setRequestProperty("Referer", link.referer)
-            }
-            if (connection.responseCode !in 200..299) {
-                throw httpException(connection.responseCode, connection.responseMessage)
-            }
-
-            val totalBytes = connection.contentLengthLong
-            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, totalBytes = totalBytes) }
-            var downloadedBytes = 0L
-            var lastUpdateTime = System.currentTimeMillis()
-            var lastUpdateBytes = 0L
-            val startTime = lastUpdateTime
-
-            connection.inputStream.use { input ->
-                FileOutputStream(tempFile, false).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (currentCoroutineContext().isActive) {
-                        val bytesRead = input.read(buffer)
-                        if (bytesRead == -1) break
-                        output.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
-                        val now = System.currentTimeMillis()
-                        if (now - lastUpdateTime >= 500L || downloadedBytes - lastUpdateBytes >= 1024L * 1024L) {
-                            val elapsed = (now - startTime).coerceAtLeast(1L) / 1000.0
-                            val progress = if (totalBytes > 0L) {
-                                (downloadedBytes * 100L / totalBytes).toInt().coerceIn(0, 100)
-                            } else 0
-                            updateItem(downloadId) {
-                                it.copy(
-                                    progress = progress,
-                                    downloadedBytes = downloadedBytes,
-                                    speed = formatSpeed(downloadedBytes / elapsed),
-                                )
+            var attempt = 0
+            while (attempt < maxRetries) {
+                var connection: HttpURLConnection? = null
+                try {
+                    val existingBytes = tempFile.length()
+                    connection = (URL(link.url).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15_000
+                        readTimeout = 300_000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", link.headers["User-Agent"] ?: USER_AGENT)
+                        link.headers.forEach { (key, value) ->
+                            if (!key.equals("User-Agent", ignoreCase = true)) setRequestProperty(key, value)
+                        }
+                        if (link.referer.isNotBlank()) setRequestProperty("Referer", link.referer)
+                        if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
+                    }
+                    val responseCode = connection.responseCode
+                    if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
+                        throw httpException(responseCode, connection.responseMessage)
+                    }
+                    val append = tempFile.length() > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
+                    if (!append && tempFile.exists()) tempFile.delete()
+                    val startingBytes = if (append) tempFile.length() else 0L
+                    val contentLength = connection.contentLengthLong
+                    val totalBytes = if (contentLength > 0L) startingBytes + contentLength else 0L
+                    updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, downloadedBytes = startingBytes, totalBytes = totalBytes) }
+                    var downloadedBytes = startingBytes
+                    var lastUpdateTime = System.currentTimeMillis()
+                    var lastUpdateBytes = downloadedBytes
+                    val startTime = lastUpdateTime
+                    connection.inputStream.use { input ->
+                        FileOutputStream(tempFile, append).use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (currentCoroutineContext().isActive) {
+                                val bytesRead = input.read(buffer)
+                                if (bytesRead == -1) break
+                                output.write(buffer, 0, bytesRead)
+                                downloadedBytes += bytesRead
+                                val now = System.currentTimeMillis()
+                                if (now - lastUpdateTime >= 500L || downloadedBytes - lastUpdateBytes >= 1024L * 1024L) {
+                                    val elapsed = (now - startTime).coerceAtLeast(1L) / 1000.0
+                                    val progress = if (totalBytes > 0L) (downloadedBytes * 100L / totalBytes).toInt().coerceIn(0, 100) else 0
+                                    updateItem(downloadId) { it.copy(progress = progress, downloadedBytes = downloadedBytes, speed = formatSpeed((downloadedBytes - startingBytes) / elapsed)) }
+                                    updateDownloadNotification(downloadId)
+                                    lastUpdateTime = now
+                                    lastUpdateBytes = downloadedBytes
+                                }
                             }
-                            updateDownloadNotification(downloadId)
-                            lastUpdateTime = now
-                            lastUpdateBytes = downloadedBytes
                         }
                     }
+                    if (!currentCoroutineContext().isActive) throw CancellationException()
+                    if (totalBytes > 0L && tempFile.length() < totalBytes) throw IOException("Connection ended before the file completed.")
+                    if (outputFile.exists()) outputFile.delete()
+                    if (!tempFile.renameTo(outputFile)) throw IllegalStateException("Unable to finalize download")
+                    val fileSize = outputFile.length()
+                    if (fileSize < MIN_VALID_VIDEO_BYTES) {
+                        outputFile.delete()
+                        throw IllegalStateException("Downloaded file is only ${formatFileSize(fileSize)}; it may be a streaming manifest, not a video.")
+                    }
+                    updateItem(downloadId) { it.copy(status = DirectDownloadStatus.COMPLETED, progress = 100, downloadedBytes = fileSize, totalBytes = fileSize, filePath = outputFile.absolutePath, speed = "") }
+                    showCompletedNotification(downloadId, outputFile)
+                    return
+                } catch (error: SocketTimeoutException) {
+                    attempt++
+                    if (attempt >= maxRetries) throw IOException("Download timed out after $maxRetries attempts.", error)
+                    Log.w(TAG, "Download timeout; retrying attempt ${attempt + 1}/$maxRetries", error)
+                    kotlinx.coroutines.delay(2_000L * attempt)
+                } catch (error: IOException) {
+                    attempt++
+                    if (attempt >= maxRetries) throw error
+                    Log.w(TAG, "Download I/O error; retrying attempt ${attempt + 1}/$maxRetries", error)
+                    kotlinx.coroutines.delay(2_000L * attempt)
+                } finally {
+                    connection?.disconnect()
                 }
-            }
-            if (!currentCoroutineContext().isActive) throw CancellationException()
-            if (outputFile.exists()) outputFile.delete()
-            if (!tempFile.renameTo(outputFile)) throw IllegalStateException("Unable to finalize download")
-
-            val fileSize = outputFile.length()
-            if (fileSize < MIN_VALID_VIDEO_BYTES) {
-                outputFile.delete()
-                throw IllegalStateException(
-                    "Downloaded file is only ${formatFileSize(fileSize)}; it may be a streaming manifest, not a video."
-                )
-            }
-            updateItem(downloadId) {
-                it.copy(
-                    status = DirectDownloadStatus.COMPLETED,
-                    progress = 100,
-                    downloadedBytes = fileSize,
-                    totalBytes = fileSize,
-                    filePath = outputFile.absolutePath,
-                    speed = "",
-                )
-            }
-            showCompletedNotification(downloadId, outputFile)
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
         } catch (error: Exception) {
             Log.e(TAG, "Download failed: ${item.title}", error)
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
             showFailedNotification(downloadId, error.message ?: "Unknown error")
-        } finally {
-            connection?.disconnect()
         }
     }
 
