@@ -280,7 +280,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                     links = links,
                                     onDownload = { link ->
                                         dialog.dismiss()
-                                        DirectDownloadManager.startDownload(
+                                        val started = DirectDownloadManager.startDownload(
                                             context = requireContext(),
                                             link = link,
                                             title = loadResponse.name,
@@ -288,11 +288,13 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             posterUrl = loadResponse.posterUrl,
                                             apiName = apiName,
                                         )
-                                        Toast.makeText(
-                                            requireContext(),
-                                            "Download started: ${loadResponse.name}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        if (started) {
+                                            Toast.makeText(
+                                                requireContext(),
+                                                "Download started: ${loadResponse.name}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     },
                                     onDismiss = { dialog.dismiss() }
                                 )

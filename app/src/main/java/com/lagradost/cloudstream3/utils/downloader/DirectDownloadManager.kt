@@ -46,6 +46,15 @@ data class DirectDownloadItem(
 
 enum class DirectDownloadStatus { PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILED }
 
+private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L
+
+/** Streaming manifests must be handled by a segment-aware downloader, not as direct files. */
+fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean =
+    link.type == ExtractorLinkType.DASH ||
+        link.type == ExtractorLinkType.M3U8 ||
+        url.contains(".mpd", ignoreCase = true) ||
+        url.contains(".m3u8", ignoreCase = true)
+
 /** Direct file downloader that intentionally bypasses the queue service. */
 object DirectDownloadManager {
     private const val TAG = "DirectDownload"
@@ -69,8 +78,18 @@ object DirectDownloadManager {
         fileName: String,
         posterUrl: String? = null,
         apiName: String = "Unknown",
-    ) {
+    ): Boolean {
         initialize(context)
+        if (isUnsupportedDirectDownload(link)) {
+            val message = if (link.type == ExtractorLinkType.DASH || link.url.contains(".mpd", ignoreCase = true)) {
+                "DASH links aren't supported for direct download. Please try a direct MP4 source."
+            } else {
+                "HLS links aren't supported for direct download. Please try a direct MP4 source."
+            }
+            Log.w(TAG, "Blocked streaming manifest download: ${link.url}")
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            return false
+        }
         val downloadId = "${title}_${System.currentTimeMillis()}"
         val item = DirectDownloadItem(
             id = downloadId,
@@ -86,6 +105,7 @@ object DirectDownloadManager {
         }
         showDownloadNotification(item)
         Log.d(TAG, "Download started: $title")
+        return true
     }
 
     fun pauseDownload(downloadId: String) {
@@ -180,6 +200,12 @@ object DirectDownloadManager {
             if (!tempFile.renameTo(outputFile)) throw IllegalStateException("Unable to finalize download")
 
             val fileSize = outputFile.length()
+            if (fileSize < MIN_VALID_VIDEO_BYTES) {
+                outputFile.delete()
+                throw IllegalStateException(
+                    "Downloaded file is only ${formatFileSize(fileSize)}; it may be a streaming manifest, not a video."
+                )
+            }
             updateItem(downloadId) {
                 it.copy(
                     status = DirectDownloadStatus.COMPLETED,
