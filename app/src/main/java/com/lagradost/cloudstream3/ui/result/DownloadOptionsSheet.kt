@@ -75,7 +75,7 @@ data class QualityOption(
 )
 
 @Composable
-fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink) -> Unit, onDismiss: () -> Unit) {
+fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink, Int) -> Unit, onDismiss: () -> Unit) {
     val normalized = remember(links) { links.map { link -> if (link.effectiveQuality() != link.quality) ExtractorLink(link.source, link.name, link.url, link.referer, link.effectiveQuality(), link.headers, link.extractorData, link.type, link.audioTracks) else link } }
     val groupedLinks = remember(normalized) { normalized.groupBy { it.languageKey() }.mapValues { (_, group) -> group.distinctBy { it.url }.sortedByDescending { it.effectiveQuality() } }.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
     val languages = groupedLinks.keys.toList()
@@ -133,7 +133,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink)
                         Column(Modifier.weight(1f)) {
                             Text(display, color = if (unsupported) Color.Gray else Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             if (unsupported) {
-                                Text("Streaming download not supported", color = Color(0xFFFFB74D), fontSize = 12.sp)
+                                Text("DASH download not supported", color = Color(0xFFFFB74D), fontSize = 12.sp)
                             }
                             option.estimatedSizeBytes?.let { bytes ->
                                 Text("≈ ${formatFileSize(bytes)}", color = Color.Gray, fontSize = 12.sp)
@@ -148,7 +148,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink)
             selectedOption?.let { option ->
                 val realUrl = option.variantUrl.substringBefore("#track=")
                 val downloadLink = if (realUrl != option.link.url || option.height > 0) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
-                onDownload(downloadLink)
+                onDownload(downloadLink, option.height)
             }
         }, enabled = selectedOption != null && !isProbing && selectedOption?.let { !isUnsupportedDirectDownload(it.link, it.variantUrl) } == true, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
             Icon(Icons.Default.PlayArrow, null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Download", color = Color.White, fontWeight = FontWeight.Bold)

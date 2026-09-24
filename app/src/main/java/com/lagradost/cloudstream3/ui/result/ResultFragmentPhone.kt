@@ -278,7 +278,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             androidx.compose.material3.MaterialTheme {
                                 DownloadOptionsSheet(
                                     links = links,
-                                    onDownload = { link ->
+                                    onDownload = { link, selectedHeight ->
                                         dialog.dismiss()
                                         val started = DirectDownloadManager.startDownload(
                                             context = requireContext(),
@@ -287,6 +287,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             fileName = "${loadResponse.name}_${System.currentTimeMillis()}",
                                             posterUrl = loadResponse.posterUrl,
                                             apiName = apiName,
+                                            selectedHeight = selectedHeight,
                                         )
                                         if (started) {
                                             Toast.makeText(

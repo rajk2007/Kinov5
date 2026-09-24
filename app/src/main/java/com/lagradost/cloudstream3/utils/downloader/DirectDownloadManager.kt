@@ -24,7 +24,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,18 +44,16 @@ data class DirectDownloadItem(
     val filePath: String? = null,
     val speed: String = "",
     val error: String? = null,
+    val selectedHeight: Int = 0,
 )
 
 enum class DirectDownloadStatus { PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILED }
 
 private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L
 
-/** Streaming manifests must be handled by a segment-aware downloader, not as direct files. */
+/** DASH is not currently supported; HLS is downloaded segment-by-segment. */
 fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean =
-    link.type == ExtractorLinkType.DASH ||
-        link.type == ExtractorLinkType.M3U8 ||
-        url.contains(".mpd", ignoreCase = true) ||
-        url.contains(".m3u8", ignoreCase = true)
+    link.type == ExtractorLinkType.DASH || url.contains(".mpd", ignoreCase = true)
 
 /** Direct file downloader that intentionally bypasses the queue service. */
 object DirectDownloadManager {
@@ -78,15 +78,18 @@ object DirectDownloadManager {
         fileName: String,
         posterUrl: String? = null,
         apiName: String = "Unknown",
+        selectedHeight: Int = 0,
     ): Boolean {
         initialize(context)
+        if (!validateUrl(link.url)) {
+            val message = "Invalid download URL. The link may have expired; please try again."
+            Log.w(TAG, "Invalid download URL: ${link.url.take(120)}")
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            return false
+        }
         if (isUnsupportedDirectDownload(link)) {
-            val message = if (link.type == ExtractorLinkType.DASH || link.url.contains(".mpd", ignoreCase = true)) {
-                "DASH links aren't supported for direct download. Please try a direct MP4 source."
-            } else {
-                "HLS links aren't supported for direct download. Please try a direct MP4 source."
-            }
-            Log.w(TAG, "Blocked streaming manifest download: ${link.url}")
+            val message = "DASH links aren't supported for direct download. Please try a different source."
+            Log.w(TAG, "Blocked DASH manifest download: ${link.url}")
             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             return false
         }
@@ -98,10 +101,12 @@ object DirectDownloadManager {
             fileName = sanitizeFileName(fileName).ifBlank { "download_$downloadId" },
             posterUrl = posterUrl,
             apiName = apiName,
+            selectedHeight = selectedHeight,
         )
         _activeDownloads.value = _activeDownloads.value + (downloadId to item)
         downloadJobs[downloadId] = downloadScope.launch {
-            executeDownload(context.applicationContext, downloadId, link)
+            if (isHls(link)) downloadHlsVideo(context.applicationContext, downloadId, link, item)
+            else executeDownload(context.applicationContext, downloadId, link)
         }
         showDownloadNotification(item)
         Log.d(TAG, "Download started: $title")
@@ -157,7 +162,7 @@ object DirectDownloadManager {
                 if (link.referer.isNotBlank()) setRequestProperty("Referer", link.referer)
             }
             if (connection.responseCode !in 200..299) {
-                throw IllegalStateException("HTTP ${connection.responseCode}: ${connection.responseMessage}")
+                throw httpException(connection.responseCode, connection.responseMessage)
             }
 
             val totalBytes = connection.contentLengthLong
@@ -226,6 +231,111 @@ object DirectDownloadManager {
         } finally {
             connection?.disconnect()
         }
+    }
+
+    private data class HlsVariant(val bandwidth: Int?, val width: Int?, val height: Int?, val url: String)
+    private data class HlsResponse(val url: String, val body: ByteArray)
+
+    /** Download an HLS media playlist as a concatenation of its media segments. */
+    private suspend fun downloadHlsVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem) {
+        val outputFile = File(getDownloadDir(context), outputName(item.fileName))
+        val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
+        try {
+            val headers = requestHeaders(link)
+            var playlistUrl = link.url
+            var response = requestHls(playlistUrl, headers)
+            playlistUrl = response.url
+            var playlist = String(response.body, Charsets.UTF_8)
+            require(playlist.contains("#EXTM3U")) { "The server did not return an HLS playlist." }
+            if (playlist.contains("#EXT-X-STREAM-INF", ignoreCase = true)) {
+                val variants = parseHlsVariants(playlist, playlistUrl)
+                require(variants.isNotEmpty()) { "No playable HLS variants were found." }
+                val selected = if (item.selectedHeight > 0) {
+                    variants.filter { (it.height ?: 0) <= item.selectedHeight }.maxByOrNull { it.height ?: 0 }
+                        ?: variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 }
+                } else variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 } ?: variants.first()
+                playlistUrl = selected!!.url
+                response = requestHls(playlistUrl, headers)
+                playlistUrl = response.url
+                playlist = String(response.body, Charsets.UTF_8)
+            }
+            require(!playlist.contains("#EXT-X-KEY", ignoreCase = true)) {
+                "Encrypted HLS downloads are not supported by this downloader."
+            }
+            val segments = playlist.lineSequence().map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .map { URI(playlistUrl).resolve(it).toString() }.toList()
+            require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
+            var downloaded = 0L
+            FileOutputStream(tempFile, false).use { output ->
+                segments.forEachIndexed { index, segmentUrl ->
+                    if (!currentCoroutineContext().isActive) throw CancellationException()
+                    val bytes = requestHls(segmentUrl, headers).body
+                    output.write(bytes)
+                    downloaded += bytes.size
+                    val progress = ((index + 1) * 100L / segments.size).toInt()
+                    updateItem(downloadId) { it.copy(progress = progress, downloadedBytes = downloaded, totalBytes = downloaded * segments.size / (index + 1L)) }
+                    updateDownloadNotification(downloadId)
+                }
+            }
+            if (!currentCoroutineContext().isActive) throw CancellationException()
+            if (outputFile.exists()) outputFile.delete()
+            require(tempFile.renameTo(outputFile)) { "Unable to finalize HLS download." }
+            require(outputFile.length() >= MIN_VALID_VIDEO_BYTES) { "Downloaded HLS file is only ${formatFileSize(outputFile.length())}." }
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.COMPLETED, progress = 100, downloadedBytes = outputFile.length(), totalBytes = outputFile.length(), filePath = outputFile.absolutePath, speed = "") }
+            showCompletedNotification(downloadId, outputFile)
+        } catch (_: CancellationException) {
+            tempFile.delete()
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+        } catch (error: Exception) {
+            tempFile.delete()
+            Log.e(TAG, "HLS download failed: ${item.title}", error)
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
+            showFailedNotification(downloadId, error.message ?: "Unknown HLS download error")
+        }
+    }
+
+    private fun parseHlsVariants(playlist: String, baseUrl: String): List<HlsVariant> {
+        val lines = playlist.lines()
+        return lines.mapIndexedNotNull { index, line ->
+            if (!line.startsWith("#EXT-X-STREAM-INF:", ignoreCase = true)) return@mapIndexedNotNull null
+            val path = lines.drop(index + 1).firstOrNull { it.isNotBlank() && !it.trim().startsWith("#") }?.trim() ?: return@mapIndexedNotNull null
+            val bandwidth = Regex("(?:AVERAGE-BANDWIDTH|BANDWIDTH)=(\\d+)", RegexOption.IGNORE_CASE).find(line)?.groupValues?.get(1)?.toIntOrNull()
+            val resolution = Regex("RESOLUTION=(\\d+)x(\\d+)", RegexOption.IGNORE_CASE).find(line)
+            HlsVariant(bandwidth, resolution?.groupValues?.get(1)?.toIntOrNull(), resolution?.groupValues?.get(2)?.toIntOrNull(), URI(baseUrl).resolve(path).toString())
+        }
+    }
+
+    private fun requestHeaders(link: ExtractorLink): Map<String, String> = buildMap {
+        put("User-Agent", link.headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: USER_AGENT)
+        link.headers.filterKeys { !it.equals("User-Agent", true) }.forEach { (key, value) -> put(key, value) }
+        if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
+    }
+
+    private fun requestHls(url: String, headers: Map<String, String>): HlsResponse {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            headers.forEach { (key, value) -> setRequestProperty(key, value) }
+        }
+        return try {
+            val code = connection.responseCode
+            if (code !in 200..299) throw httpException(code, connection.responseMessage)
+            HlsResponse(connection.url.toString(), connection.inputStream.use { it.readBytes() })
+        } finally { connection.disconnect() }
+    }
+
+    private fun isHls(link: ExtractorLink): Boolean = link.type == ExtractorLinkType.M3U8 || link.url.contains(".m3u8", ignoreCase = true)
+
+    private fun validateUrl(url: String): Boolean = runCatching { URI(url).let { (it.scheme == "http" || it.scheme == "https") && !it.host.isNullOrBlank() } }.getOrDefault(false)
+
+    private fun httpException(code: Int, message: String?): IOException = when (code) {
+        401 -> IOException("Authentication required (401).")
+        403 -> IOException("Access denied (403). The server blocked the request.")
+        404 -> IOException("File not found (404). The link may have expired or is incorrect.")
+        in 500..599 -> IOException("Server error ($code). Try again later.")
+        else -> IOException("HTTP $code: ${message ?: "Request failed"}")
     }
 
     private fun updateItem(downloadId: String, update: (DirectDownloadItem) -> DirectDownloadItem) {
