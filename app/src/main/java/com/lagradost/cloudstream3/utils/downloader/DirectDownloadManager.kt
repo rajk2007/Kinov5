@@ -55,14 +55,8 @@ enum class DirectDownloadStatus { PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILE
 
 private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L
 
-/** Only actual DASH manifests are unsupported; signed direct URLs must still be treated as files. */
-fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean {
-    // A direct-file signal on either the selected variant or original link wins.
-    if (isDirectFileUrl(url) || isDirectFileUrl(link.url)) return false
-    // Only reject when both representations are DASH manifests.
-    return url.contains(".mpd", ignoreCase = true) &&
-        link.url.contains(".mpd", ignoreCase = true)
-}
+/** Kept for callers that used the old capability check; all validated links are now attempted. */
+fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean = false
 
 /** Removes probe-only URL fragments before a URL is used for an HTTP request. */
 fun cleanDownloadUrl(url: String): String = url.substringBefore("#")
@@ -137,11 +131,6 @@ object DirectDownloadManager {
             Toast.makeText(context, "Invalid download URL. The link may have expired.", Toast.LENGTH_LONG).show()
             return false
         }
-        if (isUnsupportedDirectDownload(downloadLink)) {
-            Toast.makeText(context, "DASH links are not supported for direct download.", Toast.LENGTH_LONG).show()
-            return false
-        }
-
         val downloadId = "${title}_${System.currentTimeMillis()}"
         val item = DirectDownloadItem(
             id = downloadId,
@@ -159,6 +148,10 @@ object DirectDownloadManager {
             while (currentCoroutineContext().isActive) {
                 if (isHls(currentLink)) {
                     downloadHlsVideo(context.applicationContext, downloadId, currentLink, item)
+                    return@launch
+                }
+                if (isDash(currentLink)) {
+                    downloadDashVideo(context.applicationContext, downloadId, currentLink, item)
                     return@launch
                 }
                 val result = executeDownload(context.applicationContext, downloadId, currentLink)
@@ -201,6 +194,7 @@ object DirectDownloadManager {
         updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PENDING, error = null) }
         downloadJobs[downloadId] = downloadScope.launch {
             if (isHls(link)) downloadHlsVideo(context, downloadId, link, item)
+            else if (isDash(link)) downloadDashVideo(context, downloadId, link, item)
             else executeDownload(context, downloadId, link)
         }
     }
@@ -360,6 +354,98 @@ object DirectDownloadManager {
         }
     }
 
+    private data class DashRepresentation(val width: Int, val height: Int, val bandwidth: Long, val segments: List<String>)
+
+    /** Downloads unencrypted ISO-BMFF DASH video by expanding the MPD segment addressing. */
+    private suspend fun downloadDashVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem) {
+        val outputFile = File(getDownloadDir(context), outputName(item.fileName))
+        val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
+        try {
+            val headers = requestHeaders(link)
+            val response = requestHls(link.url, headers)
+            val manifest = String(response.body, Charsets.UTF_8)
+            require(manifest.contains("<MPD", ignoreCase = true)) { "The server did not return a DASH MPD manifest." }
+            val representations = parseDashRepresentations(manifest, response.url)
+            require(representations.isNotEmpty()) { "No playable video representations were found in the DASH manifest." }
+            val selected = if (item.selectedHeight > 0) representations.filter { it.height in 1..item.selectedHeight }.maxByOrNull { it.height } ?: representations.maxByOrNull { it.height } else representations.maxByOrNull { it.height * 1_000_000L + it.bandwidth }
+            val segments = requireNotNull(selected).segments
+            require(segments.isNotEmpty()) { "No DASH media segments were found in the manifest." }
+            var downloaded = 0L
+            FileOutputStream(tempFile, false).use { output ->
+                segments.forEachIndexed { index, segmentUrl ->
+                    if (!currentCoroutineContext().isActive) throw CancellationException()
+                    val bytes = requestHls(segmentUrl, headers).body
+                    require(bytes.isNotEmpty()) { "DASH segment ${index + 1} was empty." }
+                    output.write(bytes)
+                    downloaded += bytes.size
+                    val progress = ((index + 1) * 100L / segments.size).toInt()
+                    updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, progress = progress, downloadedBytes = downloaded, totalBytes = downloaded * segments.size / (index + 1L)) }
+                    updateDownloadNotification(downloadId)
+                }
+            }
+            if (!currentCoroutineContext().isActive) throw CancellationException()
+            finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
+            showCompletedNotification(downloadId, outputFile)
+        } catch (_: CancellationException) {
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+        } catch (error: Exception) {
+            tempFile.delete()
+            Log.e(TAG, "DASH download failed: ${item.title}", error)
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
+            showFailedNotification(downloadId, error.message ?: "Unknown DASH download error")
+        }
+    }
+
+    private fun parseDashRepresentations(manifest: String, manifestUrl: String): List<DashRepresentation> {
+        val result = mutableListOf<DashRepresentation>()
+        val adaptationRegex = Regex("<AdaptationSet\\b([^>]*)>(.*?)</AdaptationSet>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        val representationRegex = Regex("<Representation\\b([^>]*?)(?:/>|>(.*?)</Representation>)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        adaptationRegex.findAll(manifest).forEach { adaptation ->
+            val parentAttrs = parseXmlAttributes(adaptation.groupValues[1])
+            val adaptationBody = adaptation.groupValues[2]
+            if (parentAttrs["contentType"]?.equals("video", true) != true && !adaptationBody.contains("mimeType=\"video/", true)) return@forEach
+            val parentBase = Regex("<BaseURL\\s*>(.*?)</BaseURL>", RegexOption.IGNORE_CASE).find(adaptationBody)?.groupValues?.get(1)?.trim()
+            val parentTemplate = Regex("<SegmentTemplate\\b([^>]*)>(.*?)</SegmentTemplate>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(adaptationBody)
+            representationRegex.findAll(adaptationBody).forEach { representation ->
+                val attrs = parentAttrs + parseXmlAttributes(representation.groupValues[1])
+                val body = representation.groupValues.getOrNull(2).orEmpty()
+                val base = Regex("<BaseURL\\s*>(.*?)</BaseURL>", RegexOption.IGNORE_CASE).find(body)?.groupValues?.get(1)?.trim() ?: parentBase ?: manifestUrl
+                val template = Regex("<SegmentTemplate\\b([^>]*)>(.*?)</SegmentTemplate>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(body) ?: parentTemplate
+                val segments = template?.let { expandDashTemplate(it.groupValues[1], it.groupValues[2], attrs, base, manifestUrl) }.orEmpty()
+                if (segments.isNotEmpty()) result += DashRepresentation(attrs["width"]?.toIntOrNull() ?: 0, attrs["height"]?.toIntOrNull() ?: 0, attrs["bandwidth"]?.toLongOrNull() ?: 0L, segments)
+            }
+        }
+        return result.distinctBy { Triple(it.width, it.height, it.segments) }
+    }
+
+    private fun expandDashTemplate(templateAttrs: String, templateBody: String, attrs: Map<String, String>, base: String, manifestUrl: String): List<String> {
+        val template = parseXmlAttributes(templateAttrs)
+        val initialization = template["initialization"]?.let { resolveDashUrl(substituteDash(it, attrs["id"].orEmpty(), 0L, 0L), base, manifestUrl) }
+        val media = template["media"] ?: return emptyList()
+        val segments = mutableListOf<String>()
+        initialization?.let { segments += it }
+        val timeline = Regex("<SegmentTimeline\\b[^>]*>(.*?)</SegmentTimeline>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(templateBody)?.groupValues?.get(1)
+        if (timeline == null) return segments
+        var currentTime = 0L
+        var number = template["startNumber"]?.toLongOrNull() ?: 1L
+        Regex("<S\\b([^>]*)/?>", RegexOption.IGNORE_CASE).findAll(timeline).forEach { match ->
+            val item = parseXmlAttributes(match.groupValues[1])
+            val duration = item["d"]?.toLongOrNull() ?: return@forEach
+            item["t"]?.toLongOrNull()?.let { currentTime = it }
+            val repeat = (item["r"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
+            repeat(repeat + 1) {
+                segments += resolveDashUrl(substituteDash(media, attrs["id"].orEmpty(), number, currentTime), base, manifestUrl)
+                currentTime += duration
+                number++
+            }
+        }
+        return segments
+    }
+
+    private fun substituteDash(template: String, id: String, number: Long, time: Long): String = template.replace("\$RepresentationID\$", id).replace("\$Number\$", number.toString()).replace("\$Time\$", time.toString())
+    private fun resolveDashUrl(path: String, base: String, manifestUrl: String): String = runCatching { URI(if (base.startsWith("http", true)) base else URI(manifestUrl).resolve(base).toString()).resolve(path).toString() }.getOrDefault(path)
+    private fun parseXmlAttributes(raw: String): Map<String, String> = Regex("([A-Za-z_:][\\w:.-]*)\\s*=\\s*\"([^\"]*)\"").findAll(raw).associate { it.groupValues[1] to it.groupValues[2] }
+
     private fun finalizeDownload(downloadId: String, outputFile: File, tempFile: File, validateContainer: Boolean = true) {
         require(tempFile.length() >= MIN_VALID_VIDEO_BYTES) {
             "Downloaded file is only ${formatFileSize(tempFile.length())}; it may be a manifest, not a video."
@@ -441,6 +527,7 @@ object DirectDownloadManager {
         return false
     }
 
+    private fun isDash(link: ExtractorLink): Boolean = link.url.contains(".mpd", ignoreCase = true) || link.type.name.equals("DASH", ignoreCase = true)
     private fun isHls(link: ExtractorLink): Boolean = link.type == ExtractorLinkType.M3U8 || isHlsUrl(link.url)
     private fun isHlsUrl(url: String): Boolean = url.contains(".m3u8", ignoreCase = true)
     private fun validateUrl(url: String): Boolean = runCatching { URI(url).let { it.scheme in setOf("http", "https") && !it.host.isNullOrBlank() } }.getOrDefault(false)

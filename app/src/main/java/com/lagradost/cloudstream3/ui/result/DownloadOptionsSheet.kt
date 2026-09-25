@@ -28,7 +28,6 @@ import com.lagradost.cloudstream3.utils.heightToQualitiesInt
 import com.lagradost.cloudstream3.utils.formatFileSize
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
-import com.lagradost.cloudstream3.utils.downloader.isUnsupportedDirectDownload
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.TimeoutCancellationException
@@ -128,14 +127,10 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 qualityOptions.forEach { option ->
                     val selected = option.id == selectedId
-                    val unsupported = isUnsupportedDirectDownload(option.link, option.variantUrl)
                     val display = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable(enabled = !unsupported) { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(display, color = if (unsupported) Color.Gray else Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            if (unsupported) {
-                                Text("DASH download not supported", color = Color(0xFFFFB74D), fontSize = 12.sp)
-                            }
+                            Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             option.estimatedSizeBytes?.let { bytes ->
                                 Text("≈ ${formatFileSize(bytes)}", color = Color.Gray, fontSize = 12.sp)
                             }
@@ -151,7 +146,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
                 val downloadLink = if (realUrl != option.link.url || option.height > 0) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
                 onDownload(downloadLink, option.height)
             }
-        }, enabled = selectedOption != null && !isProbing && selectedOption?.let { !isUnsupportedDirectDownload(it.link, it.variantUrl) } == true, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
+        }, enabled = selectedOption != null && !isProbing, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
             Icon(Icons.Default.PlayArrow, null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Download", color = Color.White, fontWeight = FontWeight.Bold)
         }
     }
