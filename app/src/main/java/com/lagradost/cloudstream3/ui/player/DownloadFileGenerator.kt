@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.ui.player
 
 import android.net.Uri
+import android.util.Log
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.context
 import com.lagradost.cloudstream3.CommonActivity.activity
 import com.lagradost.cloudstream3.R
@@ -11,6 +12,8 @@ import com.lagradost.cloudstream3.utils.SubtitleHelper.fromLanguageToTagIETF
 import com.lagradost.cloudstream3.utils.SubtitleUtils.cleanDisplayName
 import com.lagradost.cloudstream3.utils.SubtitleUtils.isMatchingSubtitle
 import com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement.getFolder
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.getDownloadFileInfo
 
 class DownloadFileGenerator(
@@ -40,10 +43,28 @@ class DownloadFileGenerator(
                 }
             }
 
-            if (info != null) {
-                val newMeta = meta.copy(uri = info.path)
-                callback(null to newMeta)
-            } else callback(null to meta)
+            when {
+                info != null -> {
+                    val fileUri = runCatching {
+                        Uri.fromFile(java.io.File(info.path.toString()))
+                    }.getOrDefault(info.path)
+                    callback(null to meta.copy(uri = fileUri))
+                }
+
+                else -> {
+                    val directItem = DirectDownloadManager.activeDownloads.value.values.firstOrNull { item ->
+                        item.status == DirectDownloadStatus.COMPLETED && item.filePath != null && item.title == meta.name
+                    }
+                    if (directItem?.filePath != null) {
+                        val fileUri = Uri.fromFile(java.io.File(directItem.filePath))
+                        Log.d("DownloadFileGenerator", "Using DirectDownload file: ${directItem.filePath}")
+                        callback(null to meta.copy(uri = fileUri))
+                    } else {
+                        Log.w("DownloadFileGenerator", "No local file found for: ${meta.name}; aborting playback")
+                        return false
+                    }
+                }
+            }
         } else callback(null to meta)
 
         val ctx = context ?: return true

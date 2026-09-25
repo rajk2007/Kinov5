@@ -12,6 +12,8 @@ import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.ui.player.DownloadFileGenerator
 import com.lagradost.cloudstream3.ui.player.ExtractorUri
 import com.lagradost.cloudstream3.ui.player.GeneratorPlayer
+import com.lagradost.cloudstream3.ui.player.BasicLink
+import com.lagradost.cloudstream3.ui.player.LinkGenerator
 import com.lagradost.cloudstream3.utils.AppContextUtils.getNameFull
 import com.lagradost.cloudstream3.utils.AppContextUtils.setDefaultFocus
 import com.lagradost.cloudstream3.utils.DOWNLOAD_EPISODE_CACHE
@@ -21,6 +23,8 @@ import com.lagradost.cloudstream3.utils.UIHelper.navigate
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
 import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
 import kotlinx.coroutines.MainScope
 
 object DownloadButtonSetup {
@@ -117,6 +121,21 @@ object DownloadButtonSetup {
 
             DOWNLOAD_ACTION_PLAY_FILE -> {
                 activity?.let { act ->
+                    val directDownload = DirectDownloadManager.activeDownloads.value.values.firstOrNull { item ->
+                        item.status == DirectDownloadStatus.COMPLETED && item.filePath != null && item.title == click.data.name
+                    }
+                    if (directDownload?.filePath != null) {
+                        val linkGenerator = LinkGenerator(
+                            listOf(BasicLink(Uri.fromFile(java.io.File(directDownload.filePath)).toString(), click.data.name)),
+                            extract = false,
+                            id = click.data.id,
+                        )
+                        act.navigate(
+                            R.id.global_to_navigation_player,
+                            GeneratorPlayer.newInstance(linkGenerator, 0)
+                        )
+                        return@let
+                    }
                     val parent = getKey<DownloadObjects.DownloadHeaderCached>(
                         DOWNLOAD_HEADER_CACHE,
                         click.data.parentId.toString()

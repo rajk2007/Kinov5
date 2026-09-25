@@ -229,11 +229,22 @@ object DirectDownloadManager {
                         readTimeout = 300_000
                         instanceFollowRedirects = true
                         requestHeaders(link).forEach { (key, value) -> setRequestProperty(key, value) }
-                        if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
+                        if (existingBytes > 0L && !isSignedDirectUrl(link.url)) setRequestProperty("Range", "bytes=$existingBytes-")
                     }
                     val responseCode = connection.responseCode
+                    Log.d(TAG, "URL_DEBUG response: code=$responseCode, contentType=${connection.contentType}, contentLength=${connection.contentLengthLong}, finalUrl=${connection.url}")
                     if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
                         throw httpException(responseCode, connection.responseMessage)
+                    }
+                    val contentType = connection.contentType.orEmpty()
+                    val responseLength = connection.contentLengthLong
+                    if (!isVideoResponse(contentType, connection.url.toString())) {
+                        connection.disconnect()
+                        throw IOException("Server returned '${contentType.take(60)}', not a video. The link is likely expired or requires different headers.")
+                    }
+                    if (responseLength in 1 until MIN_VALID_VIDEO_BYTES) {
+                        connection.disconnect()
+                        throw IOException("Server reports only ${formatFileSize(responseLength)}. Refusing to save a non-video response.")
                     }
                     val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
                     if (!append) tempFile.delete()
@@ -337,7 +348,7 @@ object DirectDownloadManager {
                 }
             }
             if (!currentCoroutineContext().isActive) throw CancellationException()
-            finalizeDownload(downloadId, outputFile, tempFile)
+            finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
             showCompletedNotification(downloadId, outputFile)
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
@@ -349,9 +360,24 @@ object DirectDownloadManager {
         }
     }
 
-    private fun finalizeDownload(downloadId: String, outputFile: File, tempFile: File) {
+    private fun finalizeDownload(downloadId: String, outputFile: File, tempFile: File, validateContainer: Boolean = true) {
         require(tempFile.length() >= MIN_VALID_VIDEO_BYTES) {
             "Downloaded file is only ${formatFileSize(tempFile.length())}; it may be a manifest, not a video."
+        }
+        if (validateContainer) {
+            val isVideoContainer = runCatching {
+                tempFile.inputStream().use { input ->
+                    val head = ByteArray(16)
+                    val read = input.read(head)
+                    val isMkv = read >= 4 && head[0] == 0x1A.toByte() && head[1] == 0x45.toByte() && head[2] == 0xDF.toByte() && head[3] == 0xA3.toByte()
+                    val isMp4 = read >= 8 && head[4] == 'f'.code.toByte() && head[5] == 't'.code.toByte() && head[6] == 'y'.code.toByte() && head[7] == 'p'.code.toByte()
+                    isMkv || isMp4
+                }
+            }.getOrDefault(false)
+            if (!isVideoContainer) {
+                tempFile.delete()
+                throw IOException("Downloaded file is not a valid video container. The URL returned an error page instead of the video file.")
+            }
         }
         if (outputFile.exists()) outputFile.delete()
         require(tempFile.renameTo(outputFile)) { "Unable to finalize download." }
@@ -384,10 +410,35 @@ object DirectDownloadManager {
         } finally { connection.disconnect() }
     }
 
-    private fun requestHeaders(link: ExtractorLink): Map<String, String> = buildMap {
-        put("User-Agent", link.headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: USER_AGENT)
-        link.headers.filterKeys { !it.equals("User-Agent", true) }.forEach { (key, value) -> put(key, value) }
-        if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
+    private fun requestHeaders(link: ExtractorLink): Map<String, String> {
+        val userAgent = link.headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: USER_AGENT
+        if (isSignedDirectUrl(link.url)) {
+            return mapOf("User-Agent" to userAgent, "Accept" to "*/*", "Accept-Encoding" to "identity")
+        }
+        val banned = setOf("range", "accept-encoding", "connection", "host", "content-length", "transfer-encoding", "expect")
+        return buildMap {
+            link.headers.filterKeys { it.lowercase() !in banned }.forEach { (key, value) -> put(key, value) }
+            put("User-Agent", userAgent)
+            put("Accept", "*/*")
+            put("Accept-Encoding", "identity")
+            if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
+        }
+    }
+
+    private fun isSignedDirectUrl(url: String): Boolean {
+        val normalized = url.lowercase()
+        return normalized.contains("cloudflarestorage.com") || normalized.contains("x-amz-signature") ||
+            normalized.contains("x-amz-credential") || normalized.contains("x-amz-algorithm")
+    }
+
+    private fun isVideoResponse(contentType: String, url: String): Boolean {
+        if (contentType.startsWith("video/", ignoreCase = true)) return true
+        if (contentType.isBlank() || contentType.startsWith("application/octet-stream", true) || contentType.startsWith("binary", true)) {
+            val normalized = url.lowercase()
+            return normalized.contains(".mkv") || normalized.contains(".mp4") || normalized.contains(".webm") ||
+                normalized.contains("cloudflarestorage.com") || normalized.contains("x-amz-signature")
+        }
+        return false
     }
 
     private fun isHls(link: ExtractorLink): Boolean = link.type == ExtractorLinkType.M3U8 || isHlsUrl(link.url)
