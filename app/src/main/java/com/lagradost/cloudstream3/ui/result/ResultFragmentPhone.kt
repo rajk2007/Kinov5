@@ -282,22 +282,39 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                         dialog.dismiss()
                                         val reResolveLink: suspend () -> ExtractorLink? = {
                                             try {
+                                                android.util.Log.e("RE_RESOLVE", "Re-fetching links from provider for ${link.source}/${link.name}")
                                                 val freshLinks = mutableListOf<ExtractorLink>()
-                                                APIRepository(api).loadLinks(
+                                                val refreshed = APIRepository(api).loadLinks(
                                                     data = dataString,
                                                     isCasting = false,
                                                     subtitleCallback = { },
                                                     callback = { freshLink ->
                                                         if (freshLink.type != ExtractorLinkType.TORRENT &&
-                                                            freshLink.type != ExtractorLinkType.MAGNET &&
-                                                            (freshLink.source == link.source || freshLink.name.contains(link.name, ignoreCase = true))) {
+                                                            freshLink.type != ExtractorLinkType.MAGNET) {
                                                             freshLinks.add(freshLink)
+                                                            android.util.Log.e("RE_RESOLVE", "  Got link: ${freshLink.name} (${freshLink.source}) quality=${freshLink.quality}")
                                                         }
                                                     }
                                                 )
-                                                freshLinks.firstOrNull { it.source == link.source } ?: freshLinks.firstOrNull()
+                                                android.util.Log.e("RE_RESOLVE", "loadLinks=$refreshed total=${freshLinks.size}")
+                                                val originalName = link.name.substringBefore(" •").trim()
+                                                val sameSource = freshLinks.filter { it.source.equals(link.source, ignoreCase = true) }
+                                                val matching = sameSource.firstOrNull {
+                                                    link.quality > 0 && it.quality == link.quality &&
+                                                        it.name.contains(originalName, ignoreCase = true)
+                                                } ?: sameSource.firstOrNull {
+                                                    link.quality > 0 && it.quality == link.quality
+                                                } ?: sameSource.firstOrNull {
+                                                    it.name.contains(originalName, ignoreCase = true)
+                                                } ?: sameSource.firstOrNull()
+                                                if (matching != null) {
+                                                    android.util.Log.e("RE_RESOLVE", "✅ Found matching link: ${matching.name} quality=${matching.quality} url=${matching.url.take(150)}")
+                                                } else {
+                                                    android.util.Log.e("RE_RESOLVE", "❌ No matching link found for ${link.name} (${link.source})")
+                                                }
+                                                matching
                                             } catch (e: Exception) {
-                                                android.util.Log.e("KinoDownload", "Re-resolve failed", e)
+                                                android.util.Log.e("RE_RESOLVE", "❌ Re-resolve failed", e)
                                                 null
                                             }
                                         }

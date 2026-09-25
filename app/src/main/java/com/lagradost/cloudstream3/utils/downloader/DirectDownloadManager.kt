@@ -146,23 +146,24 @@ object DirectDownloadManager {
             var currentLink = downloadLink
             var resolveAttempt = 0
             while (currentCoroutineContext().isActive) {
-                if (isHls(currentLink)) {
+                val result = if (isHls(currentLink)) {
                     downloadHlsVideo(context.applicationContext, downloadId, currentLink, item)
-                    return@launch
-                }
-                if (isDash(currentLink)) {
+                } else if (isDash(currentLink)) {
                     downloadDashVideo(context.applicationContext, downloadId, currentLink, item)
-                    return@launch
+                } else {
+                    executeDownload(context.applicationContext, downloadId, currentLink)
                 }
-                val result = executeDownload(context.applicationContext, downloadId, currentLink)
+                if (result) return@launch
                 if (result || reResolveLink == null || resolveAttempt >= MAX_RESOLVE_RETRIES) return@launch
                 resolveAttempt++
-                Log.d(TAG, "Re-resolving expired download URL (attempt $resolveAttempt/$MAX_RESOLVE_RETRIES)")
+                Log.e("DL_404", "🔄 Attempting re-resolve (attempt $resolveAttempt/$MAX_RESOLVE_RETRIES)")
                 val freshLink = reResolveLink() ?: run {
+                    Log.e("DL_404", "❌ Re-resolve returned null")
                     updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = "Could not refresh download link. Please try again.") }
                     showFailedNotification(downloadId, "Could not refresh download link. Please try again.")
                     return@launch
                 }
+                Log.e("DL_404", "✅ Got fresh link: ${freshLink.url.take(150)}")
                 currentLink = freshLink
                 updateItem(downloadId) { it.copy(url = cleanDownloadUrl(freshLink.url), status = DirectDownloadStatus.PENDING, error = null) }
                 delay(1_000L)
@@ -226,8 +227,22 @@ object DirectDownloadManager {
                         if (existingBytes > 0L && !isSignedDirectUrl(link.url)) setRequestProperty("Range", "bytes=$existingBytes-")
                     }
                     val responseCode = connection.responseCode
-                    Log.d(TAG, "URL_DEBUG response: code=$responseCode, contentType=${connection.contentType}, contentLength=${connection.contentLengthLong}, finalUrl=${connection.url}")
+                    Log.e("DL_404", "═════════════════════════════")
+                    Log.e("DL_404", "Attempting to download:")
+                    Log.e("DL_404", "  URL: ${link.url.take(300)}")
+                    Log.e("DL_404", "  Type: ${link.type}")
+                    Log.e("DL_404", "  Headers: ${requestHeaders(link)}")
+                    Log.e("DL_404", "Response:")
+                    Log.e("DL_404", "  Code: $responseCode")
+                    Log.e("DL_404", "  Content-Type: ${connection.contentType}")
+                    Log.e("DL_404", "  Content-Length: ${connection.contentLengthLong}")
+                    Log.e("DL_404", "  Final URL: ${connection.url}")
                     if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
+                        if (responseCode == HttpURLConnection.HTTP_NOT_FOUND || responseCode == HttpURLConnection.HTTP_FORBIDDEN) {
+                            Log.e("DL_404", "❌ $responseCode ERROR - URL may be expired")
+                            runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(500) } }
+                                .onSuccess { Log.e("DL_404", "  Error body: $it") }
+                        }
                         throw httpException(responseCode, connection.responseMessage)
                     }
                     val contentType = connection.contentType.orEmpty()
@@ -303,7 +318,7 @@ object DirectDownloadManager {
         }
     }
 
-    private suspend fun downloadHlsVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem) {
+    private suspend fun downloadHlsVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem): Boolean {
         val outputFile = File(getDownloadDir(context), outputName(item.fileName))
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
         try {
@@ -344,24 +359,32 @@ object DirectDownloadManager {
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
             showCompletedNotification(downloadId, outputFile)
+            return true
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+            return true
         } catch (error: Exception) {
             tempFile.delete()
+            if (isRetryableExpiry(error)) {
+                Log.e("DL_404", "❌ HLS request failed with an expired/authenticated URL", error)
+                return false
+            }
             Log.e(TAG, "HLS download failed: ${item.title}", error)
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
             showFailedNotification(downloadId, error.message ?: "Unknown HLS download error")
+            return true
         }
     }
 
     private data class DashRepresentation(val width: Int, val height: Int, val bandwidth: Long, val segments: List<String>)
 
     /** Downloads unencrypted ISO-BMFF DASH video by expanding the MPD segment addressing. */
-    private suspend fun downloadDashVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem) {
+    private suspend fun downloadDashVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem): Boolean {
         val outputFile = File(getDownloadDir(context), outputName(item.fileName))
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
         try {
             val headers = requestHeaders(link)
+            Log.e("DASH_DEBUG", "Fetching MPD: ${link.url.take(300)}")
             val response = requestHls(link.url, headers)
             val manifest = String(response.body, Charsets.UTF_8)
             require(manifest.contains("<MPD", ignoreCase = true)) { "The server did not return a DASH MPD manifest." }
@@ -386,13 +409,20 @@ object DirectDownloadManager {
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
             showCompletedNotification(downloadId, outputFile)
+            return true
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+            return true
         } catch (error: Exception) {
             tempFile.delete()
+            if (isRetryableExpiry(error)) {
+                Log.e("DL_404", "❌ DASH manifest/segment request failed with an expired/authenticated URL", error)
+                return false
+            }
             Log.e(TAG, "DASH download failed: ${item.title}", error)
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
             showFailedNotification(downloadId, error.message ?: "Unknown DASH download error")
+            return true
         }
     }
 
@@ -439,10 +469,19 @@ object DirectDownloadManager {
                 number++
             }
         }
+        if (segments.size == if (initialization == null) 0 else 1) {
+            Regex("<SegmentURL\\b[^>]*?media=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
+                .findAll(templateBody)
+                .forEach { segments += resolveDashUrl(it.groupValues[1], base, manifestUrl) }
+        }
         return segments
     }
 
-    private fun substituteDash(template: String, id: String, number: Long, time: Long): String = template.replace("\$RepresentationID\$", id).replace("\$Number\$", number.toString()).replace("\$Time\$", time.toString())
+    private fun substituteDash(template: String, id: String, number: Long, time: Long): String =
+        template.replace("\$RepresentationID\$", id)
+            .replace(Regex("\\$Number%0(\\d+)d\\$")) { it.groupValues[1].toInt().let { width -> number.toString().padStart(width, '0') } }
+            .replace("\$Number\$", number.toString())
+            .replace("\$Time\$", time.toString())
     private fun resolveDashUrl(path: String, base: String, manifestUrl: String): String = runCatching { URI(if (base.startsWith("http", true)) base else URI(manifestUrl).resolve(base).toString()).resolve(path).toString() }.getOrDefault(path)
     private fun parseXmlAttributes(raw: String): Map<String, String> = Regex("([A-Za-z_:][\\w:.-]*)\\s*=\\s*\"([^\"]*)\"").findAll(raw).associate { it.groupValues[1] to it.groupValues[2] }
 
@@ -491,7 +530,15 @@ object DirectDownloadManager {
         }
         return try {
             val code = connection.responseCode
-            if (code !in 200..299) throw httpException(code, connection.responseMessage)
+            Log.e("DL_404", "Manifest/segment response: code=$code contentType=${connection.contentType} contentLength=${connection.contentLengthLong} finalUrl=${connection.url}")
+            if (code !in 200..299) {
+                if (code == HttpURLConnection.HTTP_NOT_FOUND || code == HttpURLConnection.HTTP_FORBIDDEN) {
+                    Log.e("DL_404", "❌ $code ERROR for ${url.take(300)}")
+                    runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(500) } }
+                        .onSuccess { Log.e("DL_404", "  Error body: $it") }
+                }
+                throw httpException(code, connection.responseMessage)
+            }
             HlsResponse(connection.url.toString(), connection.inputStream.use { it.readBytes() })
         } finally { connection.disconnect() }
     }
@@ -526,6 +573,9 @@ object DirectDownloadManager {
         }
         return false
     }
+
+    private fun isRetryableExpiry(error: Throwable): Boolean =
+        error.message?.contains(Regex("\\b(401|403|404)\\b")) == true
 
     private fun isDash(link: ExtractorLink): Boolean = link.url.contains(".mpd", ignoreCase = true) || link.type.name.equals("DASH", ignoreCase = true)
     private fun isHls(link: ExtractorLink): Boolean = link.type == ExtractorLinkType.M3U8 || isHlsUrl(link.url)
