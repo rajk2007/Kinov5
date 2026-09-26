@@ -479,7 +479,7 @@ object DirectDownloadManager {
 
     private fun substituteDash(template: String, id: String, number: Long, time: Long): String =
         template.replace("\$RepresentationID\$", id)
-            .replace(Regex("\\$Number%0(\\d+)d\\$")) { it.groupValues[1].toInt().let { width -> number.toString().padStart(width, '0') } }
+            .replace(Regex("\${'$'}Number%0(\\d+)d\${'$'}")) { it.groupValues[1].toInt().let { width -> number.toString().padStart(width, '0') } }
             .replace("\$Number\$", number.toString())
             .replace("\$Time\$", time.toString())
     private fun resolveDashUrl(path: String, base: String, manifestUrl: String): String = runCatching { URI(if (base.startsWith("http", true)) base else URI(manifestUrl).resolve(base).toString()).resolve(path).toString() }.getOrDefault(path)
