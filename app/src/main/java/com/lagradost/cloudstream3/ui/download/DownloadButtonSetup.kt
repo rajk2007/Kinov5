@@ -124,9 +124,10 @@ object DownloadButtonSetup {
                     val directDownload = DirectDownloadManager.activeDownloads.value.values.firstOrNull { item ->
                         item.status == DirectDownloadStatus.COMPLETED && item.filePath != null && item.title == click.data.name
                     }
-                    if (directDownload?.filePath != null) {
+                    val directFile = directDownload?.filePath?.let { java.io.File(it) }
+                    if (directFile?.isFile == true && directFile.length() > 0L) {
                         val linkGenerator = LinkGenerator(
-                            listOf(BasicLink(Uri.fromFile(java.io.File(directDownload.filePath)).toString(), click.data.name)),
+                            listOf(BasicLink(Uri.fromFile(directFile).toString(), click.data.name)),
                             extract = false,
                             id = click.data.id,
                         )

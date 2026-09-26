@@ -24,6 +24,32 @@ class DownloadFileGenerator(
 
     override fun getId(index: Int): Int? = this.videos.getOrNull(index)?.id
 
+    private fun resolveLocalUri(meta: ExtractorUri): Uri? {
+        val storedFile = meta.id?.let { id ->
+            activity?.let { act -> getDownloadFileInfo(act, id)?.path?.toString() }
+        }?.let { java.io.File(it) }
+
+        val directFile = DirectDownloadManager.activeDownloads.value.values
+            .asSequence()
+            .filter { it.status == DirectDownloadStatus.COMPLETED && it.title == meta.name }
+            .mapNotNull { it.filePath?.let { path -> java.io.File(path) } }
+            .firstOrNull()
+
+        val existingFile = sequenceOf(storedFile, directFile)
+            .filterNotNull()
+            .firstOrNull { it.isFile && it.length() > 0L }
+
+        if (existingFile != null) {
+            Log.d("DownloadFileGenerator", "Using local download: ${existingFile.absolutePath}")
+            return Uri.fromFile(existingFile)
+        }
+
+        val existingFileUri = meta.uri.takeIf { it.scheme == "file" }
+        return existingFileUri?.takeIf { uri ->
+            uri.path?.let { java.io.File(it) }?.let { it.isFile && it.length() > 0L } == true
+        }
+    }
+
     override suspend fun generateLinks(
         clearCache: Boolean,
         sourceTypes: Set<ExtractorLinkType>,
@@ -33,39 +59,12 @@ class DownloadFileGenerator(
         isCasting: Boolean
     ): Boolean {
         val meta = videos.getOrNull(offset) ?: return false
-
-        if (meta.uri == Uri.EMPTY) {
-            // We do this here so that we only load it when
-            // we actually need it as it can be more expensive.
-            val info = meta.id?.let { id ->
-                activity?.let { act ->
-                    getDownloadFileInfo(act, id)
-                }
-            }
-
-            when {
-                info != null -> {
-                    val fileUri = runCatching {
-                        Uri.fromFile(java.io.File(info.path.toString()))
-                    }.getOrDefault(info.path)
-                    callback(null to meta.copy(uri = fileUri))
-                }
-
-                else -> {
-                    val directItem = DirectDownloadManager.activeDownloads.value.values.firstOrNull { item ->
-                        item.status == DirectDownloadStatus.COMPLETED && item.filePath != null && item.title == meta.name
-                    }
-                    if (directItem?.filePath != null) {
-                        val fileUri = Uri.fromFile(java.io.File(directItem.filePath))
-                        Log.d("DownloadFileGenerator", "Using DirectDownload file: ${directItem.filePath}")
-                        callback(null to meta.copy(uri = fileUri))
-                    } else {
-                        Log.w("DownloadFileGenerator", "No local file found for: ${meta.name}; aborting playback")
-                        return false
-                    }
-                }
-            }
-        } else callback(null to meta)
+        val localUri = resolveLocalUri(meta)
+        if (localUri == null) {
+            Log.w("DownloadFileGenerator", "No valid local file found for: ${meta.name}; aborting playback")
+            return false
+        }
+        callback(null to meta.copy(uri = localUri))
 
         val ctx = context ?: return true
         val relative = meta.relativePath ?: return true

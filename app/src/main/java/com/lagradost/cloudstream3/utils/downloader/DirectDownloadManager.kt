@@ -17,6 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +35,8 @@ import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /** State exposed to the direct-download UI. */
 data class DirectDownloadItem(
@@ -344,18 +349,7 @@ object DirectDownloadManager {
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
 
-            var downloaded = 0L
-            FileOutputStream(tempFile, false).use { output ->
-                segments.forEachIndexed { index, segmentUrl ->
-                    if (!currentCoroutineContext().isActive) throw CancellationException()
-                    val bytes = requestHls(segmentUrl, headers).body
-                    output.write(bytes)
-                    downloaded += bytes.size
-                    val progress = ((index + 1) * 100L / segments.size).toInt()
-                    updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, progress = progress, downloadedBytes = downloaded, totalBytes = downloaded * segments.size / (index + 1L)) }
-                    updateDownloadNotification(downloadId)
-                }
-            }
+            downloadSegmentsParallel(downloadId, segments, headers, tempFile)
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
             showCompletedNotification(downloadId, outputFile)
@@ -376,6 +370,63 @@ object DirectDownloadManager {
         }
     }
 
+    /** Download media segments concurrently, then concatenate them in manifest order. */
+    private suspend fun downloadSegmentsParallel(
+        downloadId: String,
+        segmentUrls: List<String>,
+        headers: Map<String, String>,
+        outputFile: File,
+    ) {
+        val parallelCount = minOf(6, segmentUrls.size)
+        val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
+        segmentDir.deleteRecursively()
+        require(segmentDir.mkdirs()) { "Could not create temporary segment directory." }
+
+        val completed = AtomicInteger(0)
+        val totalBytes = AtomicLong(0L)
+        val lastUpdate = AtomicLong(0L)
+        try {
+            coroutineScope {
+                segmentUrls.withIndex().chunked(parallelCount).forEach { batch ->
+                    batch.map { indexed ->
+                        async(Dispatchers.IO) {
+                            if (!currentCoroutineContext().isActive) throw CancellationException()
+                            val bytes = requestHls(indexed.value, headers).body
+                            require(bytes.isNotEmpty()) { "Segment ${indexed.index + 1} was empty." }
+                            File(segmentDir, "segment_${indexed.index}.bin").writeBytes(bytes)
+
+                            val finished = completed.incrementAndGet()
+                            val downloaded = totalBytes.addAndGet(bytes.size.toLong())
+                            val now = System.currentTimeMillis()
+                            if (finished == segmentUrls.size || now - lastUpdate.get() >= 500L) {
+                                lastUpdate.set(now)
+                                updateItem(downloadId) {
+                                    it.copy(
+                                        status = DirectDownloadStatus.DOWNLOADING,
+                                        progress = finished * 100 / segmentUrls.size,
+                                        downloadedBytes = downloaded,
+                                    )
+                                }
+                                updateDownloadNotification(downloadId)
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+
+            FileOutputStream(outputFile, false).use { output ->
+                segmentUrls.indices.forEach { index ->
+                    File(segmentDir, "segment_$index.bin").inputStream().use { input -> input.copyTo(output) }
+                }
+            }
+            updateItem(downloadId) {
+                it.copy(progress = 100, downloadedBytes = totalBytes.get(), totalBytes = totalBytes.get())
+            }
+        } finally {
+            segmentDir.deleteRecursively()
+        }
+    }
+
     private data class DashRepresentation(val width: Int, val height: Int, val bandwidth: Long, val segments: List<String>)
 
     /** Downloads unencrypted ISO-BMFF DASH video by expanding the MPD segment addressing. */
@@ -393,19 +444,7 @@ object DirectDownloadManager {
             val selected = if (item.selectedHeight > 0) representations.filter { it.height in 1..item.selectedHeight }.maxByOrNull { it.height } ?: representations.maxByOrNull { it.height } else representations.maxByOrNull { it.height * 1_000_000L + it.bandwidth }
             val segments = requireNotNull(selected).segments
             require(segments.isNotEmpty()) { "No DASH media segments were found in the manifest." }
-            var downloaded = 0L
-            FileOutputStream(tempFile, false).use { output ->
-                segments.forEachIndexed { index, segmentUrl ->
-                    if (!currentCoroutineContext().isActive) throw CancellationException()
-                    val bytes = requestHls(segmentUrl, headers).body
-                    require(bytes.isNotEmpty()) { "DASH segment ${index + 1} was empty." }
-                    output.write(bytes)
-                    downloaded += bytes.size
-                    val progress = ((index + 1) * 100L / segments.size).toInt()
-                    updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, progress = progress, downloadedBytes = downloaded, totalBytes = downloaded * segments.size / (index + 1L)) }
-                    updateDownloadNotification(downloadId)
-                }
-            }
+            downloadSegmentsParallel(downloadId, segments, headers, tempFile)
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
             showCompletedNotification(downloadId, outputFile)
