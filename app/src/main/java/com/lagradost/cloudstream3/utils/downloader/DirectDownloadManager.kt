@@ -450,7 +450,8 @@ object DirectDownloadManager {
 
     private fun expandDashTemplate(templateAttrs: String, templateBody: String, attrs: Map<String, String>, base: String, manifestUrl: String): List<String> {
         val template = parseXmlAttributes(templateAttrs)
-        val initialization = template["initialization"]?.let { resolveDashUrl(substituteDash(it, attrs["id"].orEmpty(), 0L, 0L), base, manifestUrl) }
+        val bandwidth = attrs["bandwidth"]?.toLongOrNull() ?: 0L
+        val initialization = template["initialization"]?.let { resolveDashUrl(substituteDash(it, attrs["id"].orEmpty(), 0L, 0L, bandwidth), base, manifestUrl) }
         val media = template["media"] ?: return emptyList()
         val segments = mutableListOf<String>()
         initialization?.let { segments += it }
@@ -464,7 +465,7 @@ object DirectDownloadManager {
             item["t"]?.toLongOrNull()?.let { currentTime = it }
             val repeat = (item["r"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
             repeat(repeat + 1) {
-                segments += resolveDashUrl(substituteDash(media, attrs["id"].orEmpty(), number, currentTime), base, manifestUrl)
+                segments += resolveDashUrl(substituteDash(media, attrs["id"].orEmpty(), number, currentTime, bandwidth), base, manifestUrl)
                 currentTime += duration
                 number++
             }
@@ -477,11 +478,38 @@ object DirectDownloadManager {
         return segments
     }
 
-    private fun substituteDash(template: String, id: String, number: Long, time: Long): String =
-        template.replace("\$RepresentationID\$", id)
-            .replace(Regex("\${'$'}Number%0(\\d+)d\${'$'}")) { it.groupValues[1].toInt().let { width -> number.toString().padStart(width, '0') } }
+    /** Resolves DASH template variables using literal string operations, never Regex on the template. */
+    private fun substituteDash(template: String, id: String, number: Long, time: Long, bandwidth: Long): String {
+        var result = template.replace("\$RepresentationID\$", id)
+
+        // DASH supports zero-padded forms such as $Number%05d$. Find those literal
+        // delimiters directly so braces/dollar signs in a template cannot become regex syntax.
+        val paddedPrefix = "\$Number%0"
+        var searchFrom = 0
+        while (true) {
+            val start = result.indexOf(paddedPrefix, searchFrom)
+            if (start < 0) break
+            val suffixStart = start + paddedPrefix.length
+            val end = result.indexOf("d\$", suffixStart)
+            if (end < 0) break
+            val widthText = result.substring(suffixStart, end)
+            if (widthText.isNotEmpty() && widthText.all(Char::isDigit)) {
+                val width = widthText.toIntOrNull()
+                if (width != null) {
+                    val replacement = number.toString().padStart(width, '0')
+                    result = result.replaceRange(start, end + 2, replacement)
+                    searchFrom = start + replacement.length
+                    continue
+                }
+            }
+            searchFrom = suffixStart
+        }
+
+        return result
             .replace("\$Number\$", number.toString())
             .replace("\$Time\$", time.toString())
+            .replace("\$Bandwidth\$", bandwidth.toString())
+    }
     private fun resolveDashUrl(path: String, base: String, manifestUrl: String): String = runCatching { URI(if (base.startsWith("http", true)) base else URI(manifestUrl).resolve(base).toString()).resolve(path).toString() }.getOrDefault(path)
     private fun parseXmlAttributes(raw: String): Map<String, String> = Regex("([A-Za-z_:][\\w:.-]*)\\s*=\\s*\"([^\"]*)\"").findAll(raw).associate { it.groupValues[1] to it.groupValues[2] }
 
