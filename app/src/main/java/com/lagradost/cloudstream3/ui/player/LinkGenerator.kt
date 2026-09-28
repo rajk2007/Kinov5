@@ -42,6 +42,8 @@ class LinkGenerator(
     private val refererUrl: String? = null,
     id: Int?
 ) : NoVideoGenerator(id) {
+    override val canSkipLoading = true
+
     override suspend fun generateLinks(
         clearCache: Boolean,
         sourceTypes: Set<ExtractorLinkType>,
@@ -51,6 +53,19 @@ class LinkGenerator(
         isCasting: Boolean
     ): Boolean {
         links.amap { link ->
+            val uri = link.url.toUriOrNull()
+            if (uri?.scheme == "file" || uri?.scheme == "content") {
+                // Route local media to CS3IPlayer.loadOfflinePlayer(). An
+                // ExtractorLink would send file:// through the network player.
+                callback(
+                    null to ExtractorUri(
+                        uri = uri,
+                        name = link.name ?: uri.lastPathSegment ?: "Downloaded Video",
+                    )
+                )
+                return@amap
+            }
+
             if (!extract || !loadExtractor(link.url, refererUrl, {
                     subtitleCallback(PlayerSubtitleHelper.getSubtitleData(it))
                 }) {
@@ -74,6 +89,8 @@ class LinkGenerator(
 
         return true
     }
+
+    private fun String.toUriOrNull(): Uri? = runCatching { Uri.parse(this) }.getOrNull()
 }
 
 class MinimalLinkGenerator(
