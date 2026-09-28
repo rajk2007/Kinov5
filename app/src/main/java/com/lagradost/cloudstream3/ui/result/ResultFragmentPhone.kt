@@ -26,6 +26,15 @@ import androidx.core.widget.doOnTextChanged
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.discord.panels.OverlappingPanelsLayout
 import com.discord.panels.PanelState
 import com.discord.panels.PanelsChildGestureRegionObserver
@@ -202,6 +211,35 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             return
         }
 
+        val dialog = BottomSheetDialog(requireContext())
+        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(
+                androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                androidx.compose.material3.MaterialTheme {
+                    androidx.compose.foundation.layout.Column(
+                        modifier = androidx.compose.ui.Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(color = Color(0xFFE50914))
+                        androidx.compose.foundation.layout.Spacer(
+                            androidx.compose.ui.Modifier.height(16.dp)
+                        )
+                        androidx.compose.material3.Text(
+                            "Loading download options…",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                        )
+                    }
+                }
+            }
+        }
+        dialog.setContentView(composeView)
+        dialog.show()
+
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val api = APIHolder.getApiFromNameNull(apiName)
@@ -268,19 +306,14 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 }
 
                 withContext(Dispatchers.Main) {
-                    if (!isAdded) return@withContext
-                    val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(requireContext())
-                    val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
-                        setViewCompositionStrategy(
-                            androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
-                        )
-                        setContent {
-                            androidx.compose.material3.MaterialTheme {
-                                DownloadOptionsSheet(
-                                    links = links,
-                                    onDownload = { link, selectedHeight ->
-                                        dialog.dismiss()
-                                        val reResolveLink: suspend () -> ExtractorLink? = {
+                    if (!isAdded || !dialog.isShowing) return@withContext
+                    composeView.setContent {
+                        androidx.compose.material3.MaterialTheme {
+                            DownloadOptionsSheet(
+                                links = links,
+                                onDownload = { link, selectedHeight ->
+                                    dialog.dismiss()
+                                    val reResolveLink: suspend () -> ExtractorLink? = {
                                             try {
                                                 android.util.Log.e("RE_RESOLVE", "Re-fetching links from provider for ${link.source}/${link.name}")
                                                 val freshLinks = mutableListOf<ExtractorLink>()
@@ -318,37 +351,37 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 null
                                             }
                                         }
-                                        val started = DirectDownloadManager.startDownload(
-                                            context = requireContext(),
-                                            link = link,
-                                            title = loadResponse.name,
-                                            fileName = "${loadResponse.name}_${System.currentTimeMillis()}",
-                                            posterUrl = loadResponse.posterUrl,
-                                            apiName = apiName,
-                                            selectedHeight = selectedHeight,
-                                            reResolveLink = reResolveLink,
-                                        )
-                                        if (started) {
-                                            Toast.makeText(
-                                                requireContext(),
-                                                "Download started: ${loadResponse.name}",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    },
-                                    onDismiss = { dialog.dismiss() }
-                                )
-                            }
+                                    val started = DirectDownloadManager.startDownload(
+                                        context = requireContext(),
+                                        link = link,
+                                        title = loadResponse.name,
+                                        fileName = "${loadResponse.name}_${System.currentTimeMillis()}",
+                                        posterUrl = loadResponse.posterUrl,
+                                        apiName = apiName,
+                                        selectedHeight = selectedHeight,
+                                        reResolveLink = reResolveLink,
+                                    )
+                                    if (started) {
+                                        Toast.makeText(
+                                            requireContext(),
+                                            "Download started: ${loadResponse.name}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                onDismiss = { dialog.dismiss() }
+                            )
                         }
                     }
-                    dialog.setContentView(composeView)
-                    dialog.show()
                 }
             } catch (e: Exception) {
                 logError(e)
                 android.util.Log.e("KinoDownload", "Download flow failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    if (dialog.isShowing) {
+                        Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                        dialog.dismiss()
+                    }
                 }
             }
         }
@@ -716,10 +749,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             resultEpisodes.adapter =
                 EpisodeAdapter(
                     api?.hasDownloadSupport == true,
-                    { episodeClick ->
-                        when (episodeClick.action) {
+                        { episodeClick ->
+                            when (episodeClick.action) {
                             ACTION_DOWNLOAD_EPISODE, ACTION_DOWNLOAD_MIRROR -> {
-                                requirePathForActions(listOf(episodeClick.action to episodeClick.data))
+                                showDownloadBottomSheet(episodeClick.data)
                             }
 
                             else -> viewModel.handleAction(episodeClick)
