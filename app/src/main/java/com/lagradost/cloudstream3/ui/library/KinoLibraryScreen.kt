@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
 
 @Composable
 fun KinoLibraryScreen(
@@ -31,10 +32,12 @@ fun KinoLibraryScreen(
 ) {
     val continueWatching by viewModel.continueWatching.collectAsState()
     val downloads by viewModel.downloads.collectAsState()
+    // This is the source of truth for direct-download progress. Because it is a
+    // StateFlow, every byte/status update immediately recomposes this screen.
     val directDownloads by DirectDownloadManager.activeDownloads.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val allDownloads = remember(downloads, directDownloads) {
-        downloads + directDownloads.values.map { item ->
+        val directItems = directDownloads.values.map { item ->
             KinoLibraryItem(
                 name = item.title,
                 url = item.url,
@@ -42,9 +45,15 @@ fun KinoLibraryScreen(
                 posterUrl = item.posterUrl,
                 downloadedBytes = item.downloadedBytes,
                 totalBytes = item.totalBytes,
-                progress = item.progress / 100f,
+                progress = (item.progress / 100f).coerceIn(0f, 1f),
+                localUri = item.filePath,
+                downloadStatus = item.status,
             )
         }
+        // Active direct downloads replace same-title legacy queue rows so the
+        // user sees one row with live progress rather than a second "Queued..." row.
+        val directTitles = directItems.map { it.name }.toSet()
+        downloads.filterNot { it.name in directTitles } + directItems
     }
 
     LaunchedEffect(Unit) { viewModel.loadData(context) }
@@ -112,10 +121,7 @@ private fun LibraryPoster(media: KinoLibraryItem, onMediaClick: (KinoLibraryItem
             val progress = (media.position.toFloat() / media.duration.toFloat()).coerceIn(0f, 1f)
             LinearProgressIndicator(
                 progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
                 color = Color(0xFFE50914),
                 trackColor = Color(0xFF333333),
             )
@@ -146,13 +152,8 @@ private fun LibraryDownloadRow(media: KinoLibraryItem, onMediaClick: (KinoLibrar
         Column(modifier = Modifier.weight(1f).padding(top = 8.dp)) {
             Text(media.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.height(4.dp))
-            val progressText = if (media.totalBytes > 0L) {
-                "${formatBytes(media.downloadedBytes)} / ${formatBytes(media.totalBytes)}"
-            } else {
-                "Queued..."
-            }
-            Text(progressText, color = Color.Gray, fontSize = 12.sp)
-            if (media.progress > 0f) {
+            Text(downloadStatusText(media), color = Color.Gray, fontSize = 12.sp)
+            if (media.progress > 0f && media.downloadStatus != DirectDownloadStatus.COMPLETED) {
                 Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
                     progress = { media.progress },
@@ -162,6 +163,22 @@ private fun LibraryDownloadRow(media: KinoLibraryItem, onMediaClick: (KinoLibrar
                 )
             }
         }
+    }
+}
+
+private fun downloadStatusText(media: KinoLibraryItem): String {
+    val bytes = if (media.totalBytes > 0L) {
+        " (${formatBytes(media.downloadedBytes)} / ${formatBytes(media.totalBytes)})"
+    } else if (media.downloadedBytes > 0L) {
+        " (${formatBytes(media.downloadedBytes)})"
+    } else ""
+    return when (media.downloadStatus) {
+        DirectDownloadStatus.DOWNLOADING -> "Downloading... ${(media.progress * 100).toInt()}%$bytes"
+        DirectDownloadStatus.COMPLETED -> "Completed${if (media.downloadedBytes > 0L) " (${formatBytes(media.downloadedBytes)})" else ""}"
+        DirectDownloadStatus.PAUSED -> "Paused$bytes"
+        DirectDownloadStatus.FAILED -> "Failed$bytes"
+        DirectDownloadStatus.PENDING -> "Queued..."
+        null -> if (media.totalBytes > 0L) "Downloaded ${(media.progress * 100).toInt()}%$bytes" else "Queued..."
     }
 }
 

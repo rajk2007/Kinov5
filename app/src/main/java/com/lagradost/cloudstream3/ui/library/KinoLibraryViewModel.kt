@@ -11,6 +11,7 @@ import com.lagradost.cloudstream3.utils.DOWNLOAD_HEADER_CACHE
 import com.lagradost.cloudstream3.utils.DataStore.getKey
 import com.lagradost.cloudstream3.utils.DataStore.getKeys
 import com.lagradost.cloudstream3.utils.DataStoreHelper
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.getDownloadFileInfo
 import kotlinx.coroutines.Dispatchers
@@ -49,15 +50,16 @@ class KinoLibraryViewModel : ViewModel() {
                 }
                 _continueWatching.value = resumeList
 
-                // Downloads — show all items that are queued, active, or completed.
+                // Keep the legacy queue entries for pending items, but use the direct
+                // download manager for byte/progress state in KinoLibraryScreen.
                 val queuedWrappers = try {
                     com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.queue.value.toList()
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     emptyList()
                 }
                 val activeWrappers = try {
                     DownloadQueueService.downloadInstances.value.map { it.downloadQueueWrapper }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     emptyList()
                 }
                 val allQueueWrappers = (queuedWrappers + activeWrappers).distinctBy { it.id }
@@ -74,8 +76,7 @@ class KinoLibraryViewModel : ViewModel() {
                     val info = getDownloadFileInfo(context, episode.id)
                     val downloaded = info?.fileLength ?: 0L
                     val total = info?.totalBytes ?: 0L
-                    // The episode cache is created before download metadata is written, so
-                    // queued or active downloads may legitimately have no bytes yet.
+                    // The episode cache can exist before download metadata is written.
                     if (downloaded <= 1L && episode.id !in queueAndActiveIds) {
                         return@mapNotNull null
                     }
@@ -96,7 +97,9 @@ class KinoLibraryViewModel : ViewModel() {
                         downloadedBytes = downloaded,
                         totalBytes = total,
                         progress = progress,
-                        id = header.id
+                        id = header.id,
+                        localUri = info?.path?.toString(),
+                        downloadStatus = if (info != null) DirectDownloadStatus.COMPLETED else null,
                     )
                 }
 
@@ -114,10 +117,8 @@ class KinoLibraryViewModel : ViewModel() {
                             type = downloadItem.resultType,
                             posterUrl = downloadItem.resultPoster,
                             episodeId = downloadItem.episode.id,
-                            downloadedBytes = 0L,
-                            totalBytes = 0L,
-                            progress = 0f,
-                            id = downloadItem.resultId
+                            id = downloadItem.resultId,
+                            downloadStatus = DirectDownloadStatus.PENDING,
                         )
                     }
 
@@ -141,6 +142,8 @@ data class KinoLibraryItem(
     val progress: Float = 0f,
     val position: Long = 0L,
     val duration: Long = 0L,
+    val localUri: String? = null,
+    val downloadStatus: DirectDownloadStatus? = null,
     override var posterHeaders: Map<String, String>? = null,
     override var id: Int? = null,
     override var quality: com.lagradost.cloudstream3.SearchQuality? = null,
