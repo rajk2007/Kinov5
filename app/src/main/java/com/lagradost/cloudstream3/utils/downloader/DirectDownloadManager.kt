@@ -4,6 +4,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaMuxer
 import android.os.Build
 import android.util.Log
 import android.widget.Toast
@@ -34,6 +36,7 @@ import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URL
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -376,6 +379,9 @@ object DirectDownloadManager {
         segmentUrls: List<String>,
         headers: Map<String, String>,
         outputFile: File,
+        progressOffset: Int = 0,
+        progressTotal: Int = segmentUrls.size,
+        downloadedBytesOffset: Long = 0L,
     ) {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
@@ -403,8 +409,8 @@ object DirectDownloadManager {
                                 updateItem(downloadId) {
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
-                                        progress = finished * 100 / segmentUrls.size,
-                                        downloadedBytes = downloaded,
+                                        progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
+                                        downloadedBytes = downloadedBytesOffset + downloaded,
                                     )
                                 }
                                 updateDownloadNotification(downloadId)
@@ -420,7 +426,10 @@ object DirectDownloadManager {
                 }
             }
             updateItem(downloadId) {
-                it.copy(progress = 100, downloadedBytes = totalBytes.get(), totalBytes = totalBytes.get())
+                it.copy(
+                    progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
+                    downloadedBytes = downloadedBytesOffset + totalBytes.get(),
+                )
             }
         } finally {
             segmentDir.deleteRecursively()
@@ -429,31 +438,51 @@ object DirectDownloadManager {
 
     private data class DashRepresentation(val width: Int, val height: Int, val bandwidth: Long, val segments: List<String>)
 
-    /** Downloads unencrypted ISO-BMFF DASH video by expanding the MPD segment addressing. */
+    /** Downloads unencrypted ISO-BMFF DASH video and audio, then muxes both tracks. */
     private suspend fun downloadDashVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem): Boolean {
         val outputFile = File(getDownloadDir(context), outputName(item.fileName))
-        val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
+        val videoFile = File(outputFile.parentFile, "${outputFile.name}.video.part")
+        val audioFile = File(outputFile.parentFile, "${outputFile.name}.audio.part")
+        val muxedFile = File(outputFile.parentFile, "${outputFile.name}.muxed.part")
         try {
             val headers = requestHeaders(link)
             Log.e("DASH_DEBUG", "Fetching MPD: ${link.url.take(300)}")
             val response = requestHls(link.url, headers)
             val manifest = String(response.body, Charsets.UTF_8)
             require(manifest.contains("<MPD", ignoreCase = true)) { "The server did not return a DASH MPD manifest." }
-            val representations = parseDashRepresentations(manifest, response.url)
-            require(representations.isNotEmpty()) { "No playable video representations were found in the DASH manifest." }
-            val selected = if (item.selectedHeight > 0) representations.filter { it.height in 1..item.selectedHeight }.maxByOrNull { it.height } ?: representations.maxByOrNull { it.height } else representations.maxByOrNull { it.height * 1_000_000L + it.bandwidth }
-            val segments = requireNotNull(selected).segments
-            require(segments.isNotEmpty()) { "No DASH media segments were found in the manifest." }
-            downloadSegmentsParallel(downloadId, segments, headers, tempFile)
+            val videoRepresentations = parseDashRepresentations(manifest, response.url, contentType = "video")
+            val audioRepresentations = parseDashRepresentations(manifest, response.url, contentType = "audio")
+            require(videoRepresentations.isNotEmpty()) { "No playable video representations were found in the DASH manifest." }
+            val selectedVideo = if (item.selectedHeight > 0) {
+                videoRepresentations.filter { it.height in 1..item.selectedHeight }.maxByOrNull { it.height }
+                    ?: videoRepresentations.maxByOrNull { it.height }
+            } else {
+                videoRepresentations.maxByOrNull { it.height * 1_000_000L + it.bandwidth }
+            }
+            val videoSegments = requireNotNull(selectedVideo).segments
+            require(videoSegments.isNotEmpty()) { "No DASH video segments were found in the manifest." }
+            val selectedAudio = audioRepresentations.maxByOrNull { it.bandwidth }
+            val audioSegments = selectedAudio?.segments.orEmpty()
+            Log.e("DASH_AUDIO", "Found ${videoRepresentations.size} video and ${audioRepresentations.size} audio representations")
+            downloadSegmentsParallel(downloadId, videoSegments, headers, videoFile, progressOffset = 0, progressTotal = videoSegments.size + audioSegments.size)
+            if (audioSegments.isNotEmpty()) {
+                downloadSegmentsParallel(downloadId, audioSegments, headers, audioFile, progressOffset = videoSegments.size, progressTotal = videoSegments.size + audioSegments.size, downloadedBytesOffset = videoFile.length())
+                muxDashTracks(videoFile, audioFile, muxedFile)
+            } else {
+                Log.w("DASH_AUDIO", "No audio representation found; keeping the video-only DASH download")
+                require(videoFile.renameTo(muxedFile)) { "Unable to prepare the DASH video for finalization." }
+            }
             if (!currentCoroutineContext().isActive) throw CancellationException()
-            finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
+            finalizeDownload(downloadId, outputFile, muxedFile, validateContainer = true)
             showCompletedNotification(downloadId, outputFile)
             return true
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
             return true
         } catch (error: Exception) {
-            tempFile.delete()
+            videoFile.delete()
+            audioFile.delete()
+            muxedFile.delete()
             if (isRetryableExpiry(error)) {
                 Log.e("DL_404", "❌ DASH manifest/segment request failed with an expired/authenticated URL", error)
                 return false
@@ -465,14 +494,17 @@ object DirectDownloadManager {
         }
     }
 
-    private fun parseDashRepresentations(manifest: String, manifestUrl: String): List<DashRepresentation> {
+    private fun parseDashRepresentations(manifest: String, manifestUrl: String, contentType: String = "video"): List<DashRepresentation> {
         val result = mutableListOf<DashRepresentation>()
         val adaptationRegex = Regex("<AdaptationSet\\b([^>]*)>(.*?)</AdaptationSet>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val representationRegex = Regex("<Representation\\b([^>]*?)(?:/>|>(.*?)</Representation>)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         adaptationRegex.findAll(manifest).forEach { adaptation ->
             val parentAttrs = parseXmlAttributes(adaptation.groupValues[1])
             val adaptationBody = adaptation.groupValues[2]
-            if (parentAttrs["contentType"]?.equals("video", true) != true && !adaptationBody.contains("mimeType=\"video/", true)) return@forEach
+            val isRequestedType = parentAttrs["contentType"]?.equals(contentType, true) == true ||
+                adaptationBody.contains("mimeType=\"$contentType/", true) ||
+                adaptationBody.contains("contentType=\"$contentType\"", true)
+            if (!isRequestedType) return@forEach
             val parentBase = Regex("<BaseURL\\s*>(.*?)</BaseURL>", RegexOption.IGNORE_CASE).find(adaptationBody)?.groupValues?.get(1)?.trim()
             val parentTemplate = Regex("<SegmentTemplate\\b([^>]*)>(.*?)</SegmentTemplate>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(adaptationBody)
             representationRegex.findAll(adaptationBody).forEach { representation ->
@@ -485,6 +517,56 @@ object DirectDownloadManager {
             }
         }
         return result.distinctBy { Triple(it.width, it.height, it.segments) }
+    }
+
+    /** Mux the independently downloaded ISO-BMFF tracks into the MP4 played by the app. */
+    private fun muxDashTracks(videoFile: File, audioFile: File, outputFile: File) {
+        val videoExtractor = MediaExtractor()
+        val audioExtractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        var started = false
+        try {
+            videoExtractor.setDataSource(videoFile.absolutePath)
+            audioExtractor.setDataSource(audioFile.absolutePath)
+            val videoTrack = (0 until videoExtractor.trackCount).firstOrNull { index ->
+                videoExtractor.getTrackFormat(index).getString("mime")?.startsWith("video/") == true
+            } ?: throw IOException("The DASH video track could not be read after download.")
+            val audioTrack = (0 until audioExtractor.trackCount).firstOrNull { index ->
+                audioExtractor.getTrackFormat(index).getString("mime")?.startsWith("audio/") == true
+            } ?: throw IOException("The DASH audio track could not be read after download.")
+
+            muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val muxedVideoTrack = muxer.addTrack(videoExtractor.getTrackFormat(videoTrack))
+            val muxedAudioTrack = muxer.addTrack(audioExtractor.getTrackFormat(audioTrack))
+            muxer.start()
+            started = true
+
+            fun copyTrack(extractor: MediaExtractor, outputTrack: Int) {
+                extractor.selectTrack(if (extractor === videoExtractor) videoTrack else audioTrack)
+                val buffer = ByteBuffer.allocate(4 * 1024 * 1024)
+                val bufferInfo = android.media.MediaCodec.BufferInfo()
+                while (true) {
+                    buffer.clear()
+                    val sampleSize = extractor.readSampleData(buffer, 0)
+                    if (sampleSize < 0) break
+                    bufferInfo.offset = 0
+                    bufferInfo.size = sampleSize
+                    bufferInfo.presentationTimeUs = extractor.sampleTime
+                    bufferInfo.flags = extractor.sampleFlags
+                    muxer.writeSampleData(outputTrack, buffer, bufferInfo)
+                    extractor.advance()
+                }
+                extractor.unselectTrack(if (extractor === videoExtractor) videoTrack else audioTrack)
+            }
+
+            copyTrack(videoExtractor, muxedVideoTrack)
+            copyTrack(audioExtractor, muxedAudioTrack)
+        } finally {
+            if (started) runCatching { muxer?.stop() }
+            muxer?.release()
+            videoExtractor.release()
+            audioExtractor.release()
+        }
     }
 
     private fun expandDashTemplate(templateAttrs: String, templateBody: String, attrs: Map<String, String>, base: String, manifestUrl: String): List<String> {
