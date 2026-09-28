@@ -132,7 +132,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
                         Column(Modifier.weight(1f)) {
                             Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             option.estimatedSizeBytes?.let { bytes ->
-                                Text("≈ ${formatFileSize(bytes)}", color = Color.Gray, fontSize = 12.sp)
+                                Text("~${formatFileSize(bytes)} (est.)", color = Color.Gray, fontSize = 12.sp)
                             }
                         }
                         Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (selected) Color(0xFFE50914) else Color.Gray, CircleShape).padding(3.dp)) { if (selected) Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFE50914))) }

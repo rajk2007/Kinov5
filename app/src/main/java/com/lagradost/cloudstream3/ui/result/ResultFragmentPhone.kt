@@ -190,7 +190,17 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
     }
 
-    private fun showDownloadBottomSheet(ep: ResultEpisode) {
+    /** Opens the same selector used by an individual episode for a season download. */
+    private fun handleDownloadAllEpisodes(episodes: List<ResultEpisode>) {
+        val firstEpisode = episodes.firstOrNull() ?: return
+        android.util.Log.d("SEASON_DL", "Download All clicked for ${episodes.size} episodes")
+        showDownloadBottomSheet(firstEpisode, episodes)
+    }
+
+    private fun showDownloadBottomSheet(
+        ep: ResultEpisode,
+        downloadEpisodes: List<ResultEpisode> = listOf(ep),
+    ) {
         // Ensure a default internal path exists (no user folder picker)
         val ctx = context ?: return
         val settings = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
@@ -313,60 +323,72 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 links = links,
                                 onDownload = { link, selectedHeight ->
                                     dialog.dismiss()
-                                    val reResolveLink: suspend () -> ExtractorLink? = {
-                                            try {
-                                                android.util.Log.e("RE_RESOLVE", "Re-fetching links from provider for ${link.source}/${link.name}")
-                                                val freshLinks = mutableListOf<ExtractorLink>()
-                                                val refreshed = APIRepository(api).loadLinks(
-                                                    data = dataString,
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        val selectedLanguage = link.languageKey()
+                                        val selectedQuality = link.effectiveQuality()
+                                        val reResolveLink: (suspend () -> ExtractorLink?)? = if (downloadEpisodes.size == 1) {
+                                            {
+                                                runCatching {
+                                                    val freshLinks = mutableListOf<ExtractorLink>()
+                                                    APIRepository(api).loadLinks(
+                                                        data = dataString,
+                                                        isCasting = false,
+                                                        subtitleCallback = { },
+                                                        callback = { freshLink ->
+                                                            if (freshLink.type != ExtractorLinkType.TORRENT && freshLink.type != ExtractorLinkType.MAGNET) {
+                                                                freshLinks += freshLink
+                                                            }
+                                                        }
+                                                    )
+                                                    val sameSource = freshLinks.filter { it.source.equals(link.source, ignoreCase = true) }
+                                                    sameSource.firstOrNull { it.effectiveQuality() == selectedQuality && it.languageKey().equals(selectedLanguage, true) }
+                                                        ?: sameSource.firstOrNull { it.effectiveQuality() == selectedQuality }
+                                                        ?: sameSource.firstOrNull()
+                                                        ?: freshLinks.firstOrNull()
+                                                }.getOrNull()
+                                            }
+                                        } else null
+                                        downloadEpisodes.forEachIndexed { index, episode ->
+                                            val episodeLink = if (index == 0) link else runCatching {
+                                                val candidates = mutableListOf<ExtractorLink>()
+                                                APIRepository(api).loadLinks(
+                                                    data = episode.data,
                                                     isCasting = false,
                                                     subtitleCallback = { },
-                                                    callback = { freshLink ->
-                                                        if (freshLink.type != ExtractorLinkType.TORRENT &&
-                                                            freshLink.type != ExtractorLinkType.MAGNET) {
-                                                            freshLinks.add(freshLink)
-                                                            android.util.Log.e("RE_RESOLVE", "  Got link: ${freshLink.name} (${freshLink.source}) quality=${freshLink.quality}")
+                                                    callback = { candidate ->
+                                                        if (candidate.type != ExtractorLinkType.TORRENT && candidate.type != ExtractorLinkType.MAGNET) {
+                                                            candidates += candidate
                                                         }
                                                     }
                                                 )
-                                                android.util.Log.e("RE_RESOLVE", "loadLinks=$refreshed total=${freshLinks.size}")
-                                                val originalName = link.name.substringBefore(" •").trim()
-                                                val sameSource = freshLinks.filter { it.source.equals(link.source, ignoreCase = true) }
-                                                val matching = sameSource.firstOrNull {
-                                                    link.quality > 0 && it.quality == link.quality &&
-                                                        it.name.contains(originalName, ignoreCase = true)
-                                                } ?: sameSource.firstOrNull {
-                                                    link.quality > 0 && it.quality == link.quality
-                                                } ?: sameSource.firstOrNull {
-                                                    it.name.contains(originalName, ignoreCase = true)
-                                                } ?: sameSource.firstOrNull()
-                                                if (matching != null) {
-                                                    android.util.Log.e("RE_RESOLVE", "✅ Found matching link: ${matching.name} quality=${matching.quality} url=${matching.url.take(150)}")
-                                                } else {
-                                                    android.util.Log.e("RE_RESOLVE", "❌ No matching link found for ${link.name} (${link.source})")
+                                                val sameSource = candidates.filter { it.source.equals(link.source, ignoreCase = true) }
+                                                sameSource.firstOrNull { it.effectiveQuality() == selectedQuality && it.languageKey().equals(selectedLanguage, true) }
+                                                    ?: sameSource.firstOrNull { it.effectiveQuality() == selectedQuality }
+                                                    ?: sameSource.firstOrNull { it.languageKey().equals(selectedLanguage, true) }
+                                                    ?: sameSource.firstOrNull()
+                                                    ?: candidates.firstOrNull()
+                                            }.getOrNull()
+
+                                            if (episodeLink == null) {
+                                                android.util.Log.w("SEASON_DL", "No matching download link for episode ${episode.episode}")
+                                                return@forEachIndexed
+                                            }
+                                            val started = DirectDownloadManager.startDownload(
+                                                context = requireContext(),
+                                                link = episodeLink,
+                                                title = "${loadResponse.name} - Episode ${episode.episode}",
+                                                fileName = "${loadResponse.name}_S${episode.season ?: 0}E${episode.episode}",
+                                                posterUrl = loadResponse.posterUrl,
+                                                apiName = apiName,
+                                                selectedHeight = selectedHeight,
+                                                reResolveLink = if (index == 0) reResolveLink else null,
+                                            )
+                                            if (started) {
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(requireContext(), "Download started: ${loadResponse.name} - Episode ${episode.episode}", Toast.LENGTH_SHORT).show()
                                                 }
-                                                matching
-                                            } catch (e: Exception) {
-                                                android.util.Log.e("RE_RESOLVE", "❌ Re-resolve failed", e)
-                                                null
                                             }
                                         }
-                                    val started = DirectDownloadManager.startDownload(
-                                        context = requireContext(),
-                                        link = link,
-                                        title = loadResponse.name,
-                                        fileName = "${loadResponse.name}_${System.currentTimeMillis()}",
-                                        posterUrl = loadResponse.posterUrl,
-                                        apiName = apiName,
-                                        selectedHeight = selectedHeight,
-                                        reResolveLink = reResolveLink,
-                                    )
-                                    if (started) {
-                                        Toast.makeText(
-                                            requireContext(),
-                                            "Download started: ${loadResponse.name}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
                                     }
                                 },
                                 onDismiss = { dialog.dismiss() }
@@ -1075,7 +1097,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             .setTitle(R.string.download_all)
                             .setMessage(rangeMessage)
                             .setPositiveButton(R.string.yes) { _, _ ->
-                                requirePathForActions(episodes.value.map { ACTION_DOWNLOAD_EPISODE to it })
+                                handleDownloadAllEpisodes(episodes.value)
                             }
                             .setNegativeButton(R.string.cancel) { _, _ -> }.show()
                     }
