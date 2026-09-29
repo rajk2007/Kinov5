@@ -174,7 +174,7 @@ private fun downloadStatusText(media: KinoLibraryItem): String {
     } else ""
     return when (media.downloadStatus) {
         DirectDownloadStatus.DOWNLOADING -> "Downloading... ${(media.progress * 100).toInt()}%$bytes"
-        DirectDownloadStatus.COMPLETED -> "Completed${if (media.downloadedBytes > 0L) " (${formatBytes(media.downloadedBytes)})" else ""}"
+        DirectDownloadStatus.COMPLETED -> "Completed${if (media.totalBytes > 0L) " (${formatBytes(media.totalBytes)})" else ""}"
         DirectDownloadStatus.PAUSED -> "Paused$bytes"
         DirectDownloadStatus.FAILED -> "Failed$bytes"
         DirectDownloadStatus.PENDING -> "Queued..."

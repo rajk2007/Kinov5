@@ -349,10 +349,13 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             }
                                         } else null
                                         downloadEpisodes.forEachIndexed { index, episode ->
-                                            val episodeLink = if (index == 0) link else runCatching {
+                                            // Resolve links independently for every episode. A season can expose
+                                            // different signed URLs per episode, so the selector link is not reusable.
+                                            val episodeLink = runCatching {
                                                 val candidates = mutableListOf<ExtractorLink>()
+                                                val episodeData = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
                                                 APIRepository(api).loadLinks(
-                                                    data = episode.data,
+                                                    data = episodeData,
                                                     isCasting = false,
                                                     subtitleCallback = { },
                                                     callback = { candidate ->
