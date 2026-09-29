@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,6 +59,7 @@ private val KinoCard = Color(0xFF1A1A1A)
 private val KinoRed = Color(0xFFE50914)
 private val KinoMuted = Color(0xFF929292)
 private val KinoGreen = Color(0xFF69C174)
+private val KinoTrack = Color(0xFF353535)
 
 @Composable
 fun KinoLibraryScreen(
@@ -65,7 +69,7 @@ fun KinoLibraryScreen(
     val continueWatching by viewModel.continueWatching.collectAsState()
     val legacyDownloads by viewModel.downloads.collectAsState()
     val directDownloads by DirectDownloadManager.activeDownloads.collectAsState()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) { viewModel.loadData(context) }
@@ -75,30 +79,36 @@ fun KinoLibraryScreen(
     val legacyOnly = remember(legacyDownloads, directTitles) {
         legacyDownloads.filterNot { it.name in directTitles }
     }
-    val downloading = remember(directItems, legacyOnly) {
-        directItems.filter { it.status == DirectDownloadStatus.DOWNLOADING ||
-            it.status == DirectDownloadStatus.PENDING || it.status == DirectDownloadStatus.PAUSED } +
-            legacyOnly.filter { it.downloadStatus != DirectDownloadStatus.COMPLETED }
+    val downloading: List<Any> = remember(directItems, legacyOnly) {
+        directItems.filter {
+            it.status == DirectDownloadStatus.DOWNLOADING ||
+                it.status == DirectDownloadStatus.PENDING ||
+                it.status == DirectDownloadStatus.PAUSED
+        } + legacyOnly.filter { it.downloadStatus != DirectDownloadStatus.COMPLETED }
     }
-    val downloaded = remember(directItems, legacyOnly) {
+    val downloaded: List<Any> = remember(directItems, legacyOnly) {
         directItems.filter { it.status == DirectDownloadStatus.COMPLETED } +
-            legacyOnly.filter { it.downloadStatus == DirectDownloadStatus.COMPLETED ||
-                it.downloadStatus == null && it.localUri != null }
+            legacyOnly.filter {
+                it.downloadStatus == DirectDownloadStatus.COMPLETED ||
+                    (it.downloadStatus == null && it.localUri != null)
+            }
     }
     val availableBytes = remember(context) {
         runCatching { StatFs(context.filesDir.path).availableBytes }.getOrDefault(0L)
     }
     val usedBytes = remember(directItems, legacyDownloads) {
-        (directItems.sumOf { it.downloadedBytes } + legacyDownloads.sumOf { it.downloadedBytes }).coerceAtLeast(0L)
+        (directItems.sumOf { it.downloadedBytes } + legacyDownloads.sumOf { it.downloadedBytes })
+            .coerceAtLeast(0L)
     }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(KinoBlack),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = 16.dp)
                     .windowInsetsPadding(WindowInsets.statusBars),
             ) {
                 Spacer(Modifier.height(12.dp))
@@ -113,7 +123,7 @@ fun KinoLibraryScreen(
         } else {
             item {
                 LazyRow(
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(continueWatching) { media ->
@@ -132,17 +142,23 @@ fun KinoLibraryScreen(
             )
         }
         if (selectedTab == 0) {
-            if (downloading.isEmpty()) item { EmptyMessage("No active downloads. Download something to watch offline.") }
-            items(downloading) { item ->
-                when (item) {
-                    is DirectDownloadItem -> ActiveDownloadCard(item)
-                    is KinoLibraryItem -> QueueDownloadCard(item)
+            if (downloading.isEmpty()) {
+                item { EmptyMessage("No active downloads. Download something to watch offline.") }
+            } else {
+                items(downloading) { item ->
+                    when (item) {
+                        is DirectDownloadItem -> ActiveDownloadCard(item)
+                        is KinoLibraryItem -> QueueDownloadCard(item)
+                    }
                 }
             }
         } else {
-            if (downloaded.isEmpty()) item { EmptyMessage("No downloads yet. Your offline library will appear here.") }
-            items(groupDownloads(downloaded)) { group ->
-                DownloadedCard(group) { group.items.firstOrNull()?.let(onMediaClick) }
+            if (downloaded.isEmpty()) {
+                item { EmptyMessage("No downloads yet. Your offline library will appear here.") }
+            } else {
+                items(groupDownloads(downloaded)) { group ->
+                    DownloadedCard(group) { group.items.firstOrNull()?.let(onMediaClick) }
+                }
             }
         }
         item { SmartDownloadsSection() }
@@ -153,10 +169,13 @@ fun KinoLibraryScreen(
 
 @Composable
 private fun ContinueWatchingCard(media: KinoLibraryItem, onClick: () -> Unit) {
-    val progress = if (media.duration > 0L) (media.position.toFloat() / media.duration).coerceIn(0f, 1f) else 0f
+    val progress = if (media.duration > 0L) {
+        (media.position.toFloat() / media.duration).coerceIn(0f, 1f)
+    } else 0f
     Column(Modifier.width(140.dp).clickable(onClick = onClick)) {
         AsyncImage(
-            model = media.posterUrl ?: "", contentDescription = media.name,
+            model = media.posterUrl ?: "",
+            contentDescription = media.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(140.dp, 196.dp).clip(RoundedCornerShape(10.dp)).background(KinoCard),
         )
@@ -165,19 +184,21 @@ private fun ContinueWatchingCard(media: KinoLibraryItem, onClick: () -> Unit) {
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(5.dp))
         LinearProgressIndicator(
-            progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-            color = KinoRed, trackColor = Color(0xFF353535),
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
+            color = KinoRed,
+            trackColor = KinoTrack,
         )
         Spacer(Modifier.height(4.dp))
-        Text(continueWatchingLabel(media), color = KinoMuted, fontSize = 11.sp, maxLines = 1,
-            overflow = TextOverflow.Ellipsis)
+        Text(continueWatchingLabel(media), color = KinoMuted, fontSize = 11.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 private fun continueWatchingLabel(media: KinoLibraryItem): String {
     val remaining = (media.duration - media.position).coerceAtLeast(0L)
-    val time = formatDuration(remaining)
-    return if (media.episodeId != null) "S1 E${media.episodeId} · $time left" else "$time left"
+    val time = "${formatDuration(remaining)} left"
+    return if (media.episodeId != null) "Episode ${media.episodeId} · $time" else time
 }
 
 @Composable
@@ -195,18 +216,24 @@ private fun DownloadsHeader(used: Long, available: Long) {
         LinearProgressIndicator(
             progress = { (used.toFloat() / total).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-            color = KinoRed, trackColor = Color(0xFF333333),
+            color = KinoRed,
+            trackColor = KinoTrack,
         )
     }
 }
 
 @Composable
-private fun DownloadTabs(selectedTab: Int, downloadingCount: Int, downloadedCount: Int, onTabSelected: (Int) -> Unit) {
+private fun DownloadTabs(
+    selectedTab: Int,
+    downloadingCount: Int,
+    downloadedCount: Int,
+    onTabSelected: (Int) -> Unit,
+) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        TabItem("Downloading" + if (downloadingCount > 0) " ($downloadingCount)" else "", selectedTab == 0,
-            { onTabSelected(0) }, Modifier.weight(1f))
-        TabItem("Downloaded" + if (downloadedCount > 0) " ($downloadedCount)" else "", selectedTab == 1,
-            { onTabSelected(1) }, Modifier.weight(1f))
+        TabItem("Downloading" + if (downloadingCount > 0) " ($downloadingCount)" else "",
+            selectedTab == 0, { onTabSelected(0) }, Modifier.weight(1f))
+        TabItem("Downloaded" + if (downloadedCount > 0) " ($downloadedCount)" else "",
+            selectedTab == 1, { onTabSelected(1) }, Modifier.weight(1f))
     }
 }
 
@@ -216,7 +243,7 @@ private fun TabItem(text: String, selected: Boolean, onClick: () -> Unit, modifi
         Text(text, color = if (selected) Color.White else KinoMuted, fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
         Spacer(Modifier.height(7.dp))
-        Box(Modifier.width(if (selected) 48.dp else 0.dp).height(2.dp).background(KinoRed))
+        Box(Modifier.fillMaxWidth().height(2.dp).background(if (selected) KinoRed else Color.Transparent))
     }
 }
 
@@ -227,24 +254,28 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
             modifier = Modifier.size(70.dp, 92.dp).clip(RoundedCornerShape(8.dp)).background(KinoCard))
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
-            Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(downloadQuality(item), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
             Spacer(Modifier.height(5.dp))
             Text("${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}", color = KinoMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             LinearProgressIndicator(progress = { (item.progress / 100f).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = KinoRed, trackColor = Color(0xFF3A3A3A))
+                modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
+                color = KinoRed, trackColor = KinoTrack)
             Spacer(Modifier.height(4.dp))
-            Text(if (item.speed.isBlank()) downloadStatusText(item.status) else "${item.speed} · ${downloadEta(item)}", color = KinoMuted, fontSize = 11.sp)
+            Text(if (item.speed.isBlank()) downloadStatusText(item.status)
+                else "${item.speed} · ${downloadEta(item)}", color = KinoMuted, fontSize = 11.sp)
         }
         Spacer(Modifier.width(4.dp))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(if (item.status == DirectDownloadStatus.DOWNLOADING) "⏸" else "▶", color = Color.White, fontSize = 18.sp,
-                modifier = Modifier.clickable {
+            Text(if (item.status == DirectDownloadStatus.DOWNLOADING) "⏸" else "▶", color = Color.White,
+                fontSize = 18.sp, modifier = Modifier.clickable {
                     if (item.status == DirectDownloadStatus.DOWNLOADING) DirectDownloadManager.pauseDownload(item.id)
                     else DirectDownloadManager.resumeDownload(item.id)
                 }.padding(5.dp))
-            Text("⋮", color = KinoMuted, fontSize = 20.sp, modifier = Modifier.padding(5.dp))
+            Text("⋮", color = KinoMuted, fontSize = 20.sp,
+                modifier = Modifier.clickable { DirectDownloadManager.cancelDownload(item.id) }.padding(5.dp))
         }
     }
 }
@@ -256,8 +287,10 @@ private fun QueueDownloadCard(item: KinoLibraryItem) {
             modifier = Modifier.size(54.dp, 70.dp).clip(RoundedCornerShape(7.dp)).background(KinoCard))
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
-            Text(item.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (item.downloadStatus == DirectDownloadStatus.PAUSED) "Paused" else "Waiting in queue", color = KinoMuted, fontSize = 12.sp)
+            Text(item.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (item.downloadStatus == DirectDownloadStatus.PAUSED) "Paused" else "Waiting in queue",
+                color = KinoMuted, fontSize = 12.sp)
         }
         Text("✕", color = KinoMuted, fontSize = 17.sp)
     }
@@ -270,19 +303,23 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit) {
             modifier = Modifier.size(88.dp, 112.dp).clip(RoundedCornerShape(8.dp)).background(KinoCard))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(group.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (group.items.size > 1) "Season 1 · ${group.items.size} episodes" else downloadInfo(group.items.first()), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
+            Text(group.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (group.items.size > 1) "Season 1 · ${group.items.size} episodes"
+                else downloadInfo(group.items.first()), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
             Spacer(Modifier.height(7.dp))
             Text("✓ Downloaded · Available offline", color = KinoGreen, fontSize = 12.sp)
         }
-        Text("▶", color = KinoRed, fontSize = 25.sp, modifier = Modifier.clickable(onClick = onPlay).padding(7.dp))
-        Text("⋮", color = KinoMuted, fontSize = 20.sp, modifier = Modifier.padding(5.dp))
+        Text("▶", color = KinoRed, fontSize = 25.sp,
+            modifier = Modifier.clickable(onClick = onPlay).padding(7.dp))
+        Text("⋮", color = KinoMuted, fontSize = 20.sp)
     }
 }
 
 @Composable
 private fun DownloadCardShell(content: @Composable RowScope.() -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).clip(RoundedCornerShape(12.dp)).background(KinoCard).padding(12.dp),
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp)
+        .clip(RoundedCornerShape(12.dp)).background(KinoCard).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, content = content)
 }
 
@@ -300,17 +337,20 @@ private fun SmartDownloadsSection() {
 @Composable
 private fun DownloadSettingsSection() {
     var wifiOnly by remember { mutableStateOf(true) }
+    var downloadNext by remember { mutableStateOf(true) }
     SectionCard("Download Settings", trailing = "⚙") {
-        SettingRow("Download Quality", "Auto")
+        SettingRow("Download Quality", "Auto  ›")
         SettingRow("Wi-Fi Only", if (wifiOnly) "On" else "Off") { wifiOnly = !wifiOnly }
-        SettingRow("Storage Location", "Internal")
+        SettingRow("Download Next Episode", if (downloadNext) "On" else "Off") { downloadNext = !downloadNext }
+        SettingRow("Storage Location", "Internal  ›")
         SettingRow("Delete Watched Downloads", "›")
     }
 }
 
 @Composable
 private fun SectionCard(title: String, trailing: String = "", content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clip(RoundedCornerShape(12.dp)).background(KinoCard).padding(14.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        .clip(RoundedCornerShape(12.dp)).background(KinoCard).padding(14.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             if (trailing.isNotBlank()) Text(trailing, color = Color.White, fontSize = 19.sp)
@@ -327,14 +367,15 @@ private fun ToggleRow(title: String, description: String, checked: Boolean, onCh
             Text(title, color = Color.White, fontSize = 14.sp)
             Text(description, color = KinoMuted, fontSize = 11.sp)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = KinoRed))
+        Switch(checked = checked, onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = KinoRed))
     }
 }
 
 @Composable
 private fun SettingRow(title: String, value: String, onClick: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().clickable(enabled = onClick != null, onClick = { onClick?.invoke() }).padding(vertical = 9.dp),
-        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(enabled = onClick != null) { onClick?.invoke() }
+        .padding(vertical = 9.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = Color.White, fontSize = 13.sp)
         Text(value, color = KinoMuted, fontSize = 12.sp)
     }
@@ -348,13 +389,22 @@ private fun groupDownloads(items: List<Any>): List<DownloadGroup> = items.mapNot
         is DirectDownloadItem -> DownloadGroup(item.title, item.posterUrl, listOf(item.toLibraryItem()))
         else -> null
     }
-}.groupBy { it.title }.map { (title, groups) -> DownloadGroup(title, groups.first().posterUrl, groups.flatMap { it.items }) }
+}.groupBy { it.title }.map { (title, groups) ->
+    DownloadGroup(title, groups.first().posterUrl, groups.flatMap { it.items })
+}
 
-private fun DirectDownloadItem.toLibraryItem() = KinoLibraryItem(name = title, url = url, apiName = apiName, posterUrl = posterUrl,
-    downloadedBytes = downloadedBytes, totalBytes = totalBytes, progress = progress / 100f, localUri = filePath, downloadStatus = status)
+private fun DirectDownloadItem.toLibraryItem() = KinoLibraryItem(
+    name = title, url = url, apiName = apiName, posterUrl = posterUrl,
+    downloadedBytes = downloadedBytes, totalBytes = totalBytes, progress = progress / 100f,
+    localUri = filePath, downloadStatus = status,
+)
 
-private fun downloadQuality(item: DirectDownloadItem): String = if (item.selectedHeight > 0) "${item.selectedHeight}p · Direct" else "Direct download"
-private fun downloadInfo(item: KinoLibraryItem): String = "${formatBytes(item.totalBytes)} · ${if (item.localUri != null) "Offline" else "Downloaded"}"
+private fun downloadQuality(item: DirectDownloadItem): String =
+    if (item.selectedHeight > 0) "${item.selectedHeight}p · Direct" else "Direct download"
+
+private fun downloadInfo(item: KinoLibraryItem): String =
+    "${formatBytes(item.totalBytes)} · ${if (item.localUri != null) "Offline" else "Downloaded"}"
+
 private fun downloadStatusText(status: DirectDownloadStatus): String = when (status) {
     DirectDownloadStatus.DOWNLOADING -> "Downloading..."
     DirectDownloadStatus.PAUSED -> "Paused"
@@ -362,13 +412,19 @@ private fun downloadStatusText(status: DirectDownloadStatus): String = when (sta
     DirectDownloadStatus.FAILED -> "Download failed"
     DirectDownloadStatus.COMPLETED -> "Completed"
 }
-private fun downloadEta(item: DirectDownloadItem): String = if (item.totalBytes > 0L && item.speed.isNotBlank()) "${formatDuration(((item.totalBytes - item.downloadedBytes).coerceAtLeast(0L) * 1000L) / 1_000_000L)} left" else "Calculating ETA"
+
+private fun downloadEta(item: DirectDownloadItem): String =
+    if (item.totalBytes > 0L && item.speed.isNotBlank()) {
+        "${formatDuration(((item.totalBytes - item.downloadedBytes).coerceAtLeast(0L) * 1000L) / 1_000_000L)} left"
+    } else "Calculating ETA"
+
 private fun formatDuration(milliseconds: Long): String {
     val minutes = (milliseconds / 60_000L).coerceAtLeast(0L)
     val hours = minutes / 60L
     val remainder = minutes % 60L
     return if (hours > 0) "${hours}h ${remainder}m" else "${remainder}m"
 }
+
 private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0)
     bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0)
@@ -378,5 +434,6 @@ private fun formatBytes(bytes: Long): String = when {
 
 @Composable
 private fun EmptyMessage(text: String) {
-    Text(text, color = KinoMuted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    Text(text, color = KinoMuted, fontSize = 13.sp,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
 }
