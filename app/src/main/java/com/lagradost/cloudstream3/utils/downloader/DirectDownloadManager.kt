@@ -124,6 +124,15 @@ object DirectDownloadManager {
         Log.e(TAG, "URL_DEBUG original link URL: ${link.url}")
         val downloadUrl = cleanDownloadUrl(link.url)
         Log.e(TAG, "URL_DEBUG clean URL for download: $downloadUrl")
+        if (downloadUrl.contains(".mpd", ignoreCase = true)) {
+            Log.e(TAG, "Rejecting manifest URL before download: ${downloadUrl.take(120)}")
+            Toast.makeText(
+                context,
+                "Cannot download a manifest file. Please choose a different quality or source.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return false
+        }
         val downloadLink = if (downloadUrl == link.url) link else ExtractorLink(
             source = link.source,
             name = link.name,
@@ -295,7 +304,7 @@ object DirectDownloadManager {
                     if (!currentCoroutineContext().isActive) throw CancellationException()
                     if (totalBytes > 0L && tempFile.length() < totalBytes) throw IOException("Connection ended before the file completed.")
                     finalizeDownload(downloadId, outputFile, tempFile)
-                    showCompletedNotification(downloadId, outputFile, outputFile.length())
+                    showCompletedNotification(downloadId)
                     return true
                 } catch (error: SocketTimeoutException) {
                     attempt++
@@ -355,7 +364,7 @@ object DirectDownloadManager {
             downloadSegmentsParallel(downloadId, segments, headers, tempFile)
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
-            showCompletedNotification(downloadId, outputFile, outputFile.length())
+            showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
@@ -474,7 +483,7 @@ object DirectDownloadManager {
             }
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, muxedFile, validateContainer = true)
-            showCompletedNotification(downloadId, outputFile, outputFile.length())
+            showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
             updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
@@ -748,7 +757,19 @@ object DirectDownloadManager {
         notify(item.id, NotificationCompat.Builder(context, CHANNEL_ID).setContentTitle("Downloading: ${item.title}").setContentText("0%").setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(true).setProgress(100, 0, true).build())
     }
     private fun updateDownloadNotification(id: String) { val item = _activeDownloads.value[id] ?: return; notify(id, NotificationCompat.Builder(appContext ?: return, CHANNEL_ID).setContentTitle("Downloading: ${item.title}").setContentText("${item.progress}% ${item.speed}").setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(true).setProgress(100, item.progress, item.totalBytes <= 0L).build()) }
-    private fun showCompletedNotification(id: String, file: File, actualSize: Long = file.length()) { val item = _activeDownloads.value[id] ?: return; notify(id, NotificationCompat.Builder(appContext ?: return, CHANNEL_ID).setContentTitle("Download Complete: ${item.title}").setContentText(formatFileSize(actualSize)).setSmallIcon(android.R.drawable.stat_sys_download_done).setAutoCancel(true).build()) }
+    private fun showCompletedNotification(id: String) {
+        val item = _activeDownloads.value[id] ?: return
+        val actualSize = item.totalBytes
+        notify(
+            id,
+            NotificationCompat.Builder(appContext ?: return, CHANNEL_ID)
+                .setContentTitle("Download Complete: ${item.title}")
+                .setContentText(formatFileSize(actualSize))
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setAutoCancel(true)
+                .build()
+        )
+    }
     private fun showFailedNotification(id: String, error: String) {
         val context = appContext ?: return
         notify(id, NotificationCompat.Builder(context, CHANNEL_ID).setContentTitle("Download Failed").setContentText(error).setSmallIcon(android.R.drawable.stat_notify_error).setAutoCancel(true).build())

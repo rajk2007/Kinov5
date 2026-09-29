@@ -352,28 +352,44 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             // Resolve links independently for every episode. A season can expose
                                             // different signed URLs per episode, so the selector link is not reusable.
                                             val episodeLink = runCatching {
-                                                val candidates = mutableListOf<ExtractorLink>()
+                                                val episodeLinks = mutableListOf<ExtractorLink>()
                                                 val episodeData = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                                                android.util.Log.e("BULK_DEBUG", "Episode S${episode.season}E${episode.episode}: data=${episodeData.take(80)}")
                                                 APIRepository(api).loadLinks(
                                                     data = episodeData,
                                                     isCasting = false,
                                                     subtitleCallback = { },
                                                     callback = { candidate ->
                                                         if (candidate.type != ExtractorLinkType.TORRENT && candidate.type != ExtractorLinkType.MAGNET) {
-                                                            candidates += candidate
+                                                            episodeLinks += candidate
                                                         }
                                                     }
                                                 )
-                                                val sameSource = candidates.filter { it.source.equals(link.source, ignoreCase = true) }
-                                                sameSource.firstOrNull { it.effectiveQuality() == selectedQuality && it.languageKey().equals(selectedLanguage, true) }
-                                                    ?: sameSource.firstOrNull { it.effectiveQuality() == selectedQuality }
-                                                    ?: sameSource.firstOrNull { it.languageKey().equals(selectedLanguage, true) }
-                                                    ?: sameSource.firstOrNull()
-                                                    ?: candidates.firstOrNull()
-                                            }.getOrNull()
+                                                android.util.Log.e("BULK_DEBUG", "  Available links: ${episodeLinks.size}")
+                                                episodeLinks.forEach { candidate ->
+                                                    android.util.Log.e("BULK_DEBUG", "    - ${candidate.name} (${candidate.source}) URL=${candidate.url.take(80)}")
+                                                }
 
+                                                // Never choose an MPD manifest as a direct-file fallback.
+                                                val usableLinks = episodeLinks.filterNot {
+                                                    it.url.contains(".mpd", ignoreCase = true)
+                                                }
+                                                val sameSource = usableLinks.filter { it.source.equals(link.source, ignoreCase = true) }
+                                                val sameLanguage = usableLinks.filter {
+                                                    it.languageKey().equals(selectedLanguage, ignoreCase = true)
+                                                }
+                                                sameSource.firstOrNull {
+                                                    it.effectiveQuality() == selectedQuality &&
+                                                        it.languageKey().equals(selectedLanguage, ignoreCase = true)
+                                                }
+                                                    ?: sameSource.firstOrNull { it.effectiveQuality() == selectedQuality }
+                                                    ?: sameLanguage.firstOrNull { it.effectiveQuality() == selectedQuality }
+                                                    ?: sameLanguage.firstOrNull()
+                                                    ?: usableLinks.maxByOrNull { it.effectiveQuality() }
+                                            }.getOrNull()
+                                            android.util.Log.e("BULK_DEBUG", "  Selected: ${episodeLink?.name}")
                                             if (episodeLink == null) {
-                                                android.util.Log.w("SEASON_DL", "No matching download link for episode ${episode.episode}")
+                                                android.util.Log.w("SEASON_DL", "No usable non-manifest link for episode ${episode.episode}")
                                                 return@forEachIndexed
                                             }
                                             val started = DirectDownloadManager.startDownload(
