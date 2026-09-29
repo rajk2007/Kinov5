@@ -184,12 +184,10 @@ private fun downloadStatusText(media: KinoLibraryItem): String {
 
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0L) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB")
-    var size = bytes.toDouble()
-    var unitIndex = 0
-    while (size >= 1024.0 && unitIndex < units.lastIndex) {
-        size /= 1024.0
-        unitIndex++
+    return when {
+        bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0)
+        bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0)
+        bytes >= 1_000L -> String.format("%.1f KB", bytes / 1_000.0)
+        else -> "$bytes B"
     }
-    return String.format("%.1f %s", size, units[unitIndex])
 }
