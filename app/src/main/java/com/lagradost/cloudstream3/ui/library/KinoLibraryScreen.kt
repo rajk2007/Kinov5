@@ -35,12 +35,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Switch
@@ -313,7 +315,7 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
             Spacer(Modifier.height(4.dp))
             Text(
                 when {
-                    item.status == DirectDownloadStatus.PAUSED -> "Paused · ${formatBytes(item.downloadedBytes)} saved"
+                    item.status == DirectDownloadStatus.PAUSED -> "⏸ PAUSED · ${formatBytes(item.downloadedBytes)} saved"
                     item.speed.isBlank() -> downloadStatusText(item.status)
                     else -> "${item.speed} · ${item.eta.ifBlank { "Calculating..." }}"
                 },
@@ -321,7 +323,17 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
                 fontSize = 11.sp,
             )
         }
-
+        IconButton(
+            onClick = { DirectDownloadManager.cancelDownload(item.id) },
+            modifier = Modifier.size(36.dp),
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Cancel download",
+                tint = KinoMuted,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 

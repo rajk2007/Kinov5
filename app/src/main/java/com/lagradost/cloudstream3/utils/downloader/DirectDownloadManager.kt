@@ -40,6 +40,8 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** State exposed to the direct-download UI. */
 data class DirectDownloadItem(
@@ -96,6 +98,8 @@ private data class HlsResponse(val url: String, val body: ByteArray)
 object DirectDownloadManager {
     private const val TAG = "DirectDownload"
     private const val CHANNEL_ID = "kino_downloads"
+    private const val DOWNLOAD_PREFS = "kino_downloads"
+    private const val SAVED_DOWNLOADS = "saved_downloads"
     private const val MAX_RETRIES = 5
     private const val MAX_RESOLVE_RETRIES = 2
 
@@ -105,9 +109,15 @@ object DirectDownloadManager {
     private val downloadJobs = ConcurrentHashMap<String, Job>()
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var appContext: Context? = null
+    private var hasLoadedPersistedDownloads = false
+    private var lastPersistAt = 0L
 
     fun initialize(context: Context) {
         appContext = context.applicationContext
+        if (!hasLoadedPersistedDownloads) {
+            loadPersistedDownloads()
+            hasLoadedPersistedDownloads = true
+        }
         createNotificationChannel()
     }
 
@@ -160,6 +170,7 @@ object DirectDownloadManager {
             selectedHeight = selectedHeight,
         )
         _activeDownloads.value = _activeDownloads.value + (downloadId to item)
+        persistDownloads(force = true)
         downloadJobs[downloadId] = downloadScope.launch {
             var currentLink = downloadLink
             var resolveAttempt = 0
@@ -197,7 +208,8 @@ object DirectDownloadManager {
         // Cancellation exits executeDownload through its CancellationException path. The
         // .part file and the item in activeDownloads are intentionally retained for resume.
         downloadJobs.remove(downloadId)?.cancel()
-        updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+        updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "") }
+        persistDownloads(force = true)
     }
 
     fun resumeDownload(downloadId: String) {
@@ -213,7 +225,8 @@ object DirectDownloadManager {
             headers = emptyMap(),
             type = if (isHlsUrl(item.url)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
         )
-        updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PENDING, error = null) }
+        updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, error = null, speed = "", eta = "") }
+        persistDownloads(force = true)
         downloadJobs[downloadId] = downloadScope.launch {
             if (isHls(link)) downloadHlsVideo(context, downloadId, link, item)
             else if (isDash(link)) downloadDashVideo(context, downloadId, link, item)
@@ -227,6 +240,7 @@ object DirectDownloadManager {
         item?.filePath?.let { File(it).delete() }
         item?.let { File(getDownloadDir(appContext ?: return), outputName(it.fileName) + ".part").delete() }
         _activeDownloads.value = _activeDownloads.value - downloadId
+        persistDownloads(force = true)
         appContext?.let { cancelNotification(downloadId, it) }
     }
 
@@ -703,6 +717,7 @@ object DirectDownloadManager {
                 eta = "",
             )
         }
+        persistDownloads(force = true)
     }
 
     private fun parseHlsVariants(playlist: String, baseUrl: String): List<HlsVariant> {
@@ -776,7 +791,82 @@ object DirectDownloadManager {
     private fun isHls(link: ExtractorLink): Boolean = link.type == ExtractorLinkType.M3U8 || isHlsUrl(link.url)
     private fun isHlsUrl(url: String): Boolean = url.contains(".m3u8", ignoreCase = true)
     private fun validateUrl(url: String): Boolean = runCatching { URI(url).let { it.scheme in setOf("http", "https") && !it.host.isNullOrBlank() } }.getOrDefault(false)
-    private fun updateItem(id: String, update: (DirectDownloadItem) -> DirectDownloadItem) { _activeDownloads.value = _activeDownloads.value.toMutableMap().apply { get(id)?.let { put(id, update(it)) } } }
+
+    private fun persistDownloads(force: Boolean = false) {
+        val context = appContext ?: return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastPersistAt < 2_000L) return
+        val downloads = JSONArray()
+        _activeDownloads.value.values.forEach { item ->
+            downloads.put(JSONObject().apply {
+                put("id", item.id)
+                put("title", item.title)
+                put("url", item.url)
+                put("fileName", item.fileName)
+                put("posterUrl", item.posterUrl ?: JSONObject.NULL)
+                put("apiName", item.apiName)
+                put("progress", item.progress)
+                put("downloadedBytes", item.downloadedBytes)
+                put("totalBytes", item.totalBytes)
+                put("status", item.status.name)
+                put("filePath", item.filePath ?: JSONObject.NULL)
+                put("selectedHeight", item.selectedHeight)
+                put("error", item.error ?: JSONObject.NULL)
+            })
+        }
+        context.getSharedPreferences(DOWNLOAD_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(SAVED_DOWNLOADS, downloads.toString())
+            .apply()
+        lastPersistAt = now
+    }
+
+    private fun loadPersistedDownloads() {
+        val context = appContext ?: return
+        val saved = context.getSharedPreferences(DOWNLOAD_PREFS, Context.MODE_PRIVATE)
+            .getString(SAVED_DOWNLOADS, null) ?: return
+        runCatching {
+            val restored = mutableMapOf<String, DirectDownloadItem>()
+            JSONArray(saved).let { array ->
+                for (index in 0 until array.length()) {
+                    val json = array.getJSONObject(index)
+                    val savedStatus = runCatching { DirectDownloadStatus.valueOf(json.optString("status")) }
+                        .getOrDefault(DirectDownloadStatus.PAUSED)
+                    val status = when (savedStatus) {
+                        DirectDownloadStatus.DOWNLOADING, DirectDownloadStatus.PENDING -> DirectDownloadStatus.PAUSED
+                        else -> savedStatus
+                    }
+                    restored[json.getString("id")] = DirectDownloadItem(
+                        id = json.getString("id"),
+                        title = json.getString("title"),
+                        url = json.getString("url"),
+                        fileName = json.getString("fileName"),
+                        posterUrl = json.optString("posterUrl").takeUnless { it.isBlank() || it == "null" },
+                        apiName = json.optString("apiName", "Unknown"),
+                        progress = json.optInt("progress", 0),
+                        downloadedBytes = json.optLong("downloadedBytes", 0L),
+                        totalBytes = json.optLong("totalBytes", 0L),
+                        status = status,
+                        filePath = json.optString("filePath").takeUnless { it.isBlank() || it == "null" },
+                        error = json.optString("error").takeUnless { it.isBlank() || it == "null" },
+                        selectedHeight = json.optInt("selectedHeight", 0),
+                    )
+                }
+            }
+            _activeDownloads.value = restored
+            lastPersistAt = System.currentTimeMillis()
+            Log.d(TAG, "Restored ${restored.size} persisted downloads")
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to restore persisted downloads", error)
+        }
+    }
+
+    private fun updateItem(id: String, update: (DirectDownloadItem) -> DirectDownloadItem) {
+        _activeDownloads.value = _activeDownloads.value.toMutableMap().apply {
+            get(id)?.let { put(id, update(it)) }
+        }
+        persistDownloads()
+    }
     private fun getDownloadDir(context: Context): File = (context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: File(context.filesDir, "downloads")).apply { mkdirs() }
     private fun outputName(fileName: String): String = if (fileName.substringAfterLast('.', "").isNotBlank()) fileName else "$fileName.mp4"
 
