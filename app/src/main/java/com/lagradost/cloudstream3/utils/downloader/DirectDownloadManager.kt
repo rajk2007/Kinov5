@@ -55,6 +55,7 @@ data class DirectDownloadItem(
     val status: DirectDownloadStatus = DirectDownloadStatus.PENDING,
     val filePath: String? = null,
     val speed: String = "",
+    val eta: String = "",
     val error: String? = null,
     val selectedHeight: Int = 0,
 )
@@ -95,7 +96,7 @@ private data class HlsResponse(val url: String, val body: ByteArray)
 object DirectDownloadManager {
     private const val TAG = "DirectDownload"
     private const val CHANNEL_ID = "kino_downloads"
-    private const val MAX_RETRIES = 3
+    private const val MAX_RETRIES = 5
     private const val MAX_RESOLVE_RETRIES = 2
 
     private val _activeDownloads = MutableStateFlow<Map<String, DirectDownloadItem>>(emptyMap())
@@ -192,6 +193,9 @@ object DirectDownloadManager {
     }
 
     fun pauseDownload(downloadId: String) {
+        Log.d(TAG, "Pausing download without deleting partial data: $downloadId")
+        // Cancellation exits executeDownload through its CancellationException path. The
+        // .part file and the item in activeDownloads are intentionally retained for resume.
         downloadJobs.remove(downloadId)?.cancel()
         updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
     }
@@ -241,7 +245,7 @@ object DirectDownloadManager {
                         readTimeout = 300_000
                         instanceFollowRedirects = true
                         requestHeaders(link).forEach { (key, value) -> setRequestProperty(key, value) }
-                        if (existingBytes > 0L && !isSignedDirectUrl(link.url)) setRequestProperty("Range", "bytes=$existingBytes-")
+                        if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
                     }
                     val responseCode = connection.responseCode
                     Log.e("DL_404", "═════════════════════════════")
@@ -254,6 +258,20 @@ object DirectDownloadManager {
                     Log.e("DL_404", "  Content-Type: ${connection.contentType}")
                     Log.e("DL_404", "  Content-Length: ${connection.contentLengthLong}")
                     Log.e("DL_404", "  Final URL: ${connection.url}")
+                    if (responseCode == 429) {
+                        attempt++
+                        if (attempt >= MAX_RETRIES) throw httpException(responseCode, connection.responseMessage)
+                        val retryAfterSeconds = connection.getHeaderField("Retry-After")?.toLongOrNull()
+                        val backoff = retryAfterSeconds?.times(1_000L)?.coerceIn(5_000L, 60_000L)
+                            ?: when (attempt) {
+                                1 -> 5_000L
+                                2 -> 15_000L
+                                else -> 30_000L
+                            }
+                        Log.w(TAG, "HTTP 429 for ${item.title}; retrying in ${backoff / 1_000L}s (attempt $attempt/$MAX_RETRIES)")
+                        delay(backoff)
+                        continue
+                    }
                     if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
                         if (responseCode == HttpURLConnection.HTTP_NOT_FOUND || responseCode == HttpURLConnection.HTTP_FORBIDDEN) {
                             Log.e("DL_404", "❌ $responseCode ERROR - URL may be expired")
@@ -294,7 +312,15 @@ object DirectDownloadManager {
                                 if (now - lastUpdate >= 500L) {
                                     val elapsed = (now - startTime).coerceAtLeast(1L) / 1000.0
                                     val progress = if (totalBytes > 0L) (downloadedBytes * 100L / totalBytes).toInt().coerceIn(0, 100) else 0
-                                    updateItem(downloadId) { it.copy(progress = progress, downloadedBytes = downloadedBytes, speed = formatSpeed((downloadedBytes - startingBytes) / elapsed)) }
+                                    val speedBps = (downloadedBytes - startingBytes) / elapsed
+                                    updateItem(downloadId) {
+                                        it.copy(
+                                            progress = progress,
+                                            downloadedBytes = downloadedBytes,
+                                            speed = formatSpeed(speedBps),
+                                            eta = calculateEta(downloadedBytes, totalBytes, speedBps),
+                                        )
+                                    }
                                     updateDownloadNotification(downloadId)
                                     lastUpdate = now
                                 }
@@ -666,7 +692,17 @@ object DirectDownloadManager {
         require(tempFile.renameTo(outputFile)) { "Unable to finalize download." }
         val actualSize = outputFile.length()
         Log.d(TAG, "Download completed: ${outputFile.name} (${formatFileSize(actualSize)})")
-        updateItem(downloadId) { it.copy(status = DirectDownloadStatus.COMPLETED, progress = 100, downloadedBytes = actualSize, totalBytes = actualSize, filePath = outputFile.absolutePath, speed = "") }
+        updateItem(downloadId) {
+            it.copy(
+                status = DirectDownloadStatus.COMPLETED,
+                progress = 100,
+                downloadedBytes = actualSize,
+                totalBytes = actualSize,
+                filePath = outputFile.absolutePath,
+                speed = "",
+                eta = "",
+            )
+        }
     }
 
     private fun parseHlsVariants(playlist: String, baseUrl: String): List<HlsVariant> {
@@ -777,6 +813,15 @@ object DirectDownloadManager {
     private fun notify(id: String, notification: Notification) { appContext?.let { runCatching { NotificationManagerCompat.from(it).notify(id.hashCode(), notification) } } }
     private fun cancelNotification(id: String, context: Context) { runCatching { NotificationManagerCompat.from(context).cancel(id.hashCode()) } }
     private fun httpException(code: Int, message: String?): IOException = when (code) { 401 -> IOException("Authentication required (401)."); 403 -> IOException("Access denied (403)."); 404 -> IOException("File not found (404). The link may have expired."); in 500..599 -> IOException("Server error ($code). Try again later."); else -> IOException("HTTP $code: ${message ?: "Request failed"}") }
+    private fun calculateEta(downloadedBytes: Long, totalBytes: Long, speedBps: Double): String {
+        if (totalBytes <= 0L || downloadedBytes >= totalBytes || speedBps <= 0.0) return "Calculating..."
+        val remainingSeconds = ((totalBytes - downloadedBytes) / speedBps).toLong().coerceAtLeast(1L)
+        return when {
+            remainingSeconds >= 3600L -> "${remainingSeconds / 3600L}h ${(remainingSeconds % 3600L) / 60L}m left"
+            remainingSeconds >= 60L -> "${remainingSeconds / 60L}m left"
+            else -> "${remainingSeconds}s left"
+        }
+    }
     private fun formatFileSize(bytes: Long): String = when { bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0); bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0); bytes >= 1_000L -> String.format("%.1f KB", bytes / 1_000.0); else -> "$bytes B" }
     private fun formatSpeed(bytesPerSecond: Double): String = when { bytesPerSecond >= 1_000_000 -> String.format("%.1f MB/s", bytesPerSecond / 1_000_000.0); bytesPerSecond >= 1_000 -> String.format("%.1f KB/s", bytesPerSecond / 1_000.0); else -> String.format("%.0f B/s", bytesPerSecond) }
     private fun sanitizeFileName(name: String): String = name.replace(Regex("[^\\w\\s.-]"), "").trim().take(100)

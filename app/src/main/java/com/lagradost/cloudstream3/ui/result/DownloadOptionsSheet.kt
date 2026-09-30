@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -124,8 +125,11 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
         if (isProbing) {
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(20.dp), color = Color(0xFFE50914)); Text("Detecting available qualities…", color = Color.Gray) }
         } else {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                qualityOptions.forEach { option ->
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(qualityOptions, key = { it.id }) { option ->
                     val selected = option.id == selectedId
                     val display = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {

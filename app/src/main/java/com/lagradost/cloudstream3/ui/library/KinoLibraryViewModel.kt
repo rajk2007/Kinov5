@@ -37,7 +37,7 @@ class KinoLibraryViewModel : ViewModel() {
                         resume.parentId.toString()
                     ) ?: return@mapNotNull null
                     val watchPos = DataStoreHelper.getViewPos(resume.episodeId)
-                    KinoLibraryItem(
+                    resume.updateTime to KinoLibraryItem(
                         name = headerCache.name,
                         url = headerCache.url,
                         apiName = headerCache.apiName,
@@ -48,6 +48,9 @@ class KinoLibraryViewModel : ViewModel() {
                         duration = watchPos?.duration ?: 0L,
                     )
                 }
+                    .sortedByDescending { it.first }
+                    .take(10)
+                    .map { it.second }
                 _continueWatching.value = resumeList
 
                 // Keep the legacy queue entries for pending items, but use the direct

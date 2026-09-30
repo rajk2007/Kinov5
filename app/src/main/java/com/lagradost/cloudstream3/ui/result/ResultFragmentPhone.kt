@@ -392,11 +392,24 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 android.util.Log.w("SEASON_DL", "No usable non-manifest link for episode ${episode.episode}")
                                                 return@forEachIndexed
                                             }
+                                            val isMovie = loadResponse is MovieLoadResponse
+                                            val episodeNumber = episode.episode
+                                            val seasonNumber = episode.season ?: 1
+                                            val downloadTitle = if (isMovie) {
+                                                loadResponse.name
+                                            } else {
+                                                "${loadResponse.name} - S${seasonNumber}E${episodeNumber}"
+                                            }
+                                            val downloadFileName = if (isMovie) {
+                                                loadResponse.name
+                                            } else {
+                                                "${loadResponse.name}_S${seasonNumber}E${episodeNumber}"
+                                            }
                                             val started = DirectDownloadManager.startDownload(
                                                 context = requireContext(),
                                                 link = episodeLink,
-                                                title = "${loadResponse.name} - Episode ${episode.episode}",
-                                                fileName = "${loadResponse.name}_S${episode.season ?: 0}E${episode.episode}",
+                                                title = downloadTitle,
+                                                fileName = downloadFileName,
                                                 posterUrl = loadResponse.posterUrl,
                                                 apiName = apiName,
                                                 selectedHeight = selectedHeight,
@@ -404,7 +417,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             )
                                             if (started) {
                                                 withContext(Dispatchers.Main) {
-                                                    Toast.makeText(requireContext(), "Download started: ${loadResponse.name} - Episode ${episode.episode}", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(requireContext(), "Download started: $downloadTitle", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         }

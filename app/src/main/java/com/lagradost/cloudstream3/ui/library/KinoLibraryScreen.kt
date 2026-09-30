@@ -304,14 +304,22 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
         AsyncImage(model = item.posterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(70.dp, 92.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
-            Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(cleanLibraryTitle(item.title), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(downloadQuality(item), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
             Spacer(Modifier.height(5.dp))
             Text("${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}", color = KinoMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             LinearProgressIndicator(progress = { (item.progress / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = KinoRed, trackColor = KinoTrack)
             Spacer(Modifier.height(4.dp))
-            Text(if (item.speed.isBlank()) downloadStatusText(item.status) else "${item.speed} · ${downloadEta(item)}", color = KinoMuted, fontSize = 11.sp)
+            Text(
+                when {
+                    item.status == DirectDownloadStatus.PAUSED -> "Paused · ${formatBytes(item.downloadedBytes)} saved"
+                    item.speed.isBlank() -> downloadStatusText(item.status)
+                    else -> "${item.speed} · ${item.eta.ifBlank { "Calculating..." }}"
+                },
+                color = KinoMuted,
+                fontSize = 11.sp,
+            )
         }
 
     }
@@ -430,8 +438,9 @@ private fun SettingRow(title: String, value: String, onClick: (() -> Unit)? = nu
 }
 
 private fun cleanLibraryTitle(title: String): String = title
-    .substringBefore(" - ")
-    .substringBefore(":")
+    .replace(Regex("\\s*-\\s*Episode\\s+0\\b", RegexOption.IGNORE_CASE), "")
+    .replace(Regex("\\s+Episode\\s+0\\b", RegexOption.IGNORE_CASE), "")
+    .replace("S0E", "E", ignoreCase = false)
     .trim()
 
 private fun localFile(path: String): File? {
@@ -500,7 +509,6 @@ private fun downloadStatusText(status: DirectDownloadStatus): String = when (sta
     DirectDownloadStatus.FAILED -> "Download failed"
     DirectDownloadStatus.COMPLETED -> "Completed"
 }
-private fun downloadEta(item: DirectDownloadItem): String = if (item.totalBytes > 0L && item.speed.isNotBlank()) "${formatDuration(((item.totalBytes - item.downloadedBytes).coerceAtLeast(0L) * 1000L) / 1_000_000L)} left" else "Calculating ETA"
 private fun formatDuration(milliseconds: Long): String {
     val minutes = (milliseconds / 60_000L).coerceAtLeast(0L)
     val hours = minutes / 60L
