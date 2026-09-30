@@ -28,9 +28,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -366,7 +366,7 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit, onDelete: (
         Box {
             AsyncImage(model = group.posterUrl ?: "", contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.size(88.dp, 112.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
             Row(Modifier.align(Alignment.TopStart).padding(4.dp).background(KinoTeal, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                Icon(Icons.Default.ArrowDownward, contentDescription = "Downloaded", tint = Color.White, modifier = Modifier.size(10.dp))
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Downloaded", tint = Color.White, modifier = Modifier.size(10.dp))
                 Text("Downloaded", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             }
         }
@@ -467,7 +467,10 @@ private fun groupDownloads(items: List<Any>): List<DownloadGroup> = items.mapNot
 
 private fun DirectDownloadItem.toLibraryItem() = KinoLibraryItem(name = title, url = url, apiName = apiName, posterUrl = posterUrl, downloadedBytes = downloadedBytes, totalBytes = totalBytes, progress = progress / 100f, localUri = filePath, downloadStatus = status)
 private fun downloadQuality(item: DirectDownloadItem): String = if (item.selectedHeight > 0) "${item.selectedHeight}p · Direct" else "Direct download"
-private fun downloadInfo(item: KinoLibraryItem): String = "${formatBytes(item.totalBytes)} · ${if (item.localUri != null) "Offline" else "Downloaded"}
+private fun downloadInfo(item: KinoLibraryItem): String {
+    val availability = if (item.localUri != null) "Offline" else "Downloaded"
+    return "${formatBytes(item.totalBytes)} · $availability"
+}
 private fun downloadStatusText(status: DirectDownloadStatus): String = when (status) {
     DirectDownloadStatus.DOWNLOADING -> "Downloading..."
     DirectDownloadStatus.PAUSED -> "Paused"
