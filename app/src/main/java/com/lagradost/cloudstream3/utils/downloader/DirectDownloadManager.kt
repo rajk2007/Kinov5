@@ -60,6 +60,8 @@ data class DirectDownloadItem(
     val eta: String = "",
     val error: String? = null,
     val selectedHeight: Int = 0,
+    val referer: String = "",
+    val headers: Map<String, String> = emptyMap(),
 )
 
 enum class DirectDownloadStatus { PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILED }
@@ -168,6 +170,8 @@ object DirectDownloadManager {
             posterUrl = posterUrl,
             apiName = apiName,
             selectedHeight = selectedHeight,
+            referer = downloadLink.referer,
+            headers = downloadLink.headers,
         )
         _activeDownloads.value = _activeDownloads.value + (downloadId to item)
         persistDownloads(force = true)
@@ -194,7 +198,15 @@ object DirectDownloadManager {
                 }
                 Log.e("DL_404", "✅ Got fresh link: ${freshLink.url.take(150)}")
                 currentLink = freshLink
-                updateItem(downloadId) { it.copy(url = cleanDownloadUrl(freshLink.url), status = DirectDownloadStatus.PENDING, error = null) }
+                updateItem(downloadId) {
+                    it.copy(
+                        url = cleanDownloadUrl(freshLink.url),
+                        referer = freshLink.referer,
+                        headers = freshLink.headers,
+                        status = DirectDownloadStatus.PENDING,
+                        error = null,
+                    )
+                }
                 delay(1_000L)
             }
         }
@@ -213,25 +225,62 @@ object DirectDownloadManager {
     }
 
     fun resumeDownload(downloadId: String) {
-        val item = _activeDownloads.value[downloadId] ?: return
-        if (item.status != DirectDownloadStatus.PAUSED) return
-        val context = appContext ?: return
+        Log.e(TAG, "========== resumeDownload($downloadId) ==========")
+        val item = _activeDownloads.value[downloadId]
+        if (item == null) {
+            Log.e(TAG, "Resume aborted: item not found. Active IDs=${_activeDownloads.value.keys}")
+            return
+        }
+        Log.e(TAG, "Resume item='${item.title}', status=${item.status}, url=${item.url.take(120)}, downloaded=${item.downloadedBytes}, total=${item.totalBytes}")
+        if (item.status != DirectDownloadStatus.PAUSED) {
+            Log.e(TAG, "Resume aborted: expected PAUSED, got ${item.status}")
+            return
+        }
+        if (item.url.isBlank()) {
+            Log.e(TAG, "Resume aborted: URL is blank")
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = "No URL available for resume") }
+            persistDownloads(force = true)
+            return
+        }
+        val context = appContext
+        if (context == null) {
+            Log.e(TAG, "Resume aborted: appContext is null")
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = "No context available") }
+            persistDownloads(force = true)
+            return
+        }
         val link = ExtractorLink(
-            source = "Direct download",
+            source = item.apiName,
             name = item.title,
             url = item.url,
-            referer = "",
+            referer = item.referer,
             quality = 0,
-            headers = emptyMap(),
+            headers = item.headers,
             type = if (isHlsUrl(item.url)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
         )
+        Log.e(TAG, "Resume link created: referer=${link.referer.isNotBlank()}, headers=${link.headers.keys}, type=${link.type}")
         updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, error = null, speed = "", eta = "") }
         persistDownloads(force = true)
-        downloadJobs[downloadId] = downloadScope.launch {
-            if (isHls(link)) downloadHlsVideo(context, downloadId, link, item)
-            else if (isDash(link)) downloadDashVideo(context, downloadId, link, item)
-            else executeDownload(context, downloadId, link)
+        val job = downloadScope.launch {
+            Log.e(TAG, "Resume coroutine started for $downloadId")
+            try {
+                val result = when {
+                    isHls(link) -> downloadHlsVideo(context, downloadId, link, item)
+                    isDash(link) -> downloadDashVideo(context, downloadId, link, item)
+                    else -> executeDownload(context, downloadId, link)
+                }
+                Log.e(TAG, "Resume coroutine finished for $downloadId, result=$result")
+            } catch (error: CancellationException) {
+                Log.e(TAG, "Resume coroutine cancelled for $downloadId")
+                throw error
+            } catch (error: Exception) {
+                Log.e(TAG, "Resume failed for $downloadId", error)
+                updateItem(downloadId) { current -> current.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
+                persistDownloads(force = true)
+            }
         }
+        downloadJobs[downloadId] = job
+        Log.e(TAG, "Resume job stored for $downloadId: $job")
     }
 
     fun cancelDownload(downloadId: String) {
@@ -358,9 +407,9 @@ object DirectDownloadManager {
                     connection?.disconnect()
                 }
             }
-            throw IOException("Download failed after $MAX_RETRIES attempts.")
+throw IOException("Download failed after $MAX_RETRIES attempts.")
         } catch (_: CancellationException) {
-            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+            markPausedIfNoReplacement(downloadId)
             return true
         } catch (error: Exception) {
             // Return retryable HTTP expiry/auth failures to startDownload so it can
@@ -407,7 +456,7 @@ object DirectDownloadManager {
             showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
-            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+            markPausedIfNoReplacement(downloadId)
             return true
         } catch (error: Exception) {
             tempFile.delete()
@@ -526,7 +575,7 @@ object DirectDownloadManager {
             showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
-            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED) }
+            markPausedIfNoReplacement(downloadId)
             return true
         } catch (error: Exception) {
             videoFile.delete()
@@ -811,6 +860,8 @@ object DirectDownloadManager {
                 put("status", item.status.name)
                 put("filePath", item.filePath ?: JSONObject.NULL)
                 put("selectedHeight", item.selectedHeight)
+                put("referer", item.referer)
+                put("headers", JSONObject().apply { item.headers.forEach { (key, value) -> put(key, value) } })
                 put("error", item.error ?: JSONObject.NULL)
             })
         }
@@ -850,6 +901,10 @@ object DirectDownloadManager {
                         filePath = json.optString("filePath").takeUnless { it.isBlank() || it == "null" },
                         error = json.optString("error").takeUnless { it.isBlank() || it == "null" },
                         selectedHeight = json.optInt("selectedHeight", 0),
+                        referer = json.optString("referer", ""),
+                        headers = json.optJSONObject("headers")?.let { headersJson ->
+                            headersJson.keys().asSequence().associateWith { key -> headersJson.optString(key) }
+                        } ?: emptyMap(),
                     )
                 }
             }
@@ -858,6 +913,14 @@ object DirectDownloadManager {
             Log.d(TAG, "Restored ${restored.size} persisted downloads")
         }.onFailure { error ->
             Log.e(TAG, "Failed to restore persisted downloads", error)
+        }
+    }
+
+    private fun markPausedIfNoReplacement(id: String) {
+        if (downloadJobs[id]?.isActive != true) {
+            updateItem(id) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "") }
+        } else {
+            Log.d(TAG, "Ignoring stale cancellation for $id because a replacement job is active")
         }
     }
 

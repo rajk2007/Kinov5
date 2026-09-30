@@ -351,7 +351,12 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                         downloadEpisodes.forEachIndexed { index, episode ->
                                             // Resolve links independently for every episode. A season can expose
                                             // different signed URLs per episode, so the selector link is not reusable.
-                                            val episodeLink = runCatching {
+                                            // For a single episode, the selected link is already resolved and carries
+                                            // the provider's signed URL and headers. Re-loading links here added a
+                                            // second network round trip after the user pressed Download.
+                                            val episodeLink = if (downloadEpisodes.size == 1) {
+                                                link
+                                            } else runCatching {
                                                 val episodeLinks = mutableListOf<ExtractorLink>()
                                                 val episodeData = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
                                                 android.util.Log.e("BULK_DEBUG", "Episode S${episode.season}E${episode.episode}: data=${episodeData.take(80)}")
