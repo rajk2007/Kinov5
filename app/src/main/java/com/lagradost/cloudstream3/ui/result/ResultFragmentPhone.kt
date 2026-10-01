@@ -197,8 +197,52 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     } finally {
                         prefetchingDownloadLinks.remove(cacheKey)
                     }
-                }
             }
+        }
+    }
+
+    /** Starts resolving provider links as soon as the details screen is created. */
+    private fun prefetchAllEpisodeLinks() {
+        val pageUrl = arguments?.getString("url") ?: return
+        val apiName = arguments?.getString("apiName") ?: return
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                val response = APIRepository(api).load(pageUrl)
+                val loadResponse = (response as? Resource.Success)?.value ?: return@launch
+                when (loadResponse) {
+                    is MovieLoadResponse -> prefetchLinkData(pageUrl, apiName, loadResponse.dataUrl)
+                    is TvSeriesLoadResponse -> loadResponse.episodes.forEach { episode ->
+                        prefetchLinkData(pageUrl, apiName, episode.data)
+                    }
+                    is AnimeLoadResponse -> loadResponse.episodes.values.flatten().forEach { episode ->
+                        prefetchLinkData(pageUrl, apiName, episode.data)
+                    }
+                    else -> Unit
+                }
+            } catch (error: Exception) {
+                android.util.Log.d("PrefetchLinks", "Page prefetch failed", error)
+            }
+        }
+    }
+
+    private suspend fun prefetchLinkData(pageUrl: String, apiName: String, data: String) {
+        val normalizedData = data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+        val cacheKey = "$pageUrl|$normalizedData"
+        if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return
+        try {
+            val api = APIHolder.getApiFromNameNull(apiName) ?: return
+            val links = mutableListOf<ExtractorLink>()
+            APIRepository(api).loadLinks(
+                data = normalizedData,
+                isCasting = false,
+                subtitleCallback = { },
+                callback = { link -> links += link },
+            )
+            cacheDownloadLinks(cacheKey, filterDownloadLinks(links))
+        } finally {
+            prefetchingDownloadLinks.remove(cacheKey)
+        }
     }
 
     private val gestureRegionsListener =
@@ -425,37 +469,15 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             modifier = androidx.compose.ui.Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF121212))
-                .padding(16.dp),
+                .height(120.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         ) {
-            androidx.compose.material3.Text(
-                "Download Options",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            )
-            Spacer(androidx.compose.ui.Modifier.height(16.dp))
-            androidx.compose.material3.Text("Language", color = Color.White, fontSize = 16.sp)
-            Spacer(androidx.compose.ui.Modifier.height(8.dp))
-            androidx.compose.material3.Text("Auto    Original", color = Color.LightGray, fontSize = 14.sp)
-            Spacer(androidx.compose.ui.Modifier.height(16.dp))
-            androidx.compose.material3.Text("Quality", color = Color.White, fontSize = 16.sp)
-            Spacer(androidx.compose.ui.Modifier.height(8.dp))
-            listOf("1080p", "720p", "480p").forEach { quality ->
-                androidx.compose.material3.Text(
-                    quality,
-                    color = Color.Gray,
-                    modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                )
-            }
             if (isDetecting) {
-                Spacer(androidx.compose.ui.Modifier.height(8.dp))
-                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        color = Color(0xFFE50914),
-                        modifier = androidx.compose.ui.Modifier.padding(end = 8.dp).height(16.dp),
-                    )
-                    androidx.compose.material3.Text("Detecting available options…", color = Color.Gray, fontSize = 12.sp)
-                }
+                androidx.compose.material3.CircularProgressIndicator(
+                    color = Color(0xFFE50914),
+                    modifier = androidx.compose.ui.Modifier.height(24.dp),
+                )
             }
         }
     }
@@ -723,6 +745,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         viewModel = ViewModelProvider(this)[ResultViewModel2::class.java]
         syncModel = ViewModelProvider(this)[SyncViewModel::class.java]
         updateUIEvent += ::updateUI
+        prefetchAllEpisodeLinks()
 
         resultBinding = binding.fragmentResult
         recommendationBinding = binding.resultRecommendations

@@ -146,14 +146,6 @@ object DirectDownloadManager {
         Log.e(TAG, "URL_DEBUG original link URL: ${link.url}")
         val downloadUrl = cleanDownloadUrl(link.url)
         Log.e(TAG, "URL_DEBUG clean URL for download: $downloadUrl")
-        if (downloadUrl.contains(".mpd", ignoreCase = true)) {
-            Log.e(TAG, "Rejecting manifest URL before download: ${downloadUrl.take(120)}")
-            showToastSafe(
-                context,
-                "Cannot download a manifest file. Please choose a different quality or source.",
-            )
-            return false
-        }
         val downloadLink = if (downloadUrl == link.url) link else ExtractorLink(
             source = link.source,
             name = link.name,
