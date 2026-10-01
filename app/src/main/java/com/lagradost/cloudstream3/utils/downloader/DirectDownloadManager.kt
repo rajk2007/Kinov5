@@ -144,6 +144,21 @@ object DirectDownloadManager {
         Log.e(TAG, "URL_DEBUG original link URL: ${link.url}")
         val downloadUrl = cleanDownloadUrl(link.url)
         Log.e(TAG, "URL_DEBUG clean URL for download: $downloadUrl")
+        Log.e("DL_DEBUG", "═════════════════════════════")
+        Log.e("DL_DEBUG", "startDownload called")
+        Log.e("DL_DEBUG", "URL: ${downloadUrl.take(300)}")
+        Log.e("DL_DEBUG", "URL length: ${downloadUrl.length}")
+        Log.e("DL_DEBUG", "URL lowercase: ${downloadUrl.lowercase().take(150)}")
+        Log.e("DL_DEBUG", "Link type: ${link.type}")
+        Log.e("DL_DEBUG", "Link type name: ${link.type.name}")
+        Log.e("DL_DEBUG", "Contains .mpd: ${downloadUrl.contains(".mpd", ignoreCase = true)}")
+        Log.e("DL_DEBUG", "Contains .m3u8: ${downloadUrl.contains(".m3u8", ignoreCase = true)}")
+        Log.e("DL_DEBUG", "Contains m3u8: ${downloadUrl.contains("m3u8", ignoreCase = true)}")
+        Log.e("DL_DEBUG", "Contains dash: ${downloadUrl.lowercase().contains("dash")}")
+        Log.e("DL_DEBUG", "Contains manifest: ${downloadUrl.lowercase().contains("manifest")}")
+        Log.e("DL_DEBUG", "Type is M3U8: ${link.type == ExtractorLinkType.M3U8}")
+        Log.e("DL_DEBUG", "Type is DASH: ${link.type.name.equals("DASH", ignoreCase = true)}")
+        Log.e("DL_DEBUG", "═════════════════════════════")
         val downloadLink = if (downloadUrl == link.url) link else ExtractorLink(
             source = link.source,
             name = link.name,
@@ -182,18 +197,23 @@ object DirectDownloadManager {
                 } else {
                     ""
                 }
-                Log.e("DL_TYPE", "URL=${currentLink.url.take(300)} type=${currentLink.type} contentType=$contentType")
+                val isHlsLink = isHls(currentLink) || isHlsContentType(contentType)
+                val isDashLink = isDash(currentLink) || isDashContentType(contentType) || isManifestUrl(currentLink.url)
+                Log.e("DL_ROUTE", "About to route URL=${currentLink.url.take(300)}")
+                Log.e("DL_ROUTE", "isHls = $isHlsLink")
+                Log.e("DL_ROUTE", "isDash = $isDashLink")
+                Log.e("DL_ROUTE", "Content-Type: $contentType")
                 val result = when {
-                    isHls(currentLink) || isHlsContentType(contentType) -> {
-                        Log.e("DL_TYPE", "HLS download detected")
+                    isHlsLink -> {
+                        Log.e("DL_ROUTE", "Taking HLS path")
                         downloadHlsVideo(context.applicationContext, downloadId, currentLink, item)
                     }
-                    isDash(currentLink) || isDashContentType(contentType) || isManifestUrl(currentLink.url) -> {
-                        Log.e("DL_TYPE", "DASH download detected")
+                    isDashLink -> {
+                        Log.e("DL_ROUTE", "Taking DASH path")
                         downloadDashVideo(context.applicationContext, downloadId, currentLink, item)
                     }
                     else -> {
-                        Log.e("DL_TYPE", "Direct download detected")
+                        Log.e("DL_ROUTE", "Taking DIRECT path")
                         executeDownload(context.applicationContext, downloadId, currentLink)
                     }
                 }
@@ -461,9 +481,12 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
         try {
             val headers = requestHeaders(link)
+            Log.e("DL_EXEC", "Entered downloadHlsVideo")
+            Log.e("DL_EXEC", "Fetching manifest from: ${link.url.take(300)}")
             var playlistResponse = requestHls(link.url, headers)
             var playlistUrl = playlistResponse.url
             var playlist = String(playlistResponse.body, Charsets.UTF_8)
+            Log.e("DL_EXEC", "HLS manifest length: ${playlist.length}")
             require(playlist.contains("#EXTM3U")) { "The server did not return an HLS playlist." }
             if (playlist.contains("#EXT-X-STREAM-INF", ignoreCase = true)) {
                 val variants = parseHlsVariants(playlist, playlistUrl)
@@ -481,10 +504,12 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .filter { it.isNotEmpty() && !it.startsWith("#") }
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
+            Log.e("DL_EXEC", "HLS segments found: ${segments.size}")
 
             downloadSegmentsParallel(downloadId, segments, headers, tempFile)
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
+            Log.e("DL_EXEC", "HLS output file size: ${outputFile.length()}")
             showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
@@ -576,9 +601,12 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         val muxedFile = File(outputFile.parentFile, "${outputFile.name}.muxed.part")
         try {
             val headers = requestHeaders(link)
-            Log.e("DASH_DEBUG", "Fetching MPD: ${link.url.take(300)}")
+            Log.e("DL_EXEC", "Entered downloadDashVideo")
+            Log.e("DL_EXEC", "Fetching manifest from: ${link.url.take(300)}")
+            Log.e("DASH_PARSE", "Fetching MPD: ${link.url.take(300)}")
             val response = requestHls(link.url, headers)
             val manifest = String(response.body, Charsets.UTF_8)
+            Log.e("DASH_PARSE", "Manifest length: ${manifest.length}")
             require(manifest.contains("<MPD", ignoreCase = true)) { "The server did not return a DASH MPD manifest." }
             val videoRepresentations = parseDashRepresentations(manifest, response.url, contentType = "video")
             val audioRepresentations = parseDashRepresentations(manifest, response.url, contentType = "audio")
@@ -593,6 +621,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             require(videoSegments.isNotEmpty()) { "No DASH video segments were found in the manifest." }
             val selectedAudio = audioRepresentations.maxByOrNull { it.bandwidth }
             val audioSegments = selectedAudio?.segments.orEmpty()
+            Log.e("DASH_PARSE", "Found ${videoSegments.size} video and ${audioSegments.size} audio segments")
             Log.e("DASH_AUDIO", "Found ${videoRepresentations.size} video and ${audioRepresentations.size} audio representations")
             downloadSegmentsParallel(downloadId, videoSegments, headers, videoFile, progressOffset = 0, progressTotal = videoSegments.size + audioSegments.size)
             if (audioSegments.isNotEmpty()) {
@@ -604,6 +633,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             }
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, muxedFile, validateContainer = true)
+            Log.e("DL_EXEC", "DASH output file size: ${outputFile.length()}")
             showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
@@ -636,13 +666,14 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 adaptationBody.contains("contentType=\"$contentType\"", true)
             if (!isRequestedType) return@forEach
             val parentBase = Regex("<BaseURL\\s*>(.*?)</BaseURL>", RegexOption.IGNORE_CASE).find(adaptationBody)?.groupValues?.get(1)?.trim()
-            val parentTemplate = Regex("<SegmentTemplate\\b([^>]*)>(.*?)</SegmentTemplate>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(adaptationBody)
+                val parentTemplate = Regex("<SegmentTemplate\\b([^>]*?)(?:/\\s*>|>(.*?)</SegmentTemplate>)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(adaptationBody)
             representationRegex.findAll(adaptationBody).forEach { representation ->
                 val attrs = parentAttrs + parseXmlAttributes(representation.groupValues[1])
                 val body = representation.groupValues.getOrNull(2).orEmpty()
                 val base = Regex("<BaseURL\\s*>(.*?)</BaseURL>", RegexOption.IGNORE_CASE).find(body)?.groupValues?.get(1)?.trim() ?: parentBase ?: manifestUrl
-                val template = Regex("<SegmentTemplate\\b([^>]*)>(.*?)</SegmentTemplate>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(body) ?: parentTemplate
+                val template = Regex("<SegmentTemplate\\b([^>]*?)(?:/\\s*>|>(.*?)</SegmentTemplate>)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(body) ?: parentTemplate
                 val segments = template?.let { expandDashTemplate(it.groupValues[1], it.groupValues[2], attrs, base, manifestUrl) }.orEmpty()
+                if (segments.isEmpty()) Log.w("DASH_PARSE", "No segments for ${attrs["id"].orEmpty()} ${attrs["mimeType"].orEmpty()} ${attrs["height"].orEmpty()}p")
                 if (segments.isNotEmpty()) result += DashRepresentation(attrs["width"]?.toIntOrNull() ?: 0, attrs["height"]?.toIntOrNull() ?: 0, attrs["bandwidth"]?.toLongOrNull() ?: 0L, segments)
             }
         }
