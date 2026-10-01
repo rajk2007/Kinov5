@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -132,6 +133,45 @@ import kotlin.math.roundToInt
 open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     BindingCreator.Inflate(FragmentResultSwipeBinding::inflate)
 ), PlayerView.Callbacks {
+    // Links are expensive to resolve, so keep them for the lifetime of this result screen.
+    // ConcurrentHashMap also keeps background prefetches safe when several episodes finish together.
+    private val cachedDownloadLinks = java.util.concurrent.ConcurrentHashMap<String, List<ExtractorLink>>()
+
+    private fun downloadCacheKey(pageUrl: String, episode: ResultEpisode): String {
+        val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+        return "$pageUrl|$data"
+    }
+
+    private fun cacheDownloadLinks(key: String, links: List<ExtractorLink>) {
+        if (links.isNotEmpty()) cachedDownloadLinks[key] = links
+    }
+
+    private fun getCachedDownloadLinks(key: String): List<ExtractorLink>? = cachedDownloadLinks[key]
+
+    private fun normalizeDownloadLink(link: ExtractorLink): ExtractorLink {
+        val quality = if (link.quality == Qualities.Unknown.value || link.quality == 0) {
+            parseQualityFromLinkName(link.name)?.let(::getQualityFromName) ?: link.quality
+        } else link.quality
+        return if (quality == link.quality) link else ExtractorLink(
+            source = link.source,
+            name = link.name,
+            url = link.url,
+            referer = link.referer,
+            quality = quality,
+            headers = link.headers,
+            extractorData = link.extractorData,
+            type = link.type,
+            audioTracks = link.audioTracks,
+        )
+    }
+
+    private fun filterDownloadLinks(links: List<ExtractorLink>): List<ExtractorLink> =
+        links.asSequence()
+            .filter { it.type != ExtractorLinkType.TORRENT && it.type != ExtractorLinkType.MAGNET }
+            .map(::normalizeDownloadLink)
+            .distinctBy { it.url }
+            .toList()
+
     private val gestureRegionsListener =
         object : PanelsChildGestureRegionObserver.GestureRegionsListener {
             override fun onGestureRegionsUpdate(gestureRegions: List<Rect>) {
@@ -201,246 +241,191 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         ep: ResultEpisode,
         downloadEpisodes: List<ResultEpisode> = listOf(ep),
     ) {
-        // Ensure a default internal path exists (no user folder picker)
-        val ctx = context ?: return
-        val settings = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        val activityContext = activity ?: return
+        val settings = androidx.preference.PreferenceManager.getDefaultSharedPreferences(activityContext)
         val pathKey = getString(com.lagradost.cloudstream3.R.string.download_path_key)
         if (settings.getString(pathKey, null).isNullOrBlank()) {
-            val downloadDir = ctx.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
+            val downloadDir = activityContext.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
                 ?.apply { mkdirs() }?.absolutePath
-                ?: java.io.File(ctx.filesDir, "downloads").apply { mkdirs() }.absolutePath
+                ?: java.io.File(activityContext.filesDir, "downloads").apply { mkdirs() }.absolutePath
             settings.edit().putString(pathKey, downloadDir).apply()
         }
 
         val pageUrl = arguments?.getString("url") ?: run {
-            Toast.makeText(requireContext(), "Missing url", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activityContext, "Missing url", Toast.LENGTH_SHORT).show()
             return
         }
         val apiName = arguments?.getString("apiName") ?: run {
-            Toast.makeText(requireContext(), "Missing apiName", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activityContext, "Missing apiName", Toast.LENGTH_SHORT).show()
             return
         }
-
-        val dialog = BottomSheetDialog(requireContext())
-        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+        val cacheKey = downloadCacheKey(pageUrl, ep)
+        val cachedLinks = getCachedDownloadLinks(cacheKey).orEmpty()
+        val dialog = BottomSheetDialog(activityContext)
+        val composeView = androidx.compose.ui.platform.ComposeView(activityContext).apply {
             setViewCompositionStrategy(
                 androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
             )
-            setContent {
+        }
+
+        var loadedResponse: LoadResponse? = null
+        fun renderLinks(links: List<ExtractorLink>) {
+            composeView.setContent {
                 androidx.compose.material3.MaterialTheme {
-                    androidx.compose.foundation.layout.Column(
-                        modifier = androidx.compose.ui.Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                    ) {
-                        androidx.compose.material3.CircularProgressIndicator(color = Color(0xFFE50914))
-                        androidx.compose.foundation.layout.Spacer(
-                            androidx.compose.ui.Modifier.height(16.dp)
+                    if (links.isEmpty()) {
+                        DownloadOptionsSheetWithFallback(
+                            isDetecting = true,
+                            onDismiss = { dialog.dismiss() },
                         )
-                        androidx.compose.material3.Text(
-                            "Loading download options…",
-                            color = Color.White,
-                            fontSize = 16.sp,
+                    } else {
+                        DownloadOptionsSheet(
+                            links = links,
+                            onDownload = { selectedLink, selectedHeight ->
+                                dialog.dismiss()
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    try {
+                                        val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                                        val response = loadedResponse ?: APIRepository(api).load(pageUrl).let {
+                                            if (it is Resource.Success) it.value else null
+                                        } ?: return@launch
+                                        loadedResponse = response
+                                        val isMovie = response is MovieLoadResponse
+                                        val selectedLanguage = selectedLink.languageKey()
+                                        val selectedQuality = selectedLink.effectiveQuality()
+
+                                        downloadEpisodes.forEachIndexed { index, episode ->
+                                            val episodeLink = if (downloadEpisodes.size == 1) {
+                                                selectedLink
+                                            } else {
+                                                val episodeData = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                                                val episodeLinks = mutableListOf<ExtractorLink>()
+                                                APIRepository(api).loadLinks(
+                                                    data = episodeData,
+                                                    isCasting = false,
+                                                    subtitleCallback = { },
+                                                    callback = { candidate -> episodeLinks += candidate },
+                                                )
+                                                val usable = filterDownloadLinks(episodeLinks)
+                                                val sameSource = usable.filter { it.source.equals(selectedLink.source, true) }
+                                                val sameLanguage = usable.filter { it.languageKey().equals(selectedLanguage, true) }
+                                                sameSource.firstOrNull {
+                                                    it.effectiveQuality() == selectedQuality &&
+                                                        it.languageKey().equals(selectedLanguage, true)
+                                                } ?: sameSource.firstOrNull { it.effectiveQuality() == selectedQuality }
+                                                    ?: sameLanguage.firstOrNull { it.effectiveQuality() == selectedQuality }
+                                                    ?: sameLanguage.firstOrNull()
+                                                    ?: usable.maxByOrNull { it.effectiveQuality() }
+                                            } ?: return@forEachIndexed
+
+                                            val season = episode.season ?: 1
+                                            val title = if (isMovie) response.name else "${response.name} - S${season}E${episode.episode}"
+                                            val fileName = if (isMovie) response.name else "${response.name}_S${season}E${episode.episode}"
+                                            val started = DirectDownloadManager.startDownload(
+                                                context = activityContext,
+                                                link = episodeLink,
+                                                title = title,
+                                                fileName = fileName,
+                                                posterUrl = response.posterUrl,
+                                                apiName = apiName,
+                                                selectedHeight = selectedHeight,
+                                            )
+                                            if (started) {
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(activityContext, "Download started: $title", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    } catch (error: Exception) {
+                                        logError(error)
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(activityContext, "Failed to start download: ${error.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            },
+                            onDismiss = { dialog.dismiss() },
                         )
                     }
                 }
             }
         }
+
+        // Render the selector before any network operation. Cached links are immediately usable;
+        // otherwise the same selector shape is visible while links are resolved in the background.
+        renderLinks(cachedLinks)
         dialog.setContentView(composeView)
         dialog.show()
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val api = APIHolder.getApiFromNameNull(apiName)
-                if (api == null) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(requireContext(), "Provider not found", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
-                }
-
+                val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
                 val response = APIRepository(api).load(pageUrl)
-                if (response !is Resource.Success || response.value == null) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(requireContext(), "Failed to load page", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
+                if (response !is Resource.Success) return@launch
+                loadedResponse = response.value
+                val links = cachedLinks.ifEmpty {
+                    val resolved = mutableListOf<ExtractorLink>()
+                    val data = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                    APIRepository(api).loadLinks(
+                        data = data,
+                        isCasting = false,
+                        subtitleCallback = { },
+                        callback = { link -> resolved += link },
+                    )
+                    filterDownloadLinks(resolved).also { cacheDownloadLinks(cacheKey, it) }
                 }
-                val loadResponse = response.value!!
-
-                val dataString = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-                android.util.Log.d("KinoDownload", "loadLinks data='$dataString' api=$apiName")
-
-                val links = mutableListOf<ExtractorLink>()
-                val ok = APIRepository(api).loadLinks(
-                    data = dataString,
-                    isCasting = false,
-                    subtitleCallback = { },
-                    callback = { link ->
-                        if (link.type != ExtractorLinkType.TORRENT && link.type != ExtractorLinkType.MAGNET) {
-                            // Force quality from name if missing
-                            val fixed = if (link.quality == Qualities.Unknown.value || link.quality == 0) {
-                                val parsedQuality = parseQualityFromLinkName(link.name)
-                                val qualityInt = if (parsedQuality != null) {
-                                getQualityFromName(parsedQuality)
-                            } else {
-                                link.quality
-                            }
-                            ExtractorLink(
-                                source = link.source,
-                                name = link.name,
-                                url = link.url,
-                                referer = link.referer,
-                                quality = qualityInt,
-                                headers = link.headers,
-                                extractorData = link.extractorData,
-                                type = link.type,
-                                audioTracks = link.audioTracks
-                            )
-                        } else link
-                            links.add(fixed)
-                        }
+                withContext(Dispatchers.Main) {
+                    if (isAdded && dialog.isShowing) renderLinks(links)
+                }
+            } catch (error: Exception) {
+                logError(error)
+                withContext(Dispatchers.Main) {
+                    if (isAdded && dialog.isShowing) {
+                        Toast.makeText(activityContext, "Failed to load download options", Toast.LENGTH_SHORT).show()
                     }
+                }
+            }
+        }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun DownloadOptionsSheetWithFallback(
+        isDetecting: Boolean,
+        onDismiss: () -> Unit,
+    ) {
+        androidx.compose.foundation.layout.Column(
+            modifier = androidx.compose.ui.Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF121212))
+                .padding(16.dp),
+        ) {
+            androidx.compose.material3.Text(
+                "Download Options",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            )
+            Spacer(androidx.compose.ui.Modifier.height(16.dp))
+            androidx.compose.material3.Text("Language", color = Color.White, fontSize = 16.sp)
+            Spacer(androidx.compose.ui.Modifier.height(8.dp))
+            androidx.compose.material3.Text("Auto    Original", color = Color.LightGray, fontSize = 14.sp)
+            Spacer(androidx.compose.ui.Modifier.height(16.dp))
+            androidx.compose.material3.Text("Quality", color = Color.White, fontSize = 16.sp)
+            Spacer(androidx.compose.ui.Modifier.height(8.dp))
+            listOf("1080p", "720p", "480p").forEach { quality ->
+                androidx.compose.material3.Text(
+                    quality,
+                    color = Color.Gray,
+                    modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 )
-
-                if (!ok || links.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            requireContext(),
-                            if (!ok) "loadLinks failed" else "No downloadable links found",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    return@launch
-                }
-
-                withContext(Dispatchers.Main) {
-                    if (!isAdded || !dialog.isShowing) return@withContext
-                    composeView.setContent {
-                        androidx.compose.material3.MaterialTheme {
-                            DownloadOptionsSheet(
-                                links = links,
-                                onDownload = { link, selectedHeight ->
-                                    dialog.dismiss()
-                                    lifecycleScope.launch(Dispatchers.IO) {
-                                        val selectedLanguage = link.languageKey()
-                                        val selectedQuality = link.effectiveQuality()
-                                        val reResolveLink: (suspend () -> ExtractorLink?)? = if (downloadEpisodes.size == 1) {
-                                            {
-                                                runCatching {
-                                                    val freshLinks = mutableListOf<ExtractorLink>()
-                                                    APIRepository(api).loadLinks(
-                                                        data = dataString,
-                                                        isCasting = false,
-                                                        subtitleCallback = { },
-                                                        callback = { freshLink ->
-                                                            if (freshLink.type != ExtractorLinkType.TORRENT && freshLink.type != ExtractorLinkType.MAGNET) {
-                                                                freshLinks += freshLink
-                                                            }
-                                                        }
-                                                    )
-                                                    val sameSource = freshLinks.filter { it.source.equals(link.source, ignoreCase = true) }
-                                                    sameSource.firstOrNull { it.effectiveQuality() == selectedQuality && it.languageKey().equals(selectedLanguage, true) }
-                                                        ?: sameSource.firstOrNull { it.effectiveQuality() == selectedQuality }
-                                                        ?: sameSource.firstOrNull()
-                                                        ?: freshLinks.firstOrNull()
-                                                }.getOrNull()
-                                            }
-                                        } else null
-                                        downloadEpisodes.forEachIndexed { index, episode ->
-                                            // Resolve links independently for every episode. A season can expose
-                                            // different signed URLs per episode, so the selector link is not reusable.
-                                            // For a single episode, the selected link is already resolved and carries
-                                            // the provider's signed URL and headers. Re-loading links here added a
-                                            // second network round trip after the user pressed Download.
-                                            val episodeLink = if (downloadEpisodes.size == 1) {
-                                                link
-                                            } else runCatching {
-                                                val episodeLinks = mutableListOf<ExtractorLink>()
-                                                val episodeData = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-                                                android.util.Log.e("BULK_DEBUG", "Episode S${episode.season}E${episode.episode}: data=${episodeData.take(80)}")
-                                                APIRepository(api).loadLinks(
-                                                    data = episodeData,
-                                                    isCasting = false,
-                                                    subtitleCallback = { },
-                                                    callback = { candidate ->
-                                                        if (candidate.type != ExtractorLinkType.TORRENT && candidate.type != ExtractorLinkType.MAGNET) {
-                                                            episodeLinks += candidate
-                                                        }
-                                                    }
-                                                )
-                                                android.util.Log.e("BULK_DEBUG", "  Available links: ${episodeLinks.size}")
-                                                episodeLinks.forEach { candidate ->
-                                                    android.util.Log.e("BULK_DEBUG", "    - ${candidate.name} (${candidate.source}) URL=${candidate.url.take(80)}")
-                                                }
-
-                                                // Never choose an MPD manifest as a direct-file fallback.
-                                                val usableLinks = episodeLinks.filterNot {
-                                                    it.url.contains(".mpd", ignoreCase = true)
-                                                }
-                                                val sameSource = usableLinks.filter { it.source.equals(link.source, ignoreCase = true) }
-                                                val sameLanguage = usableLinks.filter {
-                                                    it.languageKey().equals(selectedLanguage, ignoreCase = true)
-                                                }
-                                                sameSource.firstOrNull {
-                                                    it.effectiveQuality() == selectedQuality &&
-                                                        it.languageKey().equals(selectedLanguage, ignoreCase = true)
-                                                }
-                                                    ?: sameSource.firstOrNull { it.effectiveQuality() == selectedQuality }
-                                                    ?: sameLanguage.firstOrNull { it.effectiveQuality() == selectedQuality }
-                                                    ?: sameLanguage.firstOrNull()
-                                                    ?: usableLinks.maxByOrNull { it.effectiveQuality() }
-                                            }.getOrNull()
-                                            android.util.Log.e("BULK_DEBUG", "  Selected: ${episodeLink?.name}")
-                                            if (episodeLink == null) {
-                                                android.util.Log.w("SEASON_DL", "No usable non-manifest link for episode ${episode.episode}")
-                                                return@forEachIndexed
-                                            }
-                                            val isMovie = loadResponse is MovieLoadResponse
-                                            val episodeNumber = episode.episode
-                                            val seasonNumber = episode.season ?: 1
-                                            val downloadTitle = if (isMovie) {
-                                                loadResponse.name
-                                            } else {
-                                                "${loadResponse.name} - S${seasonNumber}E${episodeNumber}"
-                                            }
-                                            val downloadFileName = if (isMovie) {
-                                                loadResponse.name
-                                            } else {
-                                                "${loadResponse.name}_S${seasonNumber}E${episodeNumber}"
-                                            }
-                                            val started = DirectDownloadManager.startDownload(
-                                                context = requireContext(),
-                                                link = episodeLink,
-                                                title = downloadTitle,
-                                                fileName = downloadFileName,
-                                                posterUrl = loadResponse.posterUrl,
-                                                apiName = apiName,
-                                                selectedHeight = selectedHeight,
-                                                reResolveLink = if (index == 0) reResolveLink else null,
-                                            )
-                                            if (started) {
-                                                withContext(Dispatchers.Main) {
-                                                    Toast.makeText(requireContext(), "Download started: $downloadTitle", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
-                                    }
-                                },
-                                onDismiss = { dialog.dismiss() }
-                            )
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                logError(e)
-                android.util.Log.e("KinoDownload", "Download flow failed", e)
-                withContext(Dispatchers.Main) {
-                    if (dialog.isShowing) {
-                        Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                        dialog.dismiss()
-                    }
+            }
+            if (isDetecting) {
+                Spacer(androidx.compose.ui.Modifier.height(8.dp))
+                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = Color(0xFFE50914),
+                        modifier = androidx.compose.ui.Modifier.padding(end = 8.dp).height(16.dp),
+                    )
+                    androidx.compose.material3.Text("Detecting available options…", color = Color.Gray, fontSize = 12.sp)
                 }
             }
         }
