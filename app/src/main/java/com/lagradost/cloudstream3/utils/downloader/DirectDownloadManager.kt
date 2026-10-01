@@ -68,8 +68,6 @@ data class DirectDownloadItem(
 
 enum class DirectDownloadStatus { PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILED }
 
-private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L
-
 /** Kept for callers that used the old capability check; all validated links are now attempted. */
 fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Boolean = false
 
@@ -378,10 +376,6 @@ object DirectDownloadManager {
                         }
                         throw IOException("Server returned '${contentType.take(60)}', not a video. The link is likely expired or requires different headers.")
                     }
-                    if (responseLength in 1 until MIN_VALID_VIDEO_BYTES) {
-                        connection.disconnect()
-                        throw IOException("Server reports only ${formatFileSize(responseLength)}. Refusing to save a non-video response.")
-                    }
                     val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
                     if (!append) tempFile.delete()
                     val startingBytes = if (append) existingBytes else 0L
@@ -421,6 +415,15 @@ object DirectDownloadManager {
                     }
                     if (!currentCoroutineContext().isActive) throw CancellationException()
                     if (totalBytes > 0L && tempFile.length() < totalBytes) throw IOException("Connection ended before the file completed.")
+                    detectManifestType(tempFile)?.let { manifestType ->
+                        tempFile.delete()
+                        Log.e(TAG, "Direct response was a ${manifestType.name} manifest; redirecting to its segment downloader")
+                        return if (manifestType == ManifestType.HLS) {
+                            downloadHlsVideo(context, downloadId, link, item)
+                        } else {
+                            downloadDashVideo(context, downloadId, link, item)
+                        }
+                    }
                     finalizeDownload(downloadId, outputFile, tempFile)
                     showCompletedNotification(downloadId)
                     return true
@@ -762,8 +765,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun parseXmlAttributes(raw: String): Map<String, String> = Regex("([A-Za-z_:][\\w:.-]*)\\s*=\\s*\"([^\"]*)\"").findAll(raw).associate { it.groupValues[1] to it.groupValues[2] }
 
     private fun finalizeDownload(downloadId: String, outputFile: File, tempFile: File, validateContainer: Boolean = true) {
-        require(tempFile.length() >= MIN_VALID_VIDEO_BYTES) {
-            "Downloaded file is only ${formatFileSize(tempFile.length())}; it may be a manifest, not a video."
+        require(tempFile.length() > 0L) { "Downloaded file is empty." }
+        require(detectManifestType(tempFile) == null) {
+            "Downloaded response is a manifest, not a video."
         }
         if (validateContainer) {
             val isVideoContainer = runCatching {
@@ -865,13 +869,31 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun isRetryableExpiry(error: Throwable): Boolean =
         error.message?.contains(Regex("\\b(401|403|404)\\b")) == true
 
+    private enum class ManifestType { HLS, DASH }
+
+    private fun detectManifestType(file: File): ManifestType? = runCatching {
+        val sample = file.inputStream().use { input ->
+            val bytes = ByteArray(8 * 1024)
+            val count = input.read(bytes).coerceAtLeast(0)
+            String(bytes, 0, count, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+        }
+        when {
+            sample.startsWith("#EXTM3U", ignoreCase = true) -> ManifestType.HLS
+            sample.contains("<MPD", ignoreCase = true) -> ManifestType.DASH
+            else -> null
+        }
+    }.getOrNull()
+
     private fun isDash(link: ExtractorLink): Boolean =
         link.url.contains(".mpd", ignoreCase = true) ||
             link.url.contains("mpd", ignoreCase = true) ||
             link.url.contains("/dash/", ignoreCase = true) ||
+            link.url.contains("manifest", ignoreCase = true) ||
             link.type.name.equals("DASH", ignoreCase = true)
-    private fun isHls(link: ExtractorLink): Boolean = link.type == ExtractorLinkType.M3U8 || isHlsUrl(link.url)
-    private fun isHlsUrl(url: String): Boolean = url.contains(".m3u8", ignoreCase = true)
+    private fun isHls(link: ExtractorLink): Boolean =
+        link.type == ExtractorLinkType.M3U8 || isHlsUrl(link.url)
+    private fun isHlsUrl(url: String): Boolean =
+        url.contains(".m3u8", ignoreCase = true) || url.contains("m3u8", ignoreCase = true)
     private fun isManifestUrl(url: String): Boolean {
         val normalized = url.lowercase()
         return normalized.contains(".mpd") ||
