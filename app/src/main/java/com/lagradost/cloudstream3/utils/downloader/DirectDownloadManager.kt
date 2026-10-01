@@ -179,12 +179,25 @@ object DirectDownloadManager {
             var currentLink = downloadLink
             var resolveAttempt = 0
             while (currentCoroutineContext().isActive) {
-                val result = if (isHls(currentLink)) {
-                    downloadHlsVideo(context.applicationContext, downloadId, currentLink, item)
-                } else if (isDash(currentLink)) {
-                    downloadDashVideo(context.applicationContext, downloadId, currentLink, item)
+                val contentType = if (!isHls(currentLink) && !isDash(currentLink)) {
+                    checkContentType(currentLink)
                 } else {
-                    executeDownload(context.applicationContext, downloadId, currentLink)
+                    ""
+                }
+                Log.e("DL_TYPE", "URL=${currentLink.url.take(300)} type=${currentLink.type} contentType=$contentType")
+                val result = when {
+                    isHls(currentLink) || isHlsContentType(contentType) -> {
+                        Log.e("DL_TYPE", "HLS download detected")
+                        downloadHlsVideo(context.applicationContext, downloadId, currentLink, item)
+                    }
+                    isDash(currentLink) || isDashContentType(contentType) || isManifestUrl(currentLink.url) -> {
+                        Log.e("DL_TYPE", "DASH download detected")
+                        downloadDashVideo(context.applicationContext, downloadId, currentLink, item)
+                    }
+                    else -> {
+                        Log.e("DL_TYPE", "Direct download detected")
+                        executeDownload(context.applicationContext, downloadId, currentLink)
+                    }
                 }
                 if (result) return@launch
                 if (result || reResolveLink == null || resolveAttempt >= MAX_RESOLVE_RETRIES) return@launch
@@ -295,6 +308,14 @@ object DirectDownloadManager {
 
     private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink): Boolean {
         val item = _activeDownloads.value[downloadId] ?: return true
+        if (isManifestUrl(link.url)) {
+            Log.e(TAG, "Manifest URL reached direct path; redirecting to a manifest downloader")
+            return if (isHls(link)) {
+                downloadHlsVideo(context, downloadId, link, item)
+            } else {
+                downloadDashVideo(context, downloadId, link, item)
+            }
+        }
         val outputFile = File(getDownloadDir(context), outputName(item.fileName))
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
         var attempt = 0
@@ -347,6 +368,14 @@ object DirectDownloadManager {
                     val responseLength = connection.contentLengthLong
                     if (!isVideoResponse(contentType, connection.url.toString())) {
                         connection.disconnect()
+                        if (isHlsContentType(contentType)) {
+                            Log.e(TAG, "Direct response is an HLS manifest; retrying through the HLS downloader")
+                            return downloadHlsVideo(context, downloadId, link, item)
+                        }
+                        if (isDashContentType(contentType)) {
+                            Log.e(TAG, "Direct response is a DASH/XML manifest; retrying through the DASH downloader")
+                            return downloadDashVideo(context, downloadId, link, item)
+                        }
                         throw IOException("Server returned '${contentType.take(60)}', not a video. The link is likely expired or requires different headers.")
                     }
                     if (responseLength in 1 until MIN_VALID_VIDEO_BYTES) {
@@ -836,9 +865,53 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun isRetryableExpiry(error: Throwable): Boolean =
         error.message?.contains(Regex("\\b(401|403|404)\\b")) == true
 
-    private fun isDash(link: ExtractorLink): Boolean = link.url.contains(".mpd", ignoreCase = true) || link.type.name.equals("DASH", ignoreCase = true)
+    private fun isDash(link: ExtractorLink): Boolean =
+        link.url.contains(".mpd", ignoreCase = true) ||
+            link.url.contains("mpd", ignoreCase = true) ||
+            link.url.contains("/dash/", ignoreCase = true) ||
+            link.type.name.equals("DASH", ignoreCase = true)
     private fun isHls(link: ExtractorLink): Boolean = link.type == ExtractorLinkType.M3U8 || isHlsUrl(link.url)
     private fun isHlsUrl(url: String): Boolean = url.contains(".m3u8", ignoreCase = true)
+    private fun isManifestUrl(url: String): Boolean {
+        val normalized = url.lowercase()
+        return normalized.contains(".mpd") ||
+            normalized.contains(".m3u8") ||
+            normalized.contains("manifest") ||
+            normalized.contains("/dash/") ||
+            normalized.endsWith("index.mpd") ||
+            normalized.endsWith("playlist.m3u8")
+    }
+
+    private fun isHlsContentType(contentType: String): Boolean {
+        val normalized = contentType.lowercase()
+        return normalized.contains("mpegurl") || normalized.contains("m3u8")
+    }
+
+    private fun isDashContentType(contentType: String): Boolean {
+        val normalized = contentType.lowercase()
+        return normalized.contains("dash") || normalized.contains("mpd") || normalized.contains("xml")
+    }
+
+    private fun checkContentType(link: ExtractorLink): String {
+        val connection = runCatching {
+            (URL(link.url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "HEAD"
+                connectTimeout = 5_000
+                readTimeout = 5_000
+                instanceFollowRedirects = true
+                requestHeaders(link).forEach { (key, value) -> setRequestProperty(key, value) }
+            }
+        }.getOrNull() ?: return ""
+        return try {
+            connection.responseCode
+            connection.contentType.orEmpty()
+        } catch (error: Exception) {
+            Log.d(TAG, "Content-type probe failed for ${link.url.take(120)}", error)
+            ""
+        } finally {
+            connection.disconnect()
+        }
+    }
     private fun validateUrl(url: String): Boolean = runCatching { URI(url).let { it.scheme in setOf("http", "https") && !it.host.isNullOrBlank() } }.getOrDefault(false)
 
     private fun persistDownloads(force: Boolean = false) {
