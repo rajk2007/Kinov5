@@ -7,6 +7,8 @@ import android.content.Context
 import android.media.MediaExtractor
 import android.media.MediaMuxer
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -114,6 +116,13 @@ object DirectDownloadManager {
     private var hasLoadedPersistedDownloads = false
     private var lastPersistAt = 0L
 
+    /** Toasts may be requested by the IO download scope, so always post them to Main. */
+    private fun showToastSafe(context: Context, message: String, duration: Int = Toast.LENGTH_LONG) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context, message, duration).show()
+        }
+    }
+
     fun initialize(context: Context) {
         appContext = context.applicationContext
         if (!hasLoadedPersistedDownloads) {
@@ -139,11 +148,10 @@ object DirectDownloadManager {
         Log.e(TAG, "URL_DEBUG clean URL for download: $downloadUrl")
         if (downloadUrl.contains(".mpd", ignoreCase = true)) {
             Log.e(TAG, "Rejecting manifest URL before download: ${downloadUrl.take(120)}")
-            Toast.makeText(
+            showToastSafe(
                 context,
                 "Cannot download a manifest file. Please choose a different quality or source.",
-                Toast.LENGTH_LONG,
-            ).show()
+            )
             return false
         }
         val downloadLink = if (downloadUrl == link.url) link else ExtractorLink(
@@ -158,7 +166,7 @@ object DirectDownloadManager {
             audioTracks = link.audioTracks,
         )
         if (!validateUrl(downloadUrl)) {
-            Toast.makeText(context, "Invalid download URL. The link may have expired.", Toast.LENGTH_LONG).show()
+            showToastSafe(context, "Invalid download URL. The link may have expired.")
             return false
         }
         val downloadId = "${title}_${System.currentTimeMillis()}"

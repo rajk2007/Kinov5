@@ -136,6 +136,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     // Links are expensive to resolve, so keep them for the lifetime of this result screen.
     // ConcurrentHashMap also keeps background prefetches safe when several episodes finish together.
     private val cachedDownloadLinks = java.util.concurrent.ConcurrentHashMap<String, List<ExtractorLink>>()
+    private val prefetchingDownloadLinks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private fun downloadCacheKey(pageUrl: String, episode: ResultEpisode): String {
         val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
@@ -171,6 +172,34 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             .map(::normalizeDownloadLink)
             .distinctBy { it.url }
             .toList()
+
+    private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
+        val pageUrl = arguments?.getString("url") ?: return
+        val apiName = arguments?.getString("apiName") ?: return
+        episodes.asSequence()
+            .distinctBy { downloadCacheKey(pageUrl, it) }
+            .forEach { episode ->
+                val cacheKey = downloadCacheKey(pageUrl, episode)
+                if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return@forEach
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                        val links = mutableListOf<ExtractorLink>()
+                        APIRepository(api).loadLinks(
+                            data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl,
+                            isCasting = false,
+                            subtitleCallback = { },
+                            callback = { link -> links += link },
+                        )
+                        cacheDownloadLinks(cacheKey, filterDownloadLinks(links))
+                    } catch (error: Exception) {
+                        android.util.Log.d("PrefetchLinks", "Prefetch failed for ${episode.data.take(80)}", error)
+                    } finally {
+                        prefetchingDownloadLinks.remove(cacheKey)
+                    }
+                }
+            }
+    }
 
     private val gestureRegionsListener =
         object : PanelsChildGestureRegionObserver.GestureRegionsListener {
@@ -1075,6 +1104,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     episodes is Resource.Success && episodes.value.isNotEmpty()
 
                 if (episodes is Resource.Success) {
+                    prefetchDownloadLinks(episodes.value)
                     (resultEpisodes.adapter as? EpisodeAdapter)?.submitList(episodes.value)
 
                     // Show quality dialog with all sources
@@ -1134,6 +1164,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     data is Resource.Success && viewModel.currentRepo?.api?.hasDownloadSupport == true
 
                 (data as? Resource.Success)?.value?.let { (text, ep) ->
+                    prefetchDownloadLinks(listOf(ep))
                     resultPlayMovie.setText(text)
                     resultPlayMovie.setOnClickListener {
                         viewModel.handleAction(
