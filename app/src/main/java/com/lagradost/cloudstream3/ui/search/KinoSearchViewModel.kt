@@ -111,13 +111,17 @@ class KinoSearchViewModel : ViewModel() {
         _isLoading.value = true
         _results.value = emptyList()
         var netNaija = APIHolder.apis.firstOrNull { api ->
-            api.name.contains("NetNaija", ignoreCase = true) || api.name.contains("Net Naija", ignoreCase = true)
+            (api.name.contains("NetNaija", ignoreCase = true) ||
+                api.name.contains("Net Naija", ignoreCase = true)) &&
+                api.name.contains("box", ignoreCase = true)
         }
         repeat(60) {
             if (netNaija != null) return@repeat
             kotlinx.coroutines.delay(500)
             netNaija = APIHolder.apis.firstOrNull { api ->
-                api.name.contains("NetNaija", ignoreCase = true) || api.name.contains("Net Naija", ignoreCase = true)
+                (api.name.contains("NetNaija", ignoreCase = true) ||
+                    api.name.contains("Net Naija", ignoreCase = true)) &&
+                    api.name.contains("box", ignoreCase = true)
             }
         }
         val providers = listOfNotNull(netNaija)

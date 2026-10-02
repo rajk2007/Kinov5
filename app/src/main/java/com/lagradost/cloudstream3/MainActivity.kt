@@ -488,11 +488,12 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     private fun autoInstallRepositories() {
         val prefs = getSharedPreferences("kino_setup_v17", MODE_PRIVATE)
         val raghavRepoUrl = "https://raw.githubusercontent.com/KSHITIJ8473/raghav/builds/repo.json"
-        val hasNetNaija = APIHolder.apis.any {
-            it.name.contains("NetNaija", ignoreCase = true) ||
-                it.name.contains("Net Naija", ignoreCase = true)
+        val hasNetNaijaBox = APIHolder.apis.any {
+            (it.name.contains("NetNaija", ignoreCase = true) ||
+                it.name.contains("Net Naija", ignoreCase = true)) &&
+                it.name.contains("box", ignoreCase = true)
         }
-        if (hasNetNaija && prefs.getBoolean("repos_installed_v17", false)) return
+        if (hasNetNaijaBox && prefs.getBoolean("repos_installed_v18", false)) return
 
         ioSafe {
             withContext(Dispatchers.Main) { showToast("Setting up NetNaija-box...") }
@@ -513,9 +514,18 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 }
 
                 RepositoryManager.getRepoPlugins(raghavRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
-                    val isNetNaija = sitePlugin.name.contains("NetNaija", ignoreCase = true) ||
-                        sitePlugin.internalName.contains("NetNaija", ignoreCase = true)
-                    if (isNetNaija) {
+                    Log.i(TAG, "Raghav plugin: name='${sitePlugin.name}', internal='${sitePlugin.internalName}'")
+                    val isNetNaijaBox = sitePlugin.name.equals("NetNaija-box", ignoreCase = true) ||
+                        sitePlugin.internalName.equals("NetNaija-box", ignoreCase = true) ||
+                        (sitePlugin.name.contains("NetNaija", ignoreCase = true) &&
+                            sitePlugin.name.contains("box", ignoreCase = true)) ||
+                        (sitePlugin.internalName.contains("NetNaija", ignoreCase = true) &&
+                            sitePlugin.internalName.contains("box", ignoreCase = true))
+                    val isPlainNetNaija = (sitePlugin.name.equals("NetNaija", ignoreCase = true) ||
+                        sitePlugin.internalName.equals("NetNaija", ignoreCase = true)) &&
+                        !sitePlugin.name.contains("box", ignoreCase = true) &&
+                        !sitePlugin.internalName.contains("box", ignoreCase = true)
+                    if (isNetNaijaBox && !isPlainNetNaija) {
                         Log.i(TAG, "Installing NetNaija-box extension: ${sitePlugin.name} (${sitePlugin.internalName})")
                         val installed = runCatching {
                             PluginManager.downloadPlugin(
@@ -534,22 +544,28 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 val pluginsFolder = File(filesDir, RepositoryManager.ONLINE_PLUGINS_FOLDER)
                 if (pluginsFolder.exists()) {
                     pluginsFolder.walkBottomUp().forEach { file ->
-                        if (file.isFile && (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
-                            listOf("BingeCloud", "binge", "MovieBox").any { file.name.contains(it, true) }) {
-                            if (file.delete()) Log.i(TAG, "Deleted old plugin: ${file.name}")
+                        if (file.isFile &&
+                            (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
+                            (listOf("BingeCloud", "binge", "MovieBox").any { file.name.contains(it, true) } ||
+                                (file.name.contains("NetNaija", ignoreCase = true) &&
+                                    !file.name.contains("box", ignoreCase = true)))) {
+                            if (file.delete()) Log.i(TAG, "Deleted old or incorrect plugin: ${file.name}")
                         }
                     }
                 }
 
                 PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
                 val loadedProviders = APIHolder.allProviders
-                val netNaijaLoaded = loadedProviders.any {
-                    it.name.contains("NetNaija", ignoreCase = true) ||
-                        it.name.contains("Net Naija", ignoreCase = true)
+                val netNaijaBoxLoaded = loadedProviders.any {
+                    (it.name.contains("NetNaija", ignoreCase = true) ||
+                        it.name.contains("Net Naija", ignoreCase = true)) &&
+                        it.name.contains("box", ignoreCase = true)
                 }
-                Log.i(TAG, "NetNaija-box loaded: $netNaijaLoaded")
+                Log.i(TAG, "NetNaija-box loaded: $netNaijaBoxLoaded")
                 Log.i(TAG, "All providers: ${loadedProviders.map { it.name }}")
-                if (netNaijaLoaded) prefs.edit().putBoolean("repos_installed_v17", true).apply()
+                loadedProviders.filter { it.name.contains("NetNaija", ignoreCase = true) }
+                    .forEach { provider -> Log.i(TAG, "NetNaija variant: ${provider.name}") }
+                if (netNaijaBoxLoaded) prefs.edit().putBoolean("repos_installed_v18", true).apply()
 
                 withContext(Dispatchers.Main) {
                     onAllPluginsLoaded(true)

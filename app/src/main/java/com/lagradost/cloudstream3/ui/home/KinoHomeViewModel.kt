@@ -72,9 +72,10 @@ class KinoHomeViewModel : ViewModel() {
         loadJob = loadData()
     }
 
-    private fun isNetNaija(api: MainAPI): Boolean =
-        api.name.contains("NetNaija", ignoreCase = true) ||
-            api.name.contains("Net Naija", ignoreCase = true)
+    private fun isNetNaijaBox(api: MainAPI): Boolean =
+        (api.name.contains("NetNaija", ignoreCase = true) ||
+            api.name.contains("Net Naija", ignoreCase = true)) &&
+            api.name.contains("box", ignoreCase = true)
 
     private fun loadData() = viewModelScope.launch(Dispatchers.IO) {
         _isLoading.value = true
@@ -126,18 +127,18 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private suspend fun fetchHomeData(): Pair<List<HomeRow>, List<HeroBannerItem>> {
-        var netNaijaApi: MainAPI? = APIHolder.apis.firstOrNull(::isNetNaija)
+        var netNaijaBoxApi: MainAPI? = APIHolder.apis.firstOrNull(::isNetNaijaBox)
         var attempts = 0
-        while (netNaijaApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
+        while (netNaijaBoxApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
             delay(500)
             attempts++
-            netNaijaApi = APIHolder.apis.firstOrNull(::isNetNaija)
+            netNaijaBoxApi = APIHolder.apis.firstOrNull(::isNetNaijaBox)
         }
 
-        Log.d("KINO_HOME", "NetNaija-box API: ${netNaijaApi?.name ?: "NOT FOUND"}")
-        if (netNaijaApi == null) throw IllegalStateException("NetNaija-box provider not loaded.")
+        Log.d("KINO_HOME", "NetNaija-box API: ${netNaijaBoxApi?.name ?: "NOT FOUND"}")
+        if (netNaijaBoxApi == null) throw IllegalStateException("NetNaija-box provider not loaded.")
 
-        val sections = fetchProviderSections(netNaijaApi)
+        val sections = fetchProviderSections(netNaijaBoxApi)
         val rows = buildHomeRowsFromNetNaija(sections)
         val allItems = rows.flatMap { it.items }.distinctBy { itemKey(it) }
         Log.d("KINO_HOME", "NetNaija-box sections: ${sections.keys}; items: ${allItems.size}")
