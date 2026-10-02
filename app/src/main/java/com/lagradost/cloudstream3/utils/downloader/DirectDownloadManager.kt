@@ -104,6 +104,7 @@ object DirectDownloadManager {
     private const val SAVED_DOWNLOADS = "saved_downloads"
     private const val MAX_RETRIES = 5
     private const val MAX_RESOLVE_RETRIES = 2
+    private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L // 1 MiB minimum for valid video
 
     private val _activeDownloads = MutableStateFlow<Map<String, DirectDownloadItem>>(emptyMap())
     val activeDownloads: StateFlow<Map<String, DirectDownloadItem>> = _activeDownloads.asStateFlow()
@@ -414,6 +415,13 @@ object DirectDownloadManager {
                     }
                     val contentType = connection.contentType.orEmpty()
                     val responseLength = connection.contentLengthLong
+                    if (responseLength in 1 until MIN_VALID_VIDEO_BYTES) {
+                        connection.disconnect()
+                        throw IOException(
+                            "Server reports only ${formatFileSize(responseLength)}. " +
+                                "Refusing to save a non-video response."
+                        )
+                    }
                     if (!isVideoResponse(contentType, connection.url.toString())) {
                         connection.disconnect()
                         if (isHlsContentType(contentType)) {
@@ -847,6 +855,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
 
     private fun finalizeDownload(downloadId: String, outputFile: File, tempFile: File, validateContainer: Boolean = true) {
         require(tempFile.length() > 0L) { "Downloaded file is empty." }
+        require(tempFile.length() >= MIN_VALID_VIDEO_BYTES) {
+            "Downloaded file is only ${formatFileSize(tempFile.length())}; " +
+                "it may be a manifest, not a video."
+        }
         require(detectManifestType(tempFile) == null) {
             "Downloaded response is a manifest, not a video."
         }
