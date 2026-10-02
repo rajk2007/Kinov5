@@ -140,6 +140,22 @@ object DirectDownloadManager {
         selectedHeight: Int = 0,
         reResolveLink: (suspend () -> ExtractorLink?)? = null,
     ): Boolean {
+        Log.e("TRACE_DL", "═══════════════════════════════════")
+        Log.e("TRACE_DL", "🚀 startDownload() CALLED")
+        Log.e("TRACE_DL", "   Title: $title")
+        Log.e("TRACE_DL", "   URL: ${link.url}")
+        Log.e("TRACE_DL", "   URL length: ${link.url.length}")
+        Log.e("TRACE_DL", "   Link type: ${link.type}")
+        Log.e("TRACE_DL", "   Link type name: ${link.type.name}")
+        Log.e("TRACE_DL", "   Has .mpd: ${link.url.contains(".mpd", ignoreCase = true)}")
+        Log.e("TRACE_DL", "   Has .m3u8: ${link.url.contains(".m3u8", ignoreCase = true)}")
+        Log.e("TRACE_DL", "   Has mpd: ${link.url.contains("mpd", ignoreCase = true)}")
+        Log.e("TRACE_DL", "   Has m3u8: ${link.url.contains("m3u8", ignoreCase = true)}")
+        Log.e("TRACE_DL", "   Has /dash/: ${link.url.contains("/dash/", ignoreCase = true)}")
+        Log.e("TRACE_DL", "   Has manifest: ${link.url.lowercase().contains("manifest")}")
+        Log.e("TRACE_DL", "   Type == M3U8: ${link.type == ExtractorLinkType.M3U8}")
+        Log.e("TRACE_DL", "   Type == DASH: ${link.type == ExtractorLinkType.DASH}")
+        Log.e("TRACE_DL", "═══════════════════════════════════")
         initialize(context)
         Log.e(TAG, "URL_DEBUG original link URL: ${link.url}")
         val downloadUrl = cleanDownloadUrl(link.url)
@@ -199,20 +215,29 @@ object DirectDownloadManager {
                 }
                 val isHlsLink = isHls(currentLink) || isHlsContentType(contentType)
                 val isDashLink = isDash(currentLink) || isDashContentType(contentType) || isManifestUrl(currentLink.url)
+                Log.e("TRACE_ROUTE", "═══════════════════════════════════")
+                Log.e("TRACE_ROUTE", "📍 ABOUT TO ROUTE DOWNLOAD")
+                Log.e("TRACE_ROUTE", "   isHls calculated: $isHlsLink")
+                Log.e("TRACE_ROUTE", "   isDash calculated: $isDashLink")
+                Log.e("TRACE_ROUTE", "   URL being checked: ${currentLink.url.lowercase()}")
                 Log.e("DL_ROUTE", "About to route URL=${currentLink.url.take(300)}")
                 Log.e("DL_ROUTE", "isHls = $isHlsLink")
                 Log.e("DL_ROUTE", "isDash = $isDashLink")
                 Log.e("DL_ROUTE", "Content-Type: $contentType")
                 val result = when {
                     isHlsLink -> {
+                        Log.e("TRACE_ROUTE", "✅ TAKING HLS PATH")
                         Log.e("DL_ROUTE", "Taking HLS path")
                         downloadHlsVideo(context.applicationContext, downloadId, currentLink, item)
                     }
                     isDashLink -> {
+                        Log.e("TRACE_ROUTE", "✅ TAKING DASH PATH")
                         Log.e("DL_ROUTE", "Taking DASH path")
                         downloadDashVideo(context.applicationContext, downloadId, currentLink, item)
                     }
                     else -> {
+                        Log.e("TRACE_ROUTE", "⚠️ TAKING DIRECT/FALLBACK PATH")
+                        Log.e("TRACE_ROUTE", "   This might be the problem!")
                         Log.e("DL_ROUTE", "Taking DIRECT path")
                         executeDownload(context.applicationContext, downloadId, currentLink)
                     }
@@ -326,6 +351,11 @@ object DirectDownloadManager {
 
     private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink): Boolean {
         val item = _activeDownloads.value[downloadId] ?: return true
+        Log.e("TRACE_DIRECT", "═══════════════════════════════════")
+        Log.e("TRACE_DIRECT", "📄 executeDirectDownload() ENTERED")
+        Log.e("TRACE_DIRECT", "   URL: ${link.url}")
+        Log.e("TRACE_DIRECT", "   ⚠️ IF THIS IS A MANIFEST URL, THIS IS THE BUG!")
+        Log.e("TRACE_DIRECT", "═══════════════════════════════════")
         if (isManifestUrl(link.url)) {
             Log.e(TAG, "Manifest URL reached direct path; redirecting to a manifest downloader")
             return if (isHls(link)) {
@@ -481,11 +511,17 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
         try {
             val headers = requestHeaders(link)
+            Log.e("TRACE_HLS", "═══════════════════════════════════")
+            Log.e("TRACE_HLS", "📹 downloadHlsVideo() ENTERED")
+            Log.e("TRACE_HLS", "   URL: ${link.url}")
+            Log.e("TRACE_HLS", "═══════════════════════════════════")
             Log.e("DL_EXEC", "Entered downloadHlsVideo")
             Log.e("DL_EXEC", "Fetching manifest from: ${link.url.take(300)}")
             var playlistResponse = requestHls(link.url, headers)
             var playlistUrl = playlistResponse.url
             var playlist = String(playlistResponse.body, Charsets.UTF_8)
+            Log.e("TRACE_HLS", "   Manifest fetched: ${playlist.length} chars")
+            Log.e("TRACE_HLS", "   First 300 chars: ${playlist.take(300)}")
             Log.e("DL_EXEC", "HLS manifest length: ${playlist.length}")
             require(playlist.contains("#EXTM3U")) { "The server did not return an HLS playlist." }
             if (playlist.contains("#EXT-X-STREAM-INF", ignoreCase = true)) {
@@ -504,11 +540,15 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .filter { it.isNotEmpty() && !it.startsWith("#") }
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
+            Log.e("TRACE_HLS", "   Segments found: ${segments.size}")
             Log.e("DL_EXEC", "HLS segments found: ${segments.size}")
 
             downloadSegmentsParallel(downloadId, segments, headers, tempFile)
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
+            Log.e("TRACE_HLS", "   Total bytes: ${outputFile.length()}")
+            Log.e("TRACE_HLS", "   File size: ${outputFile.length()}")
+            Log.e("TRACE_HLS", "═══════════════════════════════════")
             Log.e("DL_EXEC", "HLS output file size: ${outputFile.length()}")
             showCompletedNotification(downloadId)
             return true
@@ -601,11 +641,17 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         val muxedFile = File(outputFile.parentFile, "${outputFile.name}.muxed.part")
         try {
             val headers = requestHeaders(link)
+            Log.e("TRACE_DASH", "═══════════════════════════════════")
+            Log.e("TRACE_DASH", "📊 downloadDashVideo() ENTERED")
+            Log.e("TRACE_DASH", "   URL: ${link.url}")
+            Log.e("TRACE_DASH", "═══════════════════════════════════")
             Log.e("DL_EXEC", "Entered downloadDashVideo")
             Log.e("DL_EXEC", "Fetching manifest from: ${link.url.take(300)}")
             Log.e("DASH_PARSE", "Fetching MPD: ${link.url.take(300)}")
             val response = requestHls(link.url, headers)
             val manifest = String(response.body, Charsets.UTF_8)
+            Log.e("TRACE_DASH", "   Manifest fetched: ${manifest.length} chars")
+            Log.e("TRACE_DASH", "   First 300 chars: ${manifest.take(300)}")
             Log.e("DASH_PARSE", "Manifest length: ${manifest.length}")
             require(manifest.contains("<MPD", ignoreCase = true)) { "The server did not return a DASH MPD manifest." }
             val videoRepresentations = parseDashRepresentations(manifest, response.url, contentType = "video")
@@ -621,6 +667,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             require(videoSegments.isNotEmpty()) { "No DASH video segments were found in the manifest." }
             val selectedAudio = audioRepresentations.maxByOrNull { it.bandwidth }
             val audioSegments = selectedAudio?.segments.orEmpty()
+            Log.e("TRACE_DASH", "   Segments found: ${videoSegments.size + audioSegments.size}")
             Log.e("DASH_PARSE", "Found ${videoSegments.size} video and ${audioSegments.size} audio segments")
             Log.e("DASH_AUDIO", "Found ${videoRepresentations.size} video and ${audioRepresentations.size} audio representations")
             downloadSegmentsParallel(downloadId, videoSegments, headers, videoFile, progressOffset = 0, progressTotal = videoSegments.size + audioSegments.size)
@@ -633,6 +680,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             }
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, muxedFile, validateContainer = true)
+            Log.e("TRACE_DASH", "   Total bytes: ${outputFile.length()}")
+            Log.e("TRACE_DASH", "   File size: ${outputFile.length()}")
+            Log.e("TRACE_DASH", "═══════════════════════════════════")
             Log.e("DL_EXEC", "DASH output file size: ${outputFile.length()}")
             showCompletedNotification(downloadId)
             return true
@@ -818,6 +868,26 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         if (outputFile.exists()) outputFile.delete()
         require(tempFile.renameTo(outputFile)) { "Unable to finalize download." }
         val actualSize = outputFile.length()
+        Log.e("TRACE_COMPLETE", "═══════════════════════════════════")
+        Log.e("TRACE_COMPLETE", "✅ markCompleted() equivalent: finalizeDownload() CALLED")
+        Log.e("TRACE_COMPLETE", "   File: ${outputFile.absolutePath}")
+        Log.e("TRACE_COMPLETE", "   File size: $actualSize bytes")
+        Log.e("TRACE_COMPLETE", "   File size formatted: ${formatFileSize(actualSize)}")
+        if (actualSize < 1024 * 1024) {
+            Log.e("TRACE_COMPLETE", "   ⚠️ SUSPICIOUSLY SMALL FILE!")
+            Log.e("TRACE_COMPLETE", "   This is likely a manifest, not a video!")
+            runCatching {
+                val firstBytes = ByteArray(100)
+                outputFile.inputStream().use { it.read(firstBytes) }
+                val content = String(firstBytes).trimEnd('\u0000')
+                Log.e("TRACE_COMPLETE", "   First 100 chars: $content")
+                if (content.contains("<?xml", ignoreCase = true) || content.contains("<MPD", ignoreCase = true) || content.contains("#EXTM3U", ignoreCase = true)) {
+                    Log.e("TRACE_COMPLETE", "   ❌ CONFIRMED: This IS a manifest file!")
+                    Log.e("TRACE_COMPLETE", "   ❌ The download should have been redirected to DASH/HLS!")
+                }
+            }.onFailure { Log.e("TRACE_COMPLETE", "   Could not inspect completed file", it) }
+        }
+        Log.e("TRACE_COMPLETE", "═══════════════════════════════════")
         Log.d(TAG, "Download completed: ${outputFile.name} (${formatFileSize(actualSize)})")
         updateItem(downloadId) {
             it.copy(
