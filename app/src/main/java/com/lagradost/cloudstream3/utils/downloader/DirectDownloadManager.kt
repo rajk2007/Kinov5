@@ -614,6 +614,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         val completed = AtomicInteger(0)
         val totalBytes = AtomicLong(0L)
         val lastUpdate = AtomicLong(0L)
+        val startedAt = System.currentTimeMillis()
         try {
             coroutineScope {
                 segmentUrls.withIndex().chunked(parallelCount).forEach { batch ->
@@ -629,11 +630,25 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                             val now = System.currentTimeMillis()
                             if (finished == segmentUrls.size || now - lastUpdate.get() >= 500L) {
                                 lastUpdate.set(now)
+                                val elapsedSeconds = (now - startedAt).coerceAtLeast(1L) / 1_000.0
+                                val speedBps = downloaded / elapsedSeconds
+                                val downloadedSoFar = downloadedBytesOffset + downloaded
+                                val estimatedRemainingBytes = if (finished > 0) {
+                                    (downloaded.toDouble() / finished * (progressTotal - progressOffset - finished).coerceAtLeast(0)).toLong()
+                                } else {
+                                    0L
+                                }
                                 updateItem(downloadId) {
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
-                                        downloadedBytes = downloadedBytesOffset + downloaded,
+                                        downloadedBytes = downloadedSoFar,
+                                        speed = formatSpeed(speedBps),
+                                        eta = calculateEta(
+                                            downloadedSoFar,
+                                            downloadedSoFar + estimatedRemainingBytes,
+                                            speedBps,
+                                        ),
                                     )
                                 }
                                 updateDownloadNotification(downloadId)
@@ -1087,6 +1102,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 put("totalBytes", item.totalBytes)
                 put("status", item.status.name)
                 put("filePath", item.filePath ?: JSONObject.NULL)
+                put("speed", item.speed)
+                put("eta", item.eta)
                 put("selectedHeight", item.selectedHeight)
                 put("referer", item.referer)
                 put("headers", JSONObject().apply { item.headers.forEach { (key, value) -> put(key, value) } })
@@ -1127,6 +1144,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         totalBytes = json.optLong("totalBytes", 0L),
                         status = status,
                         filePath = json.optString("filePath").takeUnless { it.isBlank() || it == "null" },
+                        speed = json.optString("speed", ""),
+                        eta = json.optString("eta", ""),
                         error = json.optString("error").takeUnless { it.isBlank() || it == "null" },
                         selectedHeight = json.optInt("selectedHeight", 0),
                         referer = json.optString("referer", ""),

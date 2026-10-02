@@ -509,7 +509,17 @@ private fun groupDownloads(items: List<Any>): List<DownloadGroup> = items.mapNot
 }
 
 private fun DirectDownloadItem.toLibraryItem() = KinoLibraryItem(name = title, url = url, apiName = apiName, posterUrl = posterUrl, downloadedBytes = downloadedBytes, totalBytes = totalBytes, progress = progress / 100f, localUri = filePath, downloadStatus = status)
-private fun downloadQuality(item: DirectDownloadItem): String = if (item.selectedHeight > 0) "${item.selectedHeight}p · Direct" else "Direct download"
+private fun downloadQuality(item: DirectDownloadItem): String {
+    val quality = when {
+        item.selectedHeight >= 2160 -> "4K"
+        item.selectedHeight >= 1440 -> "1440p"
+        item.selectedHeight >= 1080 -> "1080p"
+        item.selectedHeight >= 720 -> "720p"
+        item.selectedHeight >= 480 -> "480p"
+        else -> null
+    }
+    return quality?.let { "$it · ${item.apiName}" } ?: "Auto · ${item.apiName}"
+}
 private fun downloadInfo(item: KinoLibraryItem): String {
     val availability = if (item.localUri != null) "Offline" else "Downloaded"
     return "${formatBytes(item.totalBytes)} · $availability"
