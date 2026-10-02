@@ -46,7 +46,7 @@ fun getSearchRelevanceScore(title: String, query: String): Int {
 fun getProviderPriority(apiName: String): Int {
     val name = apiName.lowercase()
     return when {
-        name.contains("bingecloud") || name.contains("binge cloud") -> 1
+        name.contains("netnaija") || name.contains("net naija") -> 1
         else -> 2
     }
 }
@@ -110,17 +110,17 @@ class KinoSearchViewModel : ViewModel() {
     private suspend fun searchProviders(searchQuery: String) {
         _isLoading.value = true
         _results.value = emptyList()
-        var bingeCloud = APIHolder.apis.firstOrNull { api ->
-            api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+        var netNaija = APIHolder.apis.firstOrNull { api ->
+            api.name.contains("NetNaija", ignoreCase = true) || api.name.contains("Net Naija", ignoreCase = true)
         }
         repeat(60) {
-            if (bingeCloud != null) return@repeat
+            if (netNaija != null) return@repeat
             kotlinx.coroutines.delay(500)
-            bingeCloud = APIHolder.apis.firstOrNull { api ->
-                api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+            netNaija = APIHolder.apis.firstOrNull { api ->
+                api.name.contains("NetNaija", ignoreCase = true) || api.name.contains("Net Naija", ignoreCase = true)
             }
         }
-        val providers = listOfNotNull(bingeCloud)
+        val providers = listOfNotNull(netNaija)
         Log.d("SEARCH_DEBUG", "Search providers: ${providers.map { it.name }}")
         val masterList = mutableListOf<KinoSearchResult>()
         try {

@@ -486,91 +486,70 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
     private fun autoInstallRepositories() {
-        val prefs = getSharedPreferences("kino_setup_v15", MODE_PRIVATE)
-        val flummoxRepoUrl = "https://raw.githubusercontent.com/FlummoxGamer/FLUMMOX-Repo/builds/repo.json"
-        val alreadyInstalled = prefs.getBoolean("repos_installed_v15", false)
-        Log.i(TAG, "Flag 'repos_installed_v15': $alreadyInstalled")
-        if (alreadyInstalled) {
-            Log.i(TAG, "BingeCloud already installed, skipping installation")
-            return
+        val prefs = getSharedPreferences("kino_setup_v17", MODE_PRIVATE)
+        val raghavRepoUrl = "https://raw.githubusercontent.com/KSHITIJ8473/raghav/builds/repo.json"
+        val hasNetNaija = APIHolder.apis.any {
+            it.name.contains("NetNaija", ignoreCase = true) ||
+                it.name.contains("Net Naija", ignoreCase = true)
         }
+        if (hasNetNaija && prefs.getBoolean("repos_installed_v17", false)) return
 
         ioSafe {
-            // Give the normal plugin-loading path time to populate APIHolder before installing.
-            delay(2_000)
-            val hasBingeCloud = APIHolder.apis.any { api ->
-                api.name.contains("BingeCloud", true) ||
-                    api.name.contains("Binge Cloud", true) ||
-                    api.name.contains("binge", true)
-            }
-            Log.i(TAG, "BingeCloud in APIs: $hasBingeCloud")
-            Log.i(TAG, "All APIs: ${APIHolder.apis.map { it.name }}")
-            if (hasBingeCloud) {
-                prefs.edit().putBoolean("repos_installed_v15", true).apply()
-                Log.i(TAG, "BingeCloud already loaded, saving flag and skipping installation")
-                withContext(Dispatchers.Main) {
-                    onAllPluginsLoaded(true)
-                    afterPluginsLoadedEvent.invoke(true)
-                    mainPluginsLoadedEvent.invoke(true)
-                }
-                return@ioSafe
-            }
-            withContext(Dispatchers.Main) { showToast("Setting up BingeCloud...") }
+            withContext(Dispatchers.Main) { showToast("Setting up NetNaija-box...") }
             try {
                 RepositoryManager.getRepositories()
-                    .filter {
-                        it.url.contains("allforu-repo", true) ||
-                            it.url.contains("RVRBEAST76", true) ||
-                            it.url.contains("phisher98", true) ||
-                            it.url.contains("cloudstream-extensions-phisher", true)
+                    .filter { repo ->
+                        repo.url.contains("flummox", ignoreCase = true) ||
+                            repo.url.contains("FLUMMOX-Repo", ignoreCase = true)
                     }
                     .forEach { oldRepo ->
                         RepositoryManager.removeRepository(this@MainActivity, oldRepo)
                         Log.i(TAG, "Removed old repository: ${oldRepo.name}")
                     }
 
-                if (RepositoryManager.getRepositories().none { it.url == flummoxRepoUrl }) {
-                    RepositoryManager.addRepository(RepositoryData(name = "FLUMMOX", url = flummoxRepoUrl))
+                if (RepositoryManager.getRepositories().none { it.url == raghavRepoUrl }) {
+                    RepositoryManager.addRepository(RepositoryData(name = "Raghav", url = raghavRepoUrl))
+                    Log.i(TAG, "Added Raghav repository")
                 }
 
-                RepositoryManager.getRepoPlugins(flummoxRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
-                    Log.i(TAG, "Installing BingeCloud extension: ${sitePlugin.name} (${sitePlugin.internalName})")
-                    val installed = runCatching {
-                        PluginManager.downloadPlugin(
-                            activity = this@MainActivity,
-                            pluginUrl = sitePlugin.url,
-                            pluginHash = sitePlugin.fileHash,
-                            internalName = sitePlugin.internalName,
-                            repositoryUrl = repoUrl,
-                            loadPlugin = true
-                        )
-                    }.getOrElse { logError(it); false }
-                    Log.i(TAG, "Installed ${sitePlugin.name}: $installed")
+                RepositoryManager.getRepoPlugins(raghavRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
+                    val isNetNaija = sitePlugin.name.contains("NetNaija", ignoreCase = true) ||
+                        sitePlugin.internalName.contains("NetNaija", ignoreCase = true)
+                    if (isNetNaija) {
+                        Log.i(TAG, "Installing NetNaija-box extension: ${sitePlugin.name} (${sitePlugin.internalName})")
+                        val installed = runCatching {
+                            PluginManager.downloadPlugin(
+                                activity = this@MainActivity,
+                                pluginUrl = sitePlugin.url,
+                                pluginHash = sitePlugin.fileHash,
+                                internalName = sitePlugin.internalName,
+                                repositoryUrl = repoUrl,
+                                loadPlugin = true
+                            )
+                        }.getOrElse { logError(it); false }
+                        Log.i(TAG, "Installed ${sitePlugin.name}: $installed")
+                    }
                 }
 
-                val oldPluginNames = listOf(
-                    "Netflix", "PrimeVideo", "Prime Video", "Hotstar", "DisneyPlus", "Disney",
-                    "AniVortex", "IStreamFlare", "IStreamplay", "Cricify", "CineFreak"
-                )
-                File(filesDir, "Extensions").walkBottomUp().forEach { file ->
-                    if (file.isFile && (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
-                        oldPluginNames.any { name -> file.name.contains(name, true) || file.absolutePath.contains(name, true) }) {
-                        if (file.delete()) Log.i(TAG, "Deleted old plugin: ${file.name}")
+                val pluginsFolder = File(filesDir, RepositoryManager.ONLINE_PLUGINS_FOLDER)
+                if (pluginsFolder.exists()) {
+                    pluginsFolder.walkBottomUp().forEach { file ->
+                        if (file.isFile && (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
+                            listOf("BingeCloud", "binge", "MovieBox").any { file.name.contains(it, true) }) {
+                            if (file.delete()) Log.i(TAG, "Deleted old plugin: ${file.name}")
+                        }
                     }
                 }
 
                 PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
                 val loadedProviders = APIHolder.allProviders
-                Log.i(TAG, "Loaded providers: ${loadedProviders.map { it.name }}")
-                val bingeCloudLoaded = loadedProviders.any { api ->
-                    api.name.contains("BingeCloud", true) || api.name.contains("Binge Cloud", true)
+                val netNaijaLoaded = loadedProviders.any {
+                    it.name.contains("NetNaija", ignoreCase = true) ||
+                        it.name.contains("Net Naija", ignoreCase = true)
                 }
-                if (bingeCloudLoaded) {
-                    prefs.edit().putBoolean("repos_installed_v15", true).apply()
-                    Log.i(TAG, "BingeCloud successfully installed")
-                } else {
-                    Log.e(TAG, "BingeCloud failed to load; available providers: ${loadedProviders.map { it.name }}")
-                }
+                Log.i(TAG, "NetNaija-box loaded: $netNaijaLoaded")
+                Log.i(TAG, "All providers: ${loadedProviders.map { it.name }}")
+                if (netNaijaLoaded) prefs.edit().putBoolean("repos_installed_v17", true).apply()
 
                 withContext(Dispatchers.Main) {
                     onAllPluginsLoaded(true)
@@ -579,7 +558,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 }
             } catch (e: Exception) {
                 logError(e)
-                Log.e(TAG, "Error installing repositories: ${e.message}")
+                Log.e(TAG, "Error installing NetNaija-box repository: ${e.message}")
             }
         }
     }

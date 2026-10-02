@@ -46,6 +46,9 @@ fun parseLanguageFromLinkName(name: String): String? {
     if (!afterDot.isNullOrBlank() && !afterDot.matches(Regex("""\d{3,4}p|4k""", RegexOption.IGNORE_CASE))) {
         return afterDot.split(Regex("\\s+")).firstOrNull()?.replaceFirstChar { it.uppercase() }
     }
+    Regex("\\((\\w+)\\s+Audio\\)", RegexOption.IGNORE_CASE).find(name)?.groupValues?.getOrNull(1)?.let {
+        return it.replaceFirstChar { char -> char.uppercase() }
+    }
     listOf("Hindi", "English", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali", "Marathi", "Gujarati", "Punjabi", "Urdu", "Dual", "Multi")
         .firstOrNull { name.contains(it, ignoreCase = true) }?.let { return it }
     return null

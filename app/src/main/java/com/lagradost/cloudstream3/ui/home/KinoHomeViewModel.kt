@@ -72,10 +72,9 @@ class KinoHomeViewModel : ViewModel() {
         loadJob = loadData()
     }
 
-    private fun isBingeCloud(api: MainAPI): Boolean =
-        api.name.contains("BingeCloud", true) ||
-            api.name.contains("Binge Cloud", true) ||
-            api.name.contains("binge", true)
+    private fun isNetNaija(api: MainAPI): Boolean =
+        api.name.contains("NetNaija", ignoreCase = true) ||
+            api.name.contains("Net Naija", ignoreCase = true)
 
     private fun loadData() = viewModelScope.launch(Dispatchers.IO) {
         _isLoading.value = true
@@ -127,22 +126,22 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private suspend fun fetchHomeData(): Pair<List<HomeRow>, List<HeroBannerItem>> {
-        var bingeCloudApi: MainAPI? = APIHolder.apis.firstOrNull(::isBingeCloud)
+        var netNaijaApi: MainAPI? = APIHolder.apis.firstOrNull(::isNetNaija)
         var attempts = 0
-        while (bingeCloudApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
+        while (netNaijaApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
             delay(500)
             attempts++
-            bingeCloudApi = APIHolder.apis.firstOrNull(::isBingeCloud)
+            netNaijaApi = APIHolder.apis.firstOrNull(::isNetNaija)
         }
 
-        Log.d("KINO_HOME", "BingeCloud API: ${bingeCloudApi?.name ?: "NOT FOUND"}")
-        if (bingeCloudApi == null) throw IllegalStateException("BingeCloud provider not loaded.")
+        Log.d("KINO_HOME", "NetNaija-box API: ${netNaijaApi?.name ?: "NOT FOUND"}")
+        if (netNaijaApi == null) throw IllegalStateException("NetNaija-box provider not loaded.")
 
-        val sections = fetchProviderSections(bingeCloudApi)
-        val rows = buildHomeRowsFromBingeCloud(sections)
+        val sections = fetchProviderSections(netNaijaApi)
+        val rows = buildHomeRowsFromNetNaija(sections)
         val allItems = rows.flatMap { it.items }.distinctBy { itemKey(it) }
-        Log.d("KINO_HOME", "BingeCloud sections: ${sections.keys}; items: ${allItems.size}")
-        if (allItems.isEmpty()) throw IllegalStateException("No content available from BingeCloud")
+        Log.d("KINO_HOME", "NetNaija-box sections: ${sections.keys}; items: ${allItems.size}")
+        if (allItems.isEmpty()) throw IllegalStateException("No content available from NetNaija-box")
         return rows to prepareHeroBanner(allItems)
     }
 
@@ -154,12 +153,12 @@ class KinoHomeViewModel : ViewModel() {
                     .forEach { page: HomePageList ->
                         val items = page.list.map { it.toMovieResult(api) }
                         sections[page.name] = items.distinctBy(::itemKey)
-                        Log.d("KINO_HOME", "BingeCloud section '${page.name}': ${items.size} items")
+                        Log.d("KINO_HOME", "NetNaija-box section '${page.name}': ${items.size} items")
                     }
-                else -> Log.e("KINO_HOME", "BingeCloud homepage request failed")
+                else -> Log.e("KINO_HOME", "NetNaija-box homepage request failed")
             }
         } catch (error: Exception) {
-            Log.e("KINO_HOME", "BingeCloud homepage exception: ${error.message}", error)
+            Log.e("KINO_HOME", "NetNaija-box homepage exception: ${error.message}", error)
         }
         return sections
     }
@@ -178,21 +177,24 @@ class KinoHomeViewModel : ViewModel() {
     private fun itemKey(item: MovieResult): String =
         "${item.providerApiName}:${item.providerUrl ?: item.id}"
 
-    private fun buildHomeRowsFromBingeCloud(
+    private fun buildHomeRowsFromNetNaija(
         sections: Map<String, List<MovieResult>>
-    ): List<HomeRow> = sections.map { (name, items) ->
-        val lower = name.lowercase()
-        val type = when {
-            "trending" in lower || "popular" in lower -> HomeSectionType.CROWD_PLEASERS
-            "netflix" in lower || "new" in lower || "latest" in lower -> HomeSectionType.NEW_NETFLIX
-            "prime" in lower -> HomeSectionType.TOP_PRIME_MOVIES
-            "korean" in lower || "k-drama" in lower -> HomeSectionType.KOREAN
-            "comedy" in lower -> HomeSectionType.COMEDY_MOVIES
-            "sci-fi" in lower || "science fiction" in lower -> HomeSectionType.SCI_FI_FILMS
-            "horror" in lower -> HomeSectionType.HORROR_FILMS
-            else -> HomeSectionType.CROWD_PLEASERS
+    ): List<HomeRow> {
+        val (live, normal) = sections.entries.partition { it.key.contains("live", ignoreCase = true) }
+        return (normal + live).map { (name, items) ->
+            val lower = name.lowercase()
+            val type = when {
+                "trending" in lower || "popular" in lower -> HomeSectionType.CROWD_PLEASERS
+                "netflix" in lower || "new" in lower || "latest" in lower -> HomeSectionType.NEW_NETFLIX
+                "prime" in lower -> HomeSectionType.TOP_PRIME_MOVIES
+                "korean" in lower || "k-drama" in lower -> HomeSectionType.KOREAN
+                "comedy" in lower -> HomeSectionType.COMEDY_MOVIES
+                "sci-fi" in lower || "science fiction" in lower -> HomeSectionType.SCI_FI_FILMS
+                "horror" in lower -> HomeSectionType.HORROR_FILMS
+                else -> HomeSectionType.CROWD_PLEASERS
+            }
+            HomeRow(name, items, type)
         }
-        HomeRow(name, items, type)
     }
 
     private fun prepareHeroBanner(content: List<MovieResult>): List<HeroBannerItem> =
