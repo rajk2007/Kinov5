@@ -46,6 +46,9 @@ class KinoLibraryViewModel : ViewModel() {
                         episodeId = resume.episodeId,
                         position = watchPos?.position ?: 0L,
                         duration = watchPos?.duration ?: 0L,
+                        // Resume state is stored under the parent/result ID, not the
+                        // episode ID. Keep that key on the UI model for removal.
+                        id = resume.parentId,
                     )
                 }
                     .sortedByDescending { it.first }
@@ -130,6 +133,11 @@ class KinoLibraryViewModel : ViewModel() {
                 e.printStackTrace()
             }
         }
+    }
+
+    /** Re-read Continue Watching from DataStore after a state-changing action. */
+    fun refreshContinueWatching(context: Context) {
+        loadData(context)
     }
 }
 

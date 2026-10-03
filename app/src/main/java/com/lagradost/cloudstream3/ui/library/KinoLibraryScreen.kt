@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -147,8 +148,8 @@ fun KinoLibraryScreen(
                 title = "Continue Watching",
                 action = "Clear All",
                 onAction = {
-                    DataStoreHelper.getAllResumeStateIds()?.forEach(DataStoreHelper::removeLastWatched)
-                    viewModel.loadData(context)
+                    DataStoreHelper.deleteAllResumeStateIds()
+                    viewModel.refreshContinueWatching(context)
                     android.widget.Toast.makeText(context, "Continue Watching cleared", android.widget.Toast.LENGTH_SHORT).show()
                 },
             )
@@ -224,8 +225,10 @@ fun KinoLibraryScreen(
             text = { Text("Remove '${cleanLibraryTitle(item.name)}' from Continue Watching?") },
             confirmButton = {
                 TextButton(onClick = {
+                    val resumeIds = DataStoreHelper.getAllResumeStateIds().orEmpty()
+                    Log.d("REMOVE_DEBUG", "Removing Continue Watching item title=${item.name}, id=${item.id}, idType=${item.id?.let { it::class.simpleName }}, resumeIds=$resumeIds, contains=${item.id?.let(resumeIds::contains) == true}")
                     DataStoreHelper.removeLastWatched(item.id)
-                    viewModel.loadData(context)
+                    viewModel.refreshContinueWatching(context)
                     showRemoveDialog = false
                     itemToRemove = null
                     android.widget.Toast.makeText(context, "Removed from Continue Watching", android.widget.Toast.LENGTH_SHORT).show()

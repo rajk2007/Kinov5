@@ -210,6 +210,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         val filtered = filterDownloadLinks(links)
                         cacheDownloadLinks(cacheKey, filtered)
                         RepoLinkGenerator.seedPlaybackCache(apiName, episode.id, filtered)
+                        android.util.Log.d("PREFETCH_PLAY", "Pre-fetched ${filtered.size} links for episode ${episode.id}")
                     } catch (error: Exception) {
                         android.util.Log.d("PrefetchLinks", "Prefetch failed for ${episode.data.take(80)}", error)
                     } finally {
