@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -48,6 +50,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -76,6 +79,7 @@ import java.io.FileInputStream
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadItem
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
+import com.lagradost.cloudstream3.utils.DataStoreHelper
 
 private val KinoBackgroundTop = Color(0xFF0D0D0F)
 private val KinoBackgroundBottom = Color(0xFF1A1A2E)
@@ -97,6 +101,8 @@ fun KinoLibraryScreen(
     val directDownloads by DirectDownloadManager.activeDownloads.collectAsState()
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showRemoveDialog by remember { mutableStateOf(false) }
+    var itemToRemove by remember { mutableStateOf<KinoLibraryItem?>(null) }
 
     LaunchedEffect(Unit) { viewModel.loadData(context) }
 
@@ -137,7 +143,15 @@ fun KinoLibraryScreen(
             LibraryHeader()
         }
         item {
-            SectionHeading("Continue Watching", "See All (${continueWatching.size})")
+            SectionHeading(
+                title = "Continue Watching",
+                action = "Clear All",
+                onAction = {
+                    DataStoreHelper.getAllResumeStateIds()?.forEach(DataStoreHelper::removeLastWatched)
+                    viewModel.loadData(context)
+                    android.widget.Toast.makeText(context, "Continue Watching cleared", android.widget.Toast.LENGTH_SHORT).show()
+                },
+            )
         }
         if (continueWatching.isEmpty()) {
             item { EmptyMessage("Your watchlist is empty. Start watching something epic.") }
@@ -148,7 +162,14 @@ fun KinoLibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(continueWatching) { media ->
-                        ContinueWatchingCard(media) { onMediaClick(media) }
+                        ContinueWatchingCard(
+                            media = media,
+                            onClick = { onMediaClick(media) },
+                            onLongPress = {
+                                itemToRemove = media
+                                showRemoveDialog = true
+                            },
+                        )
                     }
                 }
             }
@@ -191,6 +212,37 @@ fun KinoLibraryScreen(
         item { SmartDownloadsSection() }
         item { Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) }
     }
+
+    if (showRemoveDialog && itemToRemove != null) {
+        val item = itemToRemove!!
+        AlertDialog(
+            onDismissRequest = {
+                showRemoveDialog = false
+                itemToRemove = null
+            },
+            title = { Text("Remove from Continue Watching") },
+            text = { Text("Remove '${cleanLibraryTitle(item.name)}' from Continue Watching?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    DataStoreHelper.removeLastWatched(item.id)
+                    viewModel.loadData(context)
+                    showRemoveDialog = false
+                    itemToRemove = null
+                    android.widget.Toast.makeText(context, "Removed from Continue Watching", android.widget.Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("Remove", color = KinoRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showRemoveDialog = false
+                    itemToRemove = null
+                }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -204,21 +256,31 @@ private fun LibraryHeader() {
 }
 
 @Composable
-private fun SectionHeading(title: String, action: String) {
+private fun SectionHeading(title: String, action: String, onAction: () -> Unit = {}) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text(action, color = KinoRed, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(
+            action,
+            color = KinoRed,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.clickable(onClick = onAction),
+        )
     }
 }
 
 @Composable
-private fun ContinueWatchingCard(media: KinoLibraryItem, onClick: () -> Unit) {
+private fun ContinueWatchingCard(
+    media: KinoLibraryItem,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
     val progress = if (media.duration > 0L) (media.position.toFloat() / media.duration).coerceIn(0f, 1f) else 0f
-    Column(Modifier.width(165.dp).clickable(onClick = onClick)) {
+    Column(Modifier.width(165.dp).combinedClickable(onClick = onClick, onLongClick = onLongPress)) {
         Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(14.dp)).background(KinoSurface)) {
             AsyncImage(
                 model = media.posterUrl ?: "",
@@ -237,7 +299,6 @@ private fun ContinueWatchingCard(media: KinoLibraryItem, onClick: () -> Unit) {
                     Text("Resume Play", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                 }
             }
-            Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(7.dp).size(19.dp))
             Text(
                 continueWatchingLabel(media),
                 color = Color.White,

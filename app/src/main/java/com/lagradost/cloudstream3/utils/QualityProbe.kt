@@ -46,10 +46,14 @@ fun heightToQualitiesInt(height: Int): Int = when {
 
 fun calculateEstimatedSize(bandwidth: Int?, audioBandwidth: Int = 0, durationSeconds: Long?): Long? {
     if (bandwidth == null || durationSeconds == null || durationSeconds <= 0) return null
-    val totalBandwidth = bandwidth.toLong() + audioBandwidth.coerceAtLeast(0)
-    val rawBytes = totalBandwidth.coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
-    val estimatedBytes = rawBytes * 102 / 100
-    Log.e("SIZE_DEBUG", "video=$bandwidth audio=$audioBandwidth duration=${durationSeconds}s total=$totalBandwidth raw=$rawBytes estimated=$estimatedBytes (${formatFileSize(estimatedBytes)})")
+
+    // Manifest bandwidth values already include container overhead. If the old
+    // 128 kbps default reaches this function, use the more typical 96 kbps AAC
+    // estimate rather than applying another overhead multiplier.
+    val effectiveAudioBandwidth = if (audioBandwidth == 128_000) 96_000 else audioBandwidth.coerceAtLeast(0)
+    val totalBandwidth = bandwidth.toLong() + effectiveAudioBandwidth
+    val estimatedBytes = totalBandwidth.coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
+    Log.d("SIZE_DEBUG", "video=$bandwidth audio=$effectiveAudioBandwidth duration=${durationSeconds}s total=$totalBandwidth estimated=$estimatedBytes (${formatFileSize(estimatedBytes)})")
     return estimatedBytes
 }
 
