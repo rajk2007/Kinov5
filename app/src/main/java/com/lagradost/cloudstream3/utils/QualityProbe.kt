@@ -44,9 +44,11 @@ fun heightToQualitiesInt(height: Int): Int = when {
     else -> Qualities.Unknown.value
 }
 
-fun calculateEstimatedSize(bandwidth: Int?, durationSeconds: Long?): Long? {
+fun calculateEstimatedSize(bandwidth: Int?, audioBandwidth: Int = 0, durationSeconds: Long?): Long? {
     if (bandwidth == null || durationSeconds == null || durationSeconds <= 0) return null
-    return bandwidth.toLong().coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
+    val totalBandwidth = bandwidth.toLong() + audioBandwidth.coerceAtLeast(0)
+    val rawBytes = totalBandwidth.coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
+    return rawBytes * 105 / 100
 }
 
 /** Classifies the transport represented by a link, using URL evidence before extractor metadata. */
@@ -157,7 +159,7 @@ object QualityProbe {
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
                 val duration = fetchHlsDuration(variantUrl, headers)
-                results += ProbedQuality(width, height, bandwidth, variantUrl, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, duration), "hls-${height}-${variantUrl.hashCode()}")
+                results += ProbedQuality(width, height, bandwidth, variantUrl, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, 0, duration), "hls-${height}-${variantUrl.hashCode()}")
             }
         }
         return results.distinctBy { it.selectionKey }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
@@ -178,6 +180,7 @@ object QualityProbe {
         var adaptationWidth = 0
         var adaptationHeight = 0
         var adaptationBandwidth: Int? = null
+        val audioBandwidth = parseAudioBandwidthFromManifest(mpd)
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name) {
@@ -193,12 +196,33 @@ object QualityProbe {
                     val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
                     if (height > 0) {
                         val selectionKey = "dash-${height}-${bandwidth ?: 0}-${results.size}"
-                        results += ProbedQuality(width, height, bandwidth, "${link.url}#track=$height", heightToQualityLabel(height), calculateEstimatedSize(bandwidth, manifestDuration), selectionKey)
+                        results += ProbedQuality(width, height, bandwidth, "${link.url}#track=$height", heightToQualityLabel(height), calculateEstimatedSize(bandwidth, audioBandwidth, manifestDuration), selectionKey)
                     }
                 }
             }
         }
         return results.distinctBy { it.selectionKey }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
+    }
+
+    private fun parseAudioBandwidthFromManifest(mpd: String): Int {
+        val audioAdaptationRegex = Regex(
+            """<AdaptationSet[^>]*?(?:contentType|mimeType)=[" ]audio[^>]*>(.*?)</AdaptationSet>""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        )
+        val representationRegex = Regex(
+            """<Representation[^>]*bandwidth=[" ](\d+)[" ][^>]*>""",
+            RegexOption.IGNORE_CASE,
+        )
+        val maxFromAdaptation = audioAdaptationRegex.findAll(mpd)
+            .flatMap { match -> representationRegex.findAll(match.groupValues[1]) }
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .maxOrNull() ?: 0
+        if (maxFromAdaptation > 0) return maxFromAdaptation
+        val fallbackRegex = Regex(
+            """<Representation[^>]*(?:mimeType|codecs)=[" ][^" ]*audio[^" ]*[" ][^>]*bandwidth=[" ](\d+)[" ][^>]*>""",
+            RegexOption.IGNORE_CASE,
+        )
+        return fallbackRegex.findAll(mpd).mapNotNull { it.groupValues[1].toIntOrNull() }.maxOrNull() ?: 128_000
     }
 
     private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Long? = runCatching {

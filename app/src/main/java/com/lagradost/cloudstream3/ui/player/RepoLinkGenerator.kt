@@ -29,6 +29,24 @@ class RepoLinkGenerator(
         const val TAG = "RepoLink"
         val cache: HashMap<Pair<String, Int>, Cache> =
             hashMapOf()
+
+        /** Shares links resolved by the result/download screen with playback. */
+        fun seedPlaybackCache(apiName: String, episodeId: Int?, links: List<ExtractorLink>) {
+            if (episodeId == null || links.isEmpty()) return
+            val entry = synchronized(cache) {
+                cache[apiName to episodeId] ?: Cache(
+                    mutableSetOf(),
+                    mutableSetOf(),
+                    unixTime,
+                    false,
+                ).also { cache[apiName to episodeId] = it }
+            }
+            synchronized(entry) {
+                entry.linkCache.addAll(links)
+                entry.saturated = entry.linkCache.isNotEmpty()
+                entry.lastCachedTimestamp = unixTime
+            }
+        }
     }
 
     override val hasCache = true

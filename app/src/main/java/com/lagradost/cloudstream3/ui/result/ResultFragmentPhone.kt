@@ -79,6 +79,7 @@ import com.lagradost.cloudstream3.ui.player.CS3IPlayer
 import com.lagradost.cloudstream3.ui.player.CSPlayerEvent
 import com.lagradost.cloudstream3.ui.player.IPlayer
 import com.lagradost.cloudstream3.ui.player.PlayerView
+import com.lagradost.cloudstream3.ui.player.RepoLinkGenerator
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityProfileDialog
 import com.lagradost.cloudstream3.ui.quicksearch.QuickSearchFragment
 import com.lagradost.cloudstream3.ui.result.ResultFragment.bindLogo
@@ -124,7 +125,12 @@ import com.lagradost.cloudstream3.utils.setText
 import com.lagradost.cloudstream3.utils.setTextHtml
 import com.lagradost.cloudstream3.utils.txt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentLinkedDeque
@@ -176,14 +182,24 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
-        episodes.asSequence()
+        val limitedEpisodes = episodes.asSequence()
+            .sortedBy { it.episode }
+            .take(3)
+            .toList()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val semaphore = Semaphore(2)
+            coroutineScope {
+                limitedEpisodes.asSequence()
             .distinctBy { downloadCacheKey(pageUrl, it) }
-            .forEach { episode ->
+            .map { episode ->
+                async {
                 val cacheKey = downloadCacheKey(pageUrl, episode)
-                if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return@forEach
-                lifecycleScope.launch(Dispatchers.IO) {
+                if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) {
+                    return@async
+                }
+                semaphore.withPermit {
                     try {
-                        val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                        val api = APIHolder.getApiFromNameNull(apiName) ?: return@withPermit
                         val links = mutableListOf<ExtractorLink>()
                         APIRepository(api).loadLinks(
                             data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl,
@@ -191,12 +207,17 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             subtitleCallback = { },
                             callback = { link -> links += link },
                         )
-                        cacheDownloadLinks(cacheKey, filterDownloadLinks(links))
+                        val filtered = filterDownloadLinks(links)
+                        cacheDownloadLinks(cacheKey, filtered)
+                        RepoLinkGenerator.seedPlaybackCache(apiName, episode.id, filtered)
                     } catch (error: Exception) {
                         android.util.Log.d("PrefetchLinks", "Prefetch failed for ${episode.data.take(80)}", error)
                     } finally {
                         prefetchingDownloadLinks.remove(cacheKey)
                     }
+                }
+                }
+            }.toList().awaitAll()
             }
         }
     }
@@ -334,6 +355,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
         val cacheKey = downloadCacheKey(pageUrl, ep)
         val cachedLinks = getCachedDownloadLinks(cacheKey).orEmpty()
+        RepoLinkGenerator.seedPlaybackCache(apiName, ep.id, cachedLinks)
         val dialog = BottomSheetDialog(activityContext)
         val composeView = androidx.compose.ui.platform.ComposeView(activityContext).apply {
             setViewCompositionStrategy(
@@ -443,9 +465,18 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         data = data,
                         isCasting = false,
                         subtitleCallback = { },
-                        callback = { link -> resolved += link },
+                        callback = { link ->
+                            resolved += link
+                            val progressive = filterDownloadLinks(resolved)
+                            lifecycleScope.launch(Dispatchers.Main) {
+                                if (isAdded && dialog.isShowing) renderLinks(progressive)
+                            }
+                        },
                     )
-                    filterDownloadLinks(resolved).also { cacheDownloadLinks(cacheKey, it) }
+                    filterDownloadLinks(resolved).also {
+                        cacheDownloadLinks(cacheKey, it)
+                        RepoLinkGenerator.seedPlaybackCache(apiName, ep.id, it)
+                    }
                 }
                 withContext(Dispatchers.Main) {
                     if (isAdded && dialog.isShowing) renderLinks(links)
@@ -746,7 +777,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         viewModel = ViewModelProvider(this)[ResultViewModel2::class.java]
         syncModel = ViewModelProvider(this)[SyncViewModel::class.java]
         updateUIEvent += ::updateUI
-        prefetchAllEpisodeLinks()
 
         resultBinding = binding.fragmentResult
         recommendationBinding = binding.resultRecommendations
