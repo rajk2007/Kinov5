@@ -50,14 +50,8 @@ class RepoLinkGenerator(
     ): Boolean {
         val current = videos.getOrNull(offset) ?: return false
 
-        Log.e("VIDEO_DEBUG", "═══════════════════════════════")
-        Log.e("VIDEO_DEBUG", "🎬 Title: ${current.name}")
-        Log.e("VIDEO_DEBUG", "📡 API: ${current.apiName}")
-        Log.e("VIDEO_DEBUG", "🔗 Data: ${current.data}")
         val currentApi = getApiFromNameNull(current.apiName)
-        Log.e("VIDEO_DEBUG", "🔌 API Found: ${currentApi?.name ?: "NULL"}")
         if (currentApi == null) {
-            Log.e("VIDEO_DEBUG", "❌ Provider not found!")
             return false
         }
 
@@ -121,7 +115,6 @@ class RepoLinkGenerator(
             isCasting = isCasting,
             subtitleCallback = { file ->
                 Log.d(TAG, "Loaded SubtitleFile: $file")
-                Log.e("VIDEO_DEBUG", "📝 Subtitle: ${file.url.take(50)}")
                 val correctFile = PlayerSubtitleHelper.getSubtitleData(file)
                 if (correctFile.url.isBlank() || !currentSubsUrls.add(correctFile.url)) {
                     return@loadLinks
@@ -145,10 +138,6 @@ class RepoLinkGenerator(
             },
             callback = { link ->
                 Log.d(TAG, "Loaded ExtractorLink: $link")
-                Log.e("VIDEO_DEBUG", "✅ LINK FOUND: ${link.url.take(100)}")
-                Log.e("VIDEO_DEBUG", "   Type: ${link.type}")
-                Log.e("VIDEO_DEBUG", "   Headers: ${link.headers}")
-                Log.e("VIDEO_DEBUG", "   Referer: ${link.referer}")
                 if (link.url.isBlank() || !currentLinksUrls.add(link.url)) {
                     return@loadLinks
                 }
@@ -166,7 +155,6 @@ class RepoLinkGenerator(
             }
             )
         } catch (e: Exception) {
-            Log.e("VIDEO_DEBUG", "❌ Error: ${e.message}", e)
             false
         }
 
@@ -175,8 +163,6 @@ class RepoLinkGenerator(
             currentCache.lastCachedTimestamp = unixTime
         }
 
-        Log.e("VIDEO_DEBUG", "📊 Result: $result")
-        Log.e("VIDEO_DEBUG", "═══════════════════════════════")
         return result
     }
 }

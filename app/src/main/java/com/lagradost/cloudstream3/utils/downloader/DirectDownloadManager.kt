@@ -110,6 +110,7 @@ object DirectDownloadManager {
     val activeDownloads: StateFlow<Map<String, DirectDownloadItem>> = _activeDownloads.asStateFlow()
 
     private val downloadJobs = ConcurrentHashMap<String, Job>()
+    private val activeConnections = ConcurrentHashMap<String, HttpURLConnection>()
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var appContext: Context? = null
     private var hasLoadedPersistedDownloads = false
@@ -139,6 +140,7 @@ object DirectDownloadManager {
         posterUrl: String? = null,
         apiName: String = "Unknown",
         selectedHeight: Int = 0,
+        estimatedSizeBytes: Long = 0L,
         reResolveLink: (suspend () -> ExtractorLink?)? = null,
     ): Boolean {
         Log.e("URL_TRACE", "═════════════════════════════")
@@ -208,6 +210,7 @@ object DirectDownloadManager {
             posterUrl = posterUrl,
             apiName = apiName,
             selectedHeight = selectedHeight,
+            totalBytes = estimatedSizeBytes,
             referer = downloadLink.referer,
             headers = downloadLink.headers,
         )
@@ -294,8 +297,9 @@ object DirectDownloadManager {
 
     fun pauseDownload(downloadId: String) {
         Log.d(TAG, "Pausing download without deleting partial data: $downloadId")
-        // Cancellation exits executeDownload through its CancellationException path. The
-        // .part file and the item in activeDownloads are intentionally retained for resume.
+        // Disconnect first so a blocking read wakes up promptly; cancellation then preserves
+        // the .part file and any completed HLS/DASH segments for resume.
+        activeConnections[downloadId]?.disconnect()
         downloadJobs.remove(downloadId)?.cancel()
         updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "") }
         persistDownloads(force = true)
@@ -400,6 +404,7 @@ object DirectDownloadManager {
                         requestHeaders(link).forEach { (key, value) -> setRequestProperty(key, value) }
                         if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
                     }
+                    activeConnections[downloadId] = connection
                     val responseCode = connection.responseCode
                     Log.e("DL_404", "═════════════════════════════")
                     Log.e("DL_404", "Attempting to download:")
@@ -454,11 +459,29 @@ object DirectDownloadManager {
                         }
                         throw IOException("Server returned '${contentType.take(60)}', not a video. The link is likely expired or requires different headers.")
                     }
-                    val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
-                    if (!append) tempFile.delete()
+                    val append = when {
+                        existingBytes <= 0L -> false
+                        responseCode == HttpURLConnection.HTTP_PARTIAL -> true
+                        responseCode == HttpURLConnection.HTTP_OK && responseLength > 0L && responseLength == existingBytes -> {
+                            // The server ignored Range, but the retained part is already complete.
+                            finalizeDownload(downloadId, outputFile, tempFile)
+                            return true
+                        }
+                        else -> {
+                            // A 200 response with a different length is a full restart, not an
+                            // append. Avoid duplicating the retained prefix in the output.
+                            Log.w(TAG, "Server did not return 206 for Range; restarting (existing=$existingBytes, code=$responseCode)")
+                            tempFile.delete()
+                            false
+                        }
+                    }
                     val startingBytes = if (append) existingBytes else 0L
                     val contentLength = connection.contentLengthLong
-                    val totalBytes = if (contentLength > 0L) startingBytes + contentLength else 0L
+                    val totalBytes = when {
+                        contentLength > 0L -> startingBytes + contentLength
+                        item.totalBytes > 0L -> item.totalBytes
+                        else -> 0L
+                    }
                     updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, downloadedBytes = startingBytes, totalBytes = totalBytes) }
 
                     var downloadedBytes = startingBytes
@@ -515,6 +538,7 @@ object DirectDownloadManager {
                     delay(2_000L * attempt)
                 } finally {
                     connection?.disconnect()
+                    activeConnections.remove(downloadId, connection)
                 }
             }
 throw IOException("Download failed after $MAX_RETRIES attempts.")
@@ -571,7 +595,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("TRACE_HLS", "   Segments found: ${segments.size}")
             Log.e("DL_EXEC", "HLS segments found: ${segments.size}")
 
-            downloadSegmentsParallel(downloadId, segments, headers, tempFile)
+            downloadSegmentsParallel(downloadId, segments, headers, tempFile, estimatedTotalBytes = item.totalBytes)
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
             Log.e("TRACE_HLS", "   Total bytes: ${outputFile.length()}")
@@ -605,19 +629,29 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         progressOffset: Int = 0,
         progressTotal: Int = segmentUrls.size,
         downloadedBytesOffset: Long = 0L,
+        estimatedTotalBytes: Long = 0L,
     ) {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
-        segmentDir.deleteRecursively()
-        require(segmentDir.mkdirs()) { "Could not create temporary segment directory." }
-
+        if (!segmentDir.exists()) require(segmentDir.mkdirs()) { "Could not create temporary segment directory." }
         val completed = AtomicInteger(0)
         val totalBytes = AtomicLong(0L)
+        segmentUrls.forEachIndexed { index, _ ->
+            val segmentFile = File(segmentDir, "segment_$index.bin")
+            if (segmentFile.exists() && segmentFile.length() > 0L) {
+                completed.incrementAndGet()
+                totalBytes.addAndGet(segmentFile.length())
+            }
+        }
         val lastUpdate = AtomicLong(0L)
         val startedAt = System.currentTimeMillis()
-        try {
-            coroutineScope {
-                segmentUrls.withIndex().chunked(parallelCount).forEach { batch ->
+        coroutineScope {
+            segmentUrls.withIndex()
+                    .filterNot { (index, _) ->
+                        val segmentFile = File(segmentDir, "segment_$index.bin")
+                        segmentFile.exists() && segmentFile.length() > 0L
+                    }
+                    .chunked(parallelCount).forEach { batch ->
                     batch.map { indexed ->
                         async(Dispatchers.IO) {
                             if (!currentCoroutineContext().isActive) throw CancellationException()
@@ -643,6 +677,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
+                                        totalBytes = if (estimatedTotalBytes > 0L) estimatedTotalBytes else it.totalBytes,
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
@@ -658,20 +693,20 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
             }
 
-            FileOutputStream(outputFile, false).use { output ->
-                segmentUrls.indices.forEach { index ->
-                    File(segmentDir, "segment_$index.bin").inputStream().use { input -> input.copyTo(output) }
-                }
+        FileOutputStream(outputFile, false).use { output ->
+            segmentUrls.indices.forEach { index ->
+                File(segmentDir, "segment_$index.bin").inputStream().use { input -> input.copyTo(output) }
             }
-            updateItem(downloadId) {
-                it.copy(
-                    progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
-                    downloadedBytes = downloadedBytesOffset + totalBytes.get(),
-                )
-            }
-        } finally {
-            segmentDir.deleteRecursively()
         }
+        updateItem(downloadId) {
+            it.copy(
+                progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
+                downloadedBytes = downloadedBytesOffset + totalBytes.get(),
+                totalBytes = if (estimatedTotalBytes > 0L) estimatedTotalBytes else it.totalBytes,
+            )
+        }
+        // Cleanup is safe only after every segment has been concatenated successfully.
+        segmentDir.deleteRecursively()
     }
 
     private data class DashRepresentation(val width: Int, val height: Int, val bandwidth: Long, val segments: List<String>)
@@ -713,9 +748,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("TRACE_DASH", "   Segments found: ${videoSegments.size + audioSegments.size}")
             Log.e("DASH_PARSE", "Found ${videoSegments.size} video and ${audioSegments.size} audio segments")
             Log.e("DASH_AUDIO", "Found ${videoRepresentations.size} video and ${audioRepresentations.size} audio representations")
-            downloadSegmentsParallel(downloadId, videoSegments, headers, videoFile, progressOffset = 0, progressTotal = videoSegments.size + audioSegments.size)
+            downloadSegmentsParallel(downloadId, videoSegments, headers, videoFile, progressOffset = 0, progressTotal = videoSegments.size + audioSegments.size, estimatedTotalBytes = item.totalBytes)
             if (audioSegments.isNotEmpty()) {
-                downloadSegmentsParallel(downloadId, audioSegments, headers, audioFile, progressOffset = videoSegments.size, progressTotal = videoSegments.size + audioSegments.size, downloadedBytesOffset = videoFile.length())
+                downloadSegmentsParallel(downloadId, audioSegments, headers, audioFile, progressOffset = videoSegments.size, progressTotal = videoSegments.size + audioSegments.size, downloadedBytesOffset = videoFile.length(), estimatedTotalBytes = item.totalBytes)
                 muxDashTracks(videoFile, audioFile, muxedFile)
             } else {
                 Log.w("DASH_AUDIO", "No audio representation found; keeping the video-only DASH download")

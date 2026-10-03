@@ -353,7 +353,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     } else {
                         DownloadOptionsSheet(
                             links = links,
-                            onDownload = { selectedLink, selectedHeight ->
+                            onDownload = { selectedLink, selectedHeight, estimatedSizeBytes ->
                                 dialog.dismiss()
                                 lifecycleScope.launch(Dispatchers.IO) {
                                     try {
@@ -401,6 +401,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 posterUrl = response.posterUrl,
                                                 apiName = apiName,
                                                 selectedHeight = selectedHeight,
+                                                estimatedSizeBytes = estimatedSizeBytes,
                                             )
                                             if (started) {
                                                 withContext(Dispatchers.Main) {
