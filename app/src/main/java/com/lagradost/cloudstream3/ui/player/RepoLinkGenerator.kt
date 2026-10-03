@@ -33,6 +33,7 @@ class RepoLinkGenerator(
         /** Shares links resolved by the result/download screen with playback. */
         fun seedPlaybackCache(apiName: String, episodeId: Int?, links: List<ExtractorLink>) {
             if (episodeId == null || links.isEmpty()) return
+            Log.e("CACHE_VERIFY", "seedPlaybackCache called: API=$apiName episode=$episodeId links=${links.size}")
             val entry = synchronized(cache) {
                 cache[apiName to episodeId] ?: Cache(
                     mutableSetOf(),
@@ -45,6 +46,7 @@ class RepoLinkGenerator(
                 entry.linkCache.addAll(links)
                 entry.saturated = entry.linkCache.isNotEmpty()
                 entry.lastCachedTimestamp = unixTime
+                Log.e("CACHE_VERIFY", "Cache seeded: links=${entry.linkCache.size} saturated=${entry.saturated}")
             }
         }
     }
@@ -72,6 +74,8 @@ class RepoLinkGenerator(
         if (currentApi == null) {
             return false
         }
+
+        Log.e("CACHE_VERIFY", "generateLinks called: API=${current.apiName} episode=${current.id} cacheExists=${synchronized(cache) { cache.containsKey(current.apiName to current.id) }}")
 
         val currentCache = synchronized(cache) {
             cache[current.apiName to current.id] ?: Cache(
@@ -123,8 +127,10 @@ class RepoLinkGenerator(
             // this stops all execution if links are cached
             // no extra get requests
             if (currentCache.saturated) {
+                Log.e("CACHE_VERIFY", "CACHE HIT: links=${currentCache.linkCache.size} age=${unixTime - currentCache.lastCachedTimestamp}s")
                 return true
             }
+            Log.e("CACHE_VERIFY", "CACHE MISS: links=${currentCache.linkCache.size}; loading provider links")
         }
 
         val result = try {

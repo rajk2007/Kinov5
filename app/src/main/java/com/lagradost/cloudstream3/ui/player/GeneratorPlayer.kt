@@ -2284,6 +2284,8 @@ class GeneratorPlayer : FullScreenPlayer() {
         observe(viewModel.currentLinks) { (links, instance) ->
             if (instance != viewModel.state.instance) return@observe // Outdated observe
 
+            Log.e("PLAY_DEBUG", "currentLinks observer: links=${links.size} active=${isPlayerActive.get()}")
+
             val turnVisible = links.isNotEmpty() && viewModel.generator?.canSkipLoading == true
             val wasGone = binding.overlayLoadingSkipButton.isGone
 
@@ -2299,7 +2301,10 @@ class GeneratorPlayer : FullScreenPlayer() {
 
             safe {
                 if (!isPlayerActive.get() && viewModel.state.links.isNotEmpty()) {
+                    Log.e("PLAY_DEBUG", "STARTING PLAYER on first available link")
                     startPlayer()
+                } else {
+                    Log.e("PLAY_DEBUG", "Not starting: active=${isPlayerActive.get()} linksEmpty=${viewModel.state.links.isEmpty()}")
                 }
             }
 

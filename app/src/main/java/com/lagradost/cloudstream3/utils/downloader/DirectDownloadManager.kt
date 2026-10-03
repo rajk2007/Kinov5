@@ -672,6 +672,11 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 } else {
                                     0L
                                 }
+                                val etaTotalBytes = if (estimatedTotalBytes > 0L) {
+                                    estimatedTotalBytes
+                                } else {
+                                    downloadedSoFar + estimatedRemainingBytes
+                                }
                                 updateItem(downloadId) {
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
@@ -681,7 +686,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
-                                            downloadedSoFar + estimatedRemainingBytes,
+                                            etaTotalBytes,
                                             speedBps,
                                         ),
                                     )
@@ -1249,7 +1254,19 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun cancelNotification(id: String, context: Context) { runCatching { NotificationManagerCompat.from(context).cancel(id.hashCode()) } }
     private fun httpException(code: Int, message: String?): IOException = when (code) { 401 -> IOException("Authentication required (401)."); 403 -> IOException("Access denied (403)."); 404 -> IOException("File not found (404). The link may have expired."); in 500..599 -> IOException("Server error ($code). Try again later."); else -> IOException("HTTP $code: ${message ?: "Request failed"}") }
     private fun calculateEta(downloadedBytes: Long, totalBytes: Long, speedBps: Double): String {
-        if (totalBytes <= 0L || downloadedBytes >= totalBytes || speedBps <= 0.0) return "Calculating..."
+        Log.e("ETA_DEBUG", "calculateEta: downloaded=$downloadedBytes total=$totalBytes speed=$speedBps")
+        if (totalBytes <= 0L) {
+            Log.e("ETA_DEBUG", "ETA unavailable: totalBytes is zero")
+            return "Calculating..."
+        }
+        if (downloadedBytes >= totalBytes) {
+            Log.e("ETA_DEBUG", "Download reached estimated total; returning almost done")
+            return "Almost done..."
+        }
+        if (speedBps <= 0.0) {
+            Log.e("ETA_DEBUG", "ETA unavailable: speed is zero")
+            return "Calculating..."
+        }
         val remainingSeconds = ((totalBytes - downloadedBytes) / speedBps).toLong().coerceAtLeast(1L)
         return when {
             remainingSeconds >= 3600L -> "${remainingSeconds / 3600L}h ${(remainingSeconds % 3600L) / 60L}m left"

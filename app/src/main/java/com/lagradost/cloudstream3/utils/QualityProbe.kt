@@ -48,7 +48,9 @@ fun calculateEstimatedSize(bandwidth: Int?, audioBandwidth: Int = 0, durationSec
     if (bandwidth == null || durationSeconds == null || durationSeconds <= 0) return null
     val totalBandwidth = bandwidth.toLong() + audioBandwidth.coerceAtLeast(0)
     val rawBytes = totalBandwidth.coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
-    return rawBytes * 105 / 100
+    val estimatedBytes = rawBytes * 102 / 100
+    Log.e("SIZE_DEBUG", "video=$bandwidth audio=$audioBandwidth duration=${durationSeconds}s total=$totalBandwidth raw=$rawBytes estimated=$estimatedBytes (${formatFileSize(estimatedBytes)})")
+    return estimatedBytes
 }
 
 /** Classifies the transport represented by a link, using URL evidence before extractor metadata. */
@@ -222,7 +224,7 @@ object QualityProbe {
             """<Representation[^>]*(?:mimeType|codecs)=[" ][^" ]*audio[^" ]*[" ][^>]*bandwidth=[" ](\d+)[" ][^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        return fallbackRegex.findAll(mpd).mapNotNull { it.groupValues[1].toIntOrNull() }.maxOrNull() ?: 128_000
+        return fallbackRegex.findAll(mpd).mapNotNull { it.groupValues[1].toIntOrNull() }.maxOrNull() ?: 96_000
     }
 
     private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Long? = runCatching {
