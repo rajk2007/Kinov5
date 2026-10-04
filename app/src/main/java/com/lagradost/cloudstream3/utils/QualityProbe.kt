@@ -52,7 +52,8 @@ fun calculateEstimatedSize(bandwidth: Int?, audioBandwidth: Int = 0, durationSec
     val effectiveAudioBandwidth = audioBandwidth.coerceAtLeast(0)
     val totalBandwidth = bandwidth.toLong() + effectiveAudioBandwidth
     val rawBytes = totalBandwidth.coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
-    val estimatedBytes = rawBytes.coerceAtMost(Long.MAX_VALUE / 102) * 102 / 100
+    // Manifest bandwidth is a peak value; observed average bitrate is typically ~4% lower.
+    val estimatedBytes = rawBytes * 96 / 100
     Log.d("SIZE_CALC", "video=$bandwidth audio=$effectiveAudioBandwidth duration=${durationSeconds}s total=$totalBandwidth raw=$rawBytes estimated=$estimatedBytes (${formatFileSize(estimatedBytes)})")
     return estimatedBytes
 }
