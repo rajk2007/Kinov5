@@ -31,8 +31,6 @@ import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withTimeout
 
 fun parseQualityFromLinkName(name: String): String? {
     val match = Regex("\\b(144|240|360|480|720|1080|1440|2160)p\\b|\\b4[kK]\\b", RegexOption.IGNORE_CASE)
@@ -91,13 +89,9 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
     LaunchedEffect(selectedLanguage, selectedLinks) {
         isProbing = true
         try {
-            withTimeout(8_000L) {
-                probedQualities = selectedLinks.map { link -> async { link to QualityProbe.probeVideoQualities(link) } }.awaitAll().toMap()
-            }
-        } catch (_: TimeoutCancellationException) {
-            probedQualities = selectedLinks.associateWith { link ->
-                listOf(ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Auto", selectionKey = "timeout-${link.url.hashCode()}"))
-            }
+            probedQualities = selectedLinks.map { link ->
+                async { link to QualityProbe.probeVideoQualities(link) }
+            }.awaitAll().toMap()
         } finally {
             isProbing = false
         }
@@ -106,7 +100,16 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
     val qualityOptions = remember(probedQualities, selectedLinks) {
         probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, probed.estimatedSizeBytes) } }
             .distinctBy { it.id }.sortedByDescending { it.height }.ifEmpty {
-                selectedLinks.map { link -> QualityOption("${link.url}|fallback", parseQualityFromLinkName(link.name) ?: "Original Quality", 0, 0, link, link.url) }
+                selectedLinks.map { link ->
+                    val fallbackQuality = when {
+                        link.quality >= 2160 -> "2160p"
+                        link.quality >= 1080 -> "1080p"
+                        link.quality >= 720 -> "720p"
+                        link.quality >= 480 -> "480p"
+                        else -> parseQualityFromLinkName(link.name) ?: "Original Quality"
+                    }
+                    QualityOption("${link.url}|fallback", fallbackQuality, 0, 0, link, link.url)
+                }
             }
     }
     var selectedId by remember(selectedLanguage, qualityOptions) { mutableStateOf(qualityOptions.firstOrNull()?.id.orEmpty()) }

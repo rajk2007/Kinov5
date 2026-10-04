@@ -182,88 +182,23 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
-        val limitedEpisodes = episodes.asSequence()
-            .sortedBy { it.episode }
-            .take(3)
-            .toList()
-        lifecycleScope.launch(Dispatchers.IO) {
-            val semaphore = Semaphore(2)
-            coroutineScope {
-                limitedEpisodes.asSequence()
-            .distinctBy { downloadCacheKey(pageUrl, it) }
-            .map { episode ->
-                async {
-                val cacheKey = downloadCacheKey(pageUrl, episode)
-                if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) {
-                    return@async
-                }
-                semaphore.withPermit {
-                    try {
-                        val api = APIHolder.getApiFromNameNull(apiName) ?: return@withPermit
-                        val links = mutableListOf<ExtractorLink>()
-                        APIRepository(api).loadLinks(
-                            data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl,
-                            isCasting = false,
-                            subtitleCallback = { },
-                            callback = { link -> links += link },
-                        )
-                        val filtered = filterDownloadLinks(links)
-                        cacheDownloadLinks(cacheKey, filtered)
-                        RepoLinkGenerator.seedPlaybackCache(apiName, episode.id, filtered)
-                        android.util.Log.d("PREFETCH_PLAY", "Pre-fetched ${filtered.size} links for episode ${episode.id}")
-                    } catch (error: Exception) {
-                        android.util.Log.d("PrefetchLinks", "Prefetch failed for ${episode.data.take(80)}", error)
-                    } finally {
-                        prefetchingDownloadLinks.remove(cacheKey)
-                    }
-                }
-                }
-            }.toList().awaitAll()
-            }
-        }
-    }
+        val episode = episodes.sortedBy { it.episode }.firstOrNull() ?: return
+        val episodeId = episode.id ?: return
+        val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+        val cacheKey = downloadCacheKey(pageUrl, episode)
 
-    /** Starts resolving provider links as soon as the details screen is created. */
-    private fun prefetchAllEpisodeLinks() {
-        val pageUrl = arguments?.getString("url") ?: return
-        val apiName = arguments?.getString("apiName") ?: return
         lifecycleScope.launch(Dispatchers.IO) {
+            if (getCachedDownloadLinks(cacheKey) != null) return@launch
             try {
                 val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                val response = APIRepository(api).load(pageUrl)
-                val loadResponse = (response as? Resource.Success)?.value ?: return@launch
-                when (loadResponse) {
-                    is MovieLoadResponse -> prefetchLinkData(pageUrl, apiName, loadResponse.dataUrl)
-                    is TvSeriesLoadResponse -> loadResponse.episodes.forEach { episode ->
-                        prefetchLinkData(pageUrl, apiName, episode.data)
-                    }
-                    is AnimeLoadResponse -> loadResponse.episodes.values.flatten().forEach { episode ->
-                        prefetchLinkData(pageUrl, apiName, episode.data)
-                    }
-                    else -> Unit
-                }
+                android.util.Log.d("PREFETCH_PLAY", "Prefetching shared links for episode $episodeId")
+                RepoLinkGenerator.beginOrAttachLinkRequest(apiName, episodeId, data, api).await()
+                val links = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
+                cacheDownloadLinks(cacheKey, links)
+                android.util.Log.d("PREFETCH_PLAY", "Prefetched ${links.size} links for episode $episodeId")
             } catch (error: Exception) {
-                android.util.Log.d("PrefetchLinks", "Page prefetch failed", error)
+                android.util.Log.d("PrefetchLinks", "Prefetch failed for $data", error)
             }
-        }
-    }
-
-    private suspend fun prefetchLinkData(pageUrl: String, apiName: String, data: String) {
-        val normalizedData = data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-        val cacheKey = "$pageUrl|$normalizedData"
-        if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return
-        try {
-            val api = APIHolder.getApiFromNameNull(apiName) ?: return
-            val links = mutableListOf<ExtractorLink>()
-            APIRepository(api).loadLinks(
-                data = normalizedData,
-                isCasting = false,
-                subtitleCallback = { },
-                callback = { link -> links += link },
-            )
-            cacheDownloadLinks(cacheKey, filterDownloadLinks(links))
-        } finally {
-            prefetchingDownloadLinks.remove(cacheKey)
         }
     }
 
