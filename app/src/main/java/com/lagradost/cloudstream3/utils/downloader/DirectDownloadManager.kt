@@ -595,7 +595,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("TRACE_HLS", "   Segments found: ${segments.size}")
             Log.e("DL_EXEC", "HLS segments found: ${segments.size}")
 
-            downloadSegmentsParallel(downloadId, segments, headers, tempFile, estimatedTotalBytes = item.totalBytes)
+            downloadSegmentsParallel(downloadId, segments, headers, tempFile)
             if (!currentCoroutineContext().isActive) throw CancellationException()
             finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
             Log.e("TRACE_HLS", "   Total bytes: ${outputFile.length()}")
@@ -629,7 +629,6 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         progressOffset: Int = 0,
         progressTotal: Int = segmentUrls.size,
         downloadedBytesOffset: Long = 0L,
-        estimatedTotalBytes: Long = 0L,
     ) {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
@@ -667,22 +666,20 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val elapsedSeconds = (now - startedAt).coerceAtLeast(1L) / 1_000.0
                                 val speedBps = downloaded / elapsedSeconds
                                 val downloadedSoFar = downloadedBytesOffset + downloaded
-                                val estimatedRemainingBytes = if (finished > 0) {
-                                    (downloaded.toDouble() / finished * (progressTotal - progressOffset - finished).coerceAtLeast(0)).toLong()
+                                val actualTotalBytes = if (finished >= 2) {
+                                    downloadedBytesOffset +
+                                        (downloaded.toDouble() / finished * (progressTotal - progressOffset)).toLong()
                                 } else {
                                     0L
                                 }
-                                val etaTotalBytes = if (estimatedTotalBytes > 0L) {
-                                    estimatedTotalBytes
-                                } else {
-                                    downloadedSoFar + estimatedRemainingBytes
-                                }
+                                val etaTotalBytes = actualTotalBytes.takeIf { it > 0L }
+                                    ?: (downloadedSoFar + (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset - finished).coerceAtLeast(0)).toLong())
                                 updateItem(downloadId) {
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
-                                        totalBytes = if (estimatedTotalBytes > 0L) estimatedTotalBytes else it.totalBytes,
+                                        totalBytes = actualTotalBytes.takeIf { it > 0L } ?: it.totalBytes,
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
@@ -707,7 +704,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             it.copy(
                 progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                 downloadedBytes = downloadedBytesOffset + totalBytes.get(),
-                totalBytes = if (estimatedTotalBytes > 0L) estimatedTotalBytes else it.totalBytes,
+                totalBytes = (downloadedBytesOffset + totalBytes.get()).takeIf { it > 0L } ?: it.totalBytes,
             )
         }
         // Cleanup is safe only after every segment has been concatenated successfully.
@@ -753,9 +750,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("TRACE_DASH", "   Segments found: ${videoSegments.size + audioSegments.size}")
             Log.e("DASH_PARSE", "Found ${videoSegments.size} video and ${audioSegments.size} audio segments")
             Log.e("DASH_AUDIO", "Found ${videoRepresentations.size} video and ${audioRepresentations.size} audio representations")
-            downloadSegmentsParallel(downloadId, videoSegments, headers, videoFile, progressOffset = 0, progressTotal = videoSegments.size + audioSegments.size, estimatedTotalBytes = item.totalBytes)
+            downloadSegmentsParallel(downloadId, videoSegments, headers, videoFile, progressOffset = 0, progressTotal = videoSegments.size + audioSegments.size)
             if (audioSegments.isNotEmpty()) {
-                downloadSegmentsParallel(downloadId, audioSegments, headers, audioFile, progressOffset = videoSegments.size, progressTotal = videoSegments.size + audioSegments.size, downloadedBytesOffset = videoFile.length(), estimatedTotalBytes = item.totalBytes)
+                downloadSegmentsParallel(downloadId, audioSegments, headers, audioFile, progressOffset = videoSegments.size, progressTotal = videoSegments.size + audioSegments.size, downloadedBytesOffset = videoFile.length())
                 muxDashTracks(videoFile, audioFile, muxedFile)
             } else {
                 Log.w("DASH_AUDIO", "No audio representation found; keeping the video-only DASH download")

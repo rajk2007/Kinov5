@@ -249,8 +249,13 @@ object QualityProbe {
         }
         return try {
             val response = app.head(link.url, headers = requestHeaders(link), timeout = PROBE_TIMEOUT_MS / 1000)
-            val contentLength = response.headers["Content-Length"]?.toLongOrNull()
-            listOf(ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Original Quality", contentLength, "prog-${link.url.hashCode()}"))
+            val contentLength = response.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+            if (contentLength != null) {
+                listOf(ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Original Quality", contentLength, "prog-${link.url.hashCode()}"))
+            } else {
+                Log.w(TAG, "Progressive HEAD probe returned no usable Content-Length; using fallback")
+                fallback(link)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Progressive HEAD probe failed; using fallback", e)
             fallback(link)
