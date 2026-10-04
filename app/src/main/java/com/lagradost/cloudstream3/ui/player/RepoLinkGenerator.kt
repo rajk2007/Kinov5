@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.APIHolder.getApiFromNameNull
 import com.lagradost.cloudstream3.APIHolder.unixTime
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.ui.result.ResultEpisode
 import com.lagradost.cloudstream3.utils.AppContextUtils.html
@@ -81,7 +82,8 @@ class RepoLinkGenerator(
                     APIRepository(api).loadLinks(
                         data = data,
                         isCasting = false,
-                        subtitleCallback = { subtitle ->
+                        subtitleCallback = { subtitleFile: SubtitleFile ->
+                            val subtitle = PlayerSubtitleHelper.getSubtitleData(subtitleFile)
                             synchronized(entry) {
                                 if (entry.subtitleCache.add(subtitle)) {
                                     entry.lastCachedTimestamp = unixTime
@@ -109,6 +111,7 @@ class RepoLinkGenerator(
                 } finally {
                     inflightRequests.remove(key)
                 }
+                Unit
             }
             val existing = inflightRequests.putIfAbsent(key, candidate)
             if (existing != null) {
