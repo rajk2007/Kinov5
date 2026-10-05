@@ -272,15 +272,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         downloadEpisodes: List<ResultEpisode> = listOf(ep),
     ) {
         val activityContext = activity ?: return
-        val settings = androidx.preference.PreferenceManager.getDefaultSharedPreferences(activityContext)
-        val pathKey = getString(com.lagradost.cloudstream3.R.string.download_path_key)
-        if (settings.getString(pathKey, null).isNullOrBlank()) {
-            val downloadDir = activityContext.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
-                ?.apply { mkdirs() }?.absolutePath
-                ?: java.io.File(activityContext.filesDir, "downloads").apply { mkdirs() }.absolutePath
-            settings.edit().putString(pathKey, downloadDir).apply()
-        }
-
         val pageUrl = arguments?.getString("url") ?: run {
             Toast.makeText(activityContext, "Missing url", Toast.LENGTH_SHORT).show()
             return
@@ -351,6 +342,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                             val season = episode.season ?: 1
                                             val title = if (isMovie) response.name else "${response.name} - S${season}E${episode.episode}"
                                             val fileName = if (isMovie) response.name else "${response.name}_S${season}E${episode.episode}"
+                                            ensureDownloadPath(activityContext)
                                             val started = DirectDownloadManager.startDownload(
                                                 context = activityContext,
                                                 link = episodeLink,
@@ -425,6 +417,17 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
                 }
             }
+        }
+    }
+
+    private fun ensureDownloadPath(context: android.content.Context) {
+        val settings = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val pathKey = getString(com.lagradost.cloudstream3.R.string.download_path_key)
+        if (settings.getString(pathKey, null).isNullOrBlank()) {
+            val downloadDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
+                ?.apply { mkdirs() }?.absolutePath
+                ?: java.io.File(context.filesDir, "downloads").apply { mkdirs() }.absolutePath
+            settings.edit().putString(pathKey, downloadDir).apply()
         }
     }
 

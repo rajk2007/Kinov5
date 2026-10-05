@@ -44,19 +44,51 @@ fun heightToQualitiesInt(height: Int): Int = when {
     else -> Qualities.Unknown.value
 }
 
-fun calculateEstimatedSize(bandwidth: Int?, audioBandwidth: Int = 0, durationSeconds: Long?): Long? {
-    if (bandwidth == null || durationSeconds == null || durationSeconds <= 0) return null
+fun calculateEstimatedSize(
+    videoBandwidth: Long?,
+    audioBandwidth: Long = 0,
+    durationSeconds: Double?,
+    overheadPercent: Int = 2,
+): Long? {
+    if (videoBandwidth == null || durationSeconds == null || durationSeconds <= 0.0) return null
 
-    // Keep parsed manifest bandwidth intact and account for the small amount of
-    // container/segment overhead that is not represented by nominal bitrates.
     val effectiveAudioBandwidth = audioBandwidth.coerceAtLeast(0)
-    val totalBandwidth = bandwidth.toLong() + effectiveAudioBandwidth
-    val rawBytes = totalBandwidth.coerceAtMost(Long.MAX_VALUE / durationSeconds) * durationSeconds / 8
-    // Manifest bandwidth is a peak value; observed average bitrate is typically ~4% lower.
-    val estimatedBytes = rawBytes * 96 / 100
-    Log.d("SIZE_CALC", "video=$bandwidth audio=$effectiveAudioBandwidth duration=${durationSeconds}s total=$totalBandwidth raw=$rawBytes estimated=$estimatedBytes (${formatFileSize(estimatedBytes)})")
+    val totalBandwidth = videoBandwidth + effectiveAudioBandwidth
+    val rawBytes = totalBandwidth.toDouble() * durationSeconds / 8.0
+    val estimatedBytes = (rawBytes * (100 + overheadPercent.coerceAtLeast(0)) / 100.0)
+        .coerceAtMost(Long.MAX_VALUE.toDouble())
+        .toLong()
+    Log.d(
+        "SIZE_CALC",
+        "video=$videoBandwidth audio=$effectiveAudioBandwidth duration=${durationSeconds}s " +
+            "total=$totalBandwidth raw=$rawBytes estimated=$estimatedBytes (${formatFileSize(estimatedBytes)})",
+    )
     return estimatedBytes
 }
+
+/** Returns (AVERAGE-BANDWIDTH, BANDWIDTH) from an HLS stream declaration. */
+fun parseHlsBandwidth(line: String): Pair<Long?, Long?> {
+    val averageBandwidth = Regex("""AVERAGE-BANDWIDTH=(\d+)""", RegexOption.IGNORE_CASE)
+        .find(line)?.groupValues?.get(1)?.toLongOrNull()
+    val peakBandwidth = Regex("""BANDWIDTH=(\d+)""", RegexOption.IGNORE_CASE)
+        .find(line)?.groupValues?.get(1)?.toLongOrNull()
+    return averageBandwidth to peakBandwidth
+}
+
+/** Returns the highest declared audio rendition bandwidth in an HLS master playlist. */
+fun parseHlsAudioBandwidth(playlist: String): Long? {
+    val audioMediaRegex = Regex(
+        """#EXT-X-MEDIA:TYPE=AUDIO[^>]*?BANDWIDTH=(\d+)""",
+        RegexOption.IGNORE_CASE,
+    )
+    return audioMediaRegex.findAll(playlist)
+        .mapNotNull { it.groupValues[1].toLongOrNull() }
+        .maxOrNull()
+}
+
+fun parseHlsDuration(mediaPlaylist: String): Double = mediaPlaylist.lineSequence()
+    .filter { it.startsWith("#EXTINF:", ignoreCase = true) }
+    .sumOf { it.substringAfter(":").substringBefore(",").toDoubleOrNull() ?: 0.0 }
 
 /** Classifies the transport represented by a link, using URL evidence before extractor metadata. */
 fun getActualLinkType(link: ExtractorLink): String {
@@ -154,19 +186,25 @@ object QualityProbe {
         }
 
         val lines = content.lines()
+        val audioBandwidth = parseHlsAudioBandwidth(content) ?: 0L
         val results = mutableListOf<ProbedQuality>()
         lines.forEachIndexed { index, line ->
             if (!line.startsWith("#EXT-X-STREAM-INF:", true)) return@forEachIndexed
             val resolution = Regex("RESOLUTION=(\\d+)x(\\d+)", RegexOption.IGNORE_CASE).find(line)
-            val bandwidth = Regex("(?:AVERAGE-BANDWIDTH|BANDWIDTH)=(\\d+)", RegexOption.IGNORE_CASE)
-                .find(line)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val (averageBandwidth, peakBandwidth) = parseHlsBandwidth(line)
+            val effectiveVideoBandwidth = averageBandwidth ?: peakBandwidth?.let { (it * 0.85).toLong() }
             val next = lines.drop(index + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") }
             if (resolution != null && next != null) {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
                 val duration = fetchHlsDuration(variantUrl, headers)
-                results += ProbedQuality(width, height, bandwidth, variantUrl, heightToQualityLabel(height), calculateEstimatedSize(bandwidth, 0, duration), "hls-${height}-${variantUrl.hashCode()}")
+                results += ProbedQuality(
+                    width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
+                    variantUrl, heightToQualityLabel(height),
+                    calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth, duration),
+                    "hls-${height}-${variantUrl.hashCode()}",
+                )
             }
         }
         return results.distinctBy { it.selectionKey }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
@@ -183,7 +221,7 @@ object QualityProbe {
         Log.d(TAG, "MPD content length=${mpd.length}")
         val parser = Xml.newPullParser().apply { setInput(StringReader(mpd)) }
         val results = mutableListOf<ProbedQuality>()
-        var manifestDuration: Long? = null
+        var manifestDuration: Double? = null
         var adaptationWidth = 0
         var adaptationHeight = 0
         var adaptationBandwidth: Int? = null
@@ -203,7 +241,13 @@ object QualityProbe {
                     val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
                     if (height > 0) {
                         val selectionKey = "dash-${height}-${bandwidth ?: 0}-${results.size}"
-                        results += ProbedQuality(width, height, bandwidth, "${link.url}#track=$height", heightToQualityLabel(height), calculateEstimatedSize(bandwidth, audioBandwidth, manifestDuration), selectionKey)
+                        val effectiveVideoBandwidth = bandwidth?.let { (it * 0.88).toLong() }
+                        results += ProbedQuality(
+                            width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
+                            "${link.url}#track=$height", heightToQualityLabel(height),
+                            calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth.toLong(), manifestDuration, overheadPercent = 1),
+                            selectionKey,
+                        )
                     }
                 }
             }
@@ -232,9 +276,8 @@ object QualityProbe {
         return fallbackRegex.findAll(mpd).mapNotNull { it.groupValues[1].toIntOrNull() }.maxOrNull() ?: 96_000
     }
 
-    private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Long? = runCatching {
-        val playlist = app.get(url, headers = headers, allowRedirects = true).text
-        Regex("#EXTINF:([\\d.]+),").findAll(playlist).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }.toLong().takeIf { it > 0 }
+    private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Double? = runCatching {
+        parseHlsDuration(app.get(url, headers = headers, allowRedirects = true).text).takeIf { it > 0.0 }
     }.getOrNull()
 
     private suspend fun probeProgressiveSafe(link: ExtractorLink): List<ProbedQuality> {
@@ -274,13 +317,13 @@ object QualityProbe {
 
     private fun resolve(base: String, child: String): String = runCatching { URI(base).resolve(child).toString() }.getOrDefault(child)
 
-    private fun parseIsoDurationSeconds(value: String?): Long? {
+    private fun parseIsoDurationSeconds(value: String?): Double? {
         if (value.isNullOrBlank()) return null
         val match = Regex("PT(?:(\\d+(?:\\.\\d+)?)H)?(?:(\\d+(?:\\.\\d+)?)M)?(?:(\\d+(?:\\.\\d+)?)S)?").matchEntire(value) ?: return null
         val hours = match.groupValues[1].toDoubleOrNull() ?: 0.0
         val minutes = match.groupValues[2].toDoubleOrNull() ?: 0.0
         val seconds = match.groupValues[3].toDoubleOrNull() ?: 0.0
-        return (hours * 3600 + minutes * 60 + seconds).toLong().takeIf { it > 0 }
+        return (hours * 3600 + minutes * 60 + seconds).takeIf { it > 0.0 }
     }
 
     private fun parseQualityFromLinkName(name: String): String? {
