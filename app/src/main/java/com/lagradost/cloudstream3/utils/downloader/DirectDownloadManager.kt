@@ -392,6 +392,7 @@ object DirectDownloadManager {
         val outputFile = File(getDownloadDir(context), outputName(item.fileName))
         val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
         var attempt = 0
+        var authoritativeTotalBytes: Long? = null
         try {
             while (attempt < MAX_RETRIES) {
                 var connection: HttpURLConnection? = null
@@ -476,13 +477,21 @@ object DirectDownloadManager {
                         }
                     }
                     val startingBytes = if (append) existingBytes else 0L
-                    val contentLength = connection.contentLengthLong
-                    val totalBytes = when {
-                        contentLength > 0L -> startingBytes + contentLength
-                        item.totalBytes > 0L -> item.totalBytes
-                        else -> 0L
+                    if (authoritativeTotalBytes == null) {
+                        authoritativeTotalBytes = connection.getHeaderField("Content-Range")
+                            ?.substringAfterLast('/')
+                            ?.toLongOrNull()
+                            ?.takeIf { it > 0L }
+                            ?: connection.contentLengthLong.takeIf { it > 0L }?.let { startingBytes + it }
                     }
-                    updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, downloadedBytes = startingBytes, totalBytes = totalBytes) }
+                    val totalBytes = authoritativeTotalBytes ?: item.totalBytes
+                    updateItem(downloadId) {
+                        it.copy(
+                            status = DirectDownloadStatus.DOWNLOADING,
+                            downloadedBytes = startingBytes,
+                            totalBytes = totalBytes,
+                        )
+                    }
 
                     var downloadedBytes = startingBytes
                     var lastUpdate = System.currentTimeMillis()
@@ -666,20 +675,16 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val elapsedSeconds = (now - startedAt).coerceAtLeast(1L) / 1_000.0
                                 val speedBps = downloaded / elapsedSeconds
                                 val downloadedSoFar = downloadedBytesOffset + downloaded
-                                val actualTotalBytes = if (finished >= 2) {
-                                    downloadedBytesOffset +
-                                        (downloaded.toDouble() / finished * (progressTotal - progressOffset)).toLong()
-                                } else {
-                                    0L
-                                }
-                                val etaTotalBytes = actualTotalBytes.takeIf { it > 0L }
+                                val estimatedTotalBytes = downloadedBytesOffset +
+                                    (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset)).toLong()
+                                val etaTotalBytes = estimatedTotalBytes.takeIf { it > 0L }
                                     ?: (downloadedSoFar + (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset - finished).coerceAtLeast(0)).toLong())
                                 updateItem(downloadId) {
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
-                                        totalBytes = actualTotalBytes.takeIf { it > 0L } ?: it.totalBytes,
+                                        totalBytes = if (it.totalBytes <= 0L && finished == 1) estimatedTotalBytes else it.totalBytes,
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
@@ -704,7 +709,6 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             it.copy(
                 progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                 downloadedBytes = downloadedBytesOffset + totalBytes.get(),
-                totalBytes = (downloadedBytesOffset + totalBytes.get()).takeIf { it > 0L } ?: it.totalBytes,
             )
         }
         // Cleanup is safe only after every segment has been concatenated successfully.
@@ -978,7 +982,6 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 status = DirectDownloadStatus.COMPLETED,
                 progress = 100,
                 downloadedBytes = actualSize,
-                totalBytes = actualSize,
                 filePath = outputFile.absolutePath,
                 speed = "",
                 eta = "",
