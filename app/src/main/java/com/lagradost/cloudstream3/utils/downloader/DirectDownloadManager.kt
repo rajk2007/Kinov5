@@ -675,6 +675,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val elapsedSeconds = (now - startedAt).coerceAtLeast(1L) / 1_000.0
                                 val speedBps = downloaded / elapsedSeconds
                                 val downloadedSoFar = downloadedBytesOffset + downloaded
+                                val estimateSegmentCount = minOf(3, segmentUrls.size)
                                 val estimatedTotalBytes = downloadedBytesOffset +
                                     (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset)).toLong()
                                 val etaTotalBytes = estimatedTotalBytes.takeIf { it > 0L }
@@ -684,7 +685,11 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
-                                        totalBytes = if (it.totalBytes <= 0L && finished == 1) estimatedTotalBytes else it.totalBytes,
+                                        // Commit the segmented estimate once, after enough samples are
+                                        // available to make it useful. Never recalculate it afterward.
+                                        totalBytes = if (it.totalBytes <= 0L &&
+                                            (finished >= estimateSegmentCount || finished == segmentUrls.size)
+                                        ) estimatedTotalBytes else it.totalBytes,
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
