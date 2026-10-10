@@ -48,21 +48,24 @@ fun calculateEstimatedSize(
     videoBandwidth: Long?,
     audioBandwidth: Long = 0,
     durationSeconds: Double?,
-    overheadPercent: Int = 8,
 ): Long? {
     if (videoBandwidth == null || durationSeconds == null || durationSeconds <= 0.0) return null
 
     val effectiveAudioBandwidth = audioBandwidth.coerceAtLeast(0)
     val totalBandwidth = videoBandwidth + effectiveAudioBandwidth
     val rawBytes = totalBandwidth.toDouble() * durationSeconds / 8.0
-    val estimatedBytes = (rawBytes * (100 + overheadPercent.coerceAtLeast(0)) / 100.0)
-        .coerceAtMost(Long.MAX_VALUE.toDouble())
-        .toLong()
-    Log.d(
-        "SIZE_CALC",
-        "video=$videoBandwidth audio=$effectiveAudioBandwidth duration=${durationSeconds}s " +
-            "total=$totalBandwidth raw=$rawBytes estimated=$estimatedBytes (${formatFileSize(estimatedBytes)})",
-    )
+    val estimatedBytes = rawBytes.toLong()
+    Log.e("SIZE_FINAL", "═════════════════════════════")
+    Log.e("SIZE_FINAL", "calculateEstimatedSize called:")
+    Log.e("SIZE_FINAL", "  videoBandwidth: $videoBandwidth bps")
+    Log.e("SIZE_FINAL", "  audioBandwidth: $effectiveAudioBandwidth bps")
+    Log.e("SIZE_FINAL", "  durationSeconds: $durationSeconds")
+    Log.e("SIZE_FINAL", "  overheadPercent: 0")
+    Log.e("SIZE_FINAL", "  totalBandwidth: $totalBandwidth bps")
+    Log.e("SIZE_FINAL", "  rawBytes: $rawBytes")
+    Log.e("SIZE_FINAL", "  estimatedBytes: $estimatedBytes")
+    Log.e("SIZE_FINAL", "  formatted: ${formatFileSize(estimatedBytes)}")
+    Log.e("SIZE_FINAL", "═════════════════════════════")
     return estimatedBytes
 }
 
@@ -197,7 +200,11 @@ object QualityProbe {
             if (!line.startsWith("#EXT-X-STREAM-INF:", true)) return@forEachIndexed
             val resolution = Regex("RESOLUTION=(\\d+)x(\\d+)", RegexOption.IGNORE_CASE).find(line)
             val (averageBandwidth, peakBandwidth) = parseHlsBandwidth(line)
-            val effectiveVideoBandwidth = averageBandwidth ?: peakBandwidth?.let { (it * 0.92).toLong() }
+            val effectiveVideoBandwidth = averageBandwidth ?: peakBandwidth
+            Log.e("BW_SOURCE", "averageBandwidth: $averageBandwidth")
+            Log.e("BW_SOURCE", "peakBandwidth: $peakBandwidth")
+            Log.e("BW_SOURCE", "effectiveVideoBandwidth: $effectiveVideoBandwidth")
+            Log.e("BW_SOURCE", "audioBandwidth: $audioBandwidth")
             val next = lines.drop(index + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") }
             if (resolution != null && next != null) {
                 val width = resolution.groupValues[1].toInt()
@@ -246,11 +253,11 @@ object QualityProbe {
                     val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
                     if (height > 0) {
                         val selectionKey = "dash-${height}-${bandwidth ?: 0}-${results.size}"
-                        val effectiveVideoBandwidth = bandwidth?.let { (it * 0.92).toLong() }
+                        val effectiveVideoBandwidth = bandwidth
                         results += ProbedQuality(
                             width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                             "${link.url}#track=$height", heightToQualityLabel(height),
-                            calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth.toLong(), manifestDuration, overheadPercent = 1),
+                            calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth.toLong(), manifestDuration),
                             selectionKey,
                         )
                     }
