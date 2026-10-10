@@ -48,7 +48,7 @@ fun calculateEstimatedSize(
     videoBandwidth: Long?,
     audioBandwidth: Long = 0,
     durationSeconds: Double?,
-    overheadPercent: Int = 2,
+    overheadPercent: Int = 8,
 ): Long? {
     if (videoBandwidth == null || durationSeconds == null || durationSeconds <= 0.0) return null
 
@@ -186,13 +186,18 @@ object QualityProbe {
         }
 
         val lines = content.lines()
-        val audioBandwidth = parseHlsAudioBandwidth(content) ?: 0L
+        val audioBandwidth = parseHlsAudioBandwidth(content)
+            ?: if (content.contains("#EXT-X-MEDIA:TYPE=AUDIO", ignoreCase = true)) {
+                128_000L
+            } else {
+                0L
+            }
         val results = mutableListOf<ProbedQuality>()
         lines.forEachIndexed { index, line ->
             if (!line.startsWith("#EXT-X-STREAM-INF:", true)) return@forEachIndexed
             val resolution = Regex("RESOLUTION=(\\d+)x(\\d+)", RegexOption.IGNORE_CASE).find(line)
             val (averageBandwidth, peakBandwidth) = parseHlsBandwidth(line)
-            val effectiveVideoBandwidth = averageBandwidth ?: peakBandwidth?.let { (it * 0.85).toLong() }
+            val effectiveVideoBandwidth = averageBandwidth ?: peakBandwidth?.let { (it * 0.92).toLong() }
             val next = lines.drop(index + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") }
             if (resolution != null && next != null) {
                 val width = resolution.groupValues[1].toInt()
@@ -241,7 +246,7 @@ object QualityProbe {
                     val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
                     if (height > 0) {
                         val selectionKey = "dash-${height}-${bandwidth ?: 0}-${results.size}"
-                        val effectiveVideoBandwidth = bandwidth?.let { (it * 0.88).toLong() }
+                        val effectiveVideoBandwidth = bandwidth?.let { (it * 0.92).toLong() }
                         results += ProbedQuality(
                             width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                             "${link.url}#track=$height", heightToQualityLabel(height),
