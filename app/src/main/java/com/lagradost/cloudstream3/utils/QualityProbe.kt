@@ -236,7 +236,7 @@ object QualityProbe {
         var manifestDuration: Double? = null
         var adaptationWidth = 0
         var adaptationHeight = 0
-        var adaptationBandwidth: Int? = null
+        var adaptationBandwidth: Long? = null
         val audioBandwidth = parseAudioBandwidthFromManifest(mpd)
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType != XmlPullParser.START_TAG) continue
@@ -245,19 +245,19 @@ object QualityProbe {
                 "AdaptationSet" -> {
                     adaptationWidth = parser.getAttributeValue(null, "width")?.toIntOrNull() ?: 0
                     adaptationHeight = parser.getAttributeValue(null, "height")?.toIntOrNull() ?: 0
-                    adaptationBandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull()
+                    adaptationBandwidth = parser.getAttributeValue(null, "bandwidth")?.toLongOrNull()
                 }
                 "Representation" -> {
                     val width = parser.getAttributeValue(null, "width")?.toIntOrNull() ?: adaptationWidth
                     val height = parser.getAttributeValue(null, "height")?.toIntOrNull() ?: adaptationHeight
-                    val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toIntOrNull() ?: adaptationBandwidth
+                    val bandwidth = parser.getAttributeValue(null, "bandwidth")?.toLongOrNull() ?: adaptationBandwidth
                     if (height > 0) {
                         val selectionKey = "dash-${height}-${bandwidth ?: 0}-${results.size}"
                         val effectiveVideoBandwidth = bandwidth
                         results += ProbedQuality(
                             width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                             "${link.url}#track=$height", heightToQualityLabel(height),
-                            calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth.toLong(), manifestDuration),
+                            calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth, manifestDuration),
                             selectionKey,
                         )
                     }
@@ -267,7 +267,7 @@ object QualityProbe {
         return results.distinctBy { it.selectionKey }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
     }
 
-    private fun parseAudioBandwidthFromManifest(mpd: String): Int {
+    private fun parseAudioBandwidthFromManifest(mpd: String): Long {
         val audioAdaptationRegex = Regex(
             """<AdaptationSet[^>]*?(?:contentType|mimeType)=[" ]audio[^>]*>(.*?)</AdaptationSet>""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
@@ -278,14 +278,14 @@ object QualityProbe {
         )
         val maxFromAdaptation = audioAdaptationRegex.findAll(mpd)
             .flatMap { match -> representationRegex.findAll(match.groupValues[1]) }
-            .mapNotNull { it.groupValues[1].toIntOrNull() }
-            .maxOrNull() ?: 0
+            .mapNotNull { it.groupValues[1].toLongOrNull() }
+            .maxOrNull() ?: 0L
         if (maxFromAdaptation > 0) return maxFromAdaptation
         val fallbackRegex = Regex(
             """<Representation[^>]*(?:mimeType|codecs)=[" ][^" ]*audio[^" ]*[" ][^>]*bandwidth=[" ](\d+)[" ][^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        return fallbackRegex.findAll(mpd).mapNotNull { it.groupValues[1].toIntOrNull() }.maxOrNull() ?: 96_000
+        return fallbackRegex.findAll(mpd).mapNotNull { it.groupValues[1].toLongOrNull() }.maxOrNull() ?: 96_000L
     }
 
     private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Double? = runCatching {
