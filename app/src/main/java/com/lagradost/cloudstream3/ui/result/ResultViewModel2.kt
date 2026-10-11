@@ -454,6 +454,7 @@ data class ExtractedTrailerData(
 
 class ResultViewModel2 : ViewModel() {
     private var currentResponse: LoadResponse? = null
+    fun getCurrentResponse(): LoadResponse? = currentResponse
     var EPISODE_RANGE_SIZE: Int = 20
     fun clear() {
         currentResponse = null

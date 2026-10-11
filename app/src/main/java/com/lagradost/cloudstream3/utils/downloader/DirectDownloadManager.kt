@@ -1305,17 +1305,44 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
 
     private fun showDownloadNotification(item: DirectDownloadItem) {
         val context = appContext ?: return
-        notify(item.id, NotificationCompat.Builder(context, CHANNEL_ID).setContentTitle("Downloading: ${item.title}").setContentText("0%").setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(true).setProgress(100, 0, true).build())
+        notify(item.id, NotificationCompat.Builder(context, CHANNEL_ID)
+            .setColor(0xFFE50914.toInt())
+            .setColorized(true)
+            .setOnlyAlertOnce(true)
+            .setContentTitle("KINO")
+            .setContentText(item.title)
+            .setSubText("0% · ${formatFileSize(item.downloadedBytes)} / ${formatFileSize(item.totalBytes)}")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(true)
+            .setProgress(100, 0, true)
+            .build())
     }
-    private fun updateDownloadNotification(id: String) { val item = _activeDownloads.value[id] ?: return; notify(id, NotificationCompat.Builder(appContext ?: return, CHANNEL_ID).setContentTitle("Downloading: ${item.title}").setContentText("${item.progress}% ${item.speed}").setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(true).setProgress(100, item.progress, item.totalBytes <= 0L).build()) }
+    private fun updateDownloadNotification(id: String) {
+        val item = _activeDownloads.value[id] ?: return
+        notify(id, NotificationCompat.Builder(appContext ?: return, CHANNEL_ID)
+            .setColor(0xFFE50914.toInt())
+            .setColorized(true)
+            .setOnlyAlertOnce(true)
+            .setContentTitle("KINO")
+            .setContentText(item.title)
+            .setSubText("${item.progress}% · ${formatFileSize(item.downloadedBytes)} / ${formatFileSize(item.totalBytes)}")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(true)
+            .setProgress(100, item.progress, item.totalBytes <= 0L)
+            .build())
+    }
     private fun showCompletedNotification(id: String) {
         val item = _activeDownloads.value[id] ?: return
         val actualSize = item.totalBytes
         notify(
             id,
             NotificationCompat.Builder(appContext ?: return, CHANNEL_ID)
-                .setContentTitle("Download Complete: ${item.title}")
-                .setContentText(formatFileSize(actualSize))
+                .setColor(0xFFE50914.toInt())
+                .setColorized(true)
+                .setOnlyAlertOnce(true)
+                .setContentTitle("KINO · Download Complete")
+                .setContentText(item.title)
+                .setSubText("Ready to watch offline · ${formatFileSize(actualSize)}")
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setAutoCancel(true)
                 .build()

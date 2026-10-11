@@ -79,7 +79,6 @@ import com.lagradost.cloudstream3.ui.player.CS3IPlayer
 import com.lagradost.cloudstream3.ui.player.CSPlayerEvent
 import com.lagradost.cloudstream3.ui.player.IPlayer
 import com.lagradost.cloudstream3.ui.player.PlayerView
-import com.lagradost.cloudstream3.ui.player.RepoLinkGenerator
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityProfileDialog
 import com.lagradost.cloudstream3.ui.quicksearch.QuickSearchFragment
 import com.lagradost.cloudstream3.ui.result.ResultFragment.bindLogo
@@ -179,25 +178,33 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             .distinctBy { it.url }
             .toList()
 
+    /** Resolve the first playable item as soon as the result page has its media data. */
     private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
         val episode = episodes.sortedBy { it.episode }.firstOrNull() ?: return
-        val episodeId = episode.id ?: return
         val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
         val cacheKey = downloadCacheKey(pageUrl, episode)
 
         lifecycleScope.launch(Dispatchers.IO) {
-            if (getCachedDownloadLinks(cacheKey) != null) return@launch
+            if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return@launch
             try {
                 val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                android.util.Log.d("PREFETCH_PLAY", "Prefetching shared links for episode $episodeId")
-                RepoLinkGenerator.beginOrAttachLinkRequest(apiName, episodeId, data, api).await()
-                val links = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
-                cacheDownloadLinks(cacheKey, links)
-                android.util.Log.d("PREFETCH_PLAY", "Prefetched ${links.size} links for episode $episodeId")
+                android.util.Log.d("BG_PREFETCH", "Fetching download links for $data")
+                val links = mutableListOf<ExtractorLink>()
+                APIRepository(api).loadLinks(
+                    data = data,
+                    isCasting = false,
+                    subtitleCallback = { },
+                    callback = { link -> links += link },
+                )
+                val filteredLinks = filterDownloadLinks(links)
+                cacheDownloadLinks(cacheKey, filteredLinks)
+                android.util.Log.d("BG_PREFETCH", "Cached ${filteredLinks.size} links for $data")
             } catch (error: Exception) {
-                android.util.Log.d("PrefetchLinks", "Prefetch failed for $data", error)
+                android.util.Log.d("BG_PREFETCH", "Prefetch failed for $data", error)
+            } finally {
+                prefetchingDownloadLinks.remove(cacheKey)
             }
         }
     }
@@ -282,7 +289,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
         val cacheKey = downloadCacheKey(pageUrl, ep)
         val cachedLinks = getCachedDownloadLinks(cacheKey).orEmpty()
-        RepoLinkGenerator.seedPlaybackCache(apiName, ep.id, cachedLinks)
         val dialog = BottomSheetDialog(activityContext)
         val composeView = androidx.compose.ui.platform.ComposeView(activityContext).apply {
             setViewCompositionStrategy(
@@ -290,7 +296,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             )
         }
 
-        var loadedResponse: LoadResponse? = null
+        val loadedResponse = viewModel.getCurrentResponse() ?: run {
+            Toast.makeText(activityContext, "Media details are still loading", Toast.LENGTH_SHORT).show()
+            return
+        }
         fun renderLinks(links: List<ExtractorLink>) {
             composeView.setContent {
                 androidx.compose.material3.MaterialTheme {
@@ -307,10 +316,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 lifecycleScope.launch(Dispatchers.IO) {
                                     try {
                                         val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                                        val response = loadedResponse ?: APIRepository(api).load(pageUrl).let {
-                                            if (it is Resource.Success) it.value else null
-                                        } ?: return@launch
-                                        loadedResponse = response
+                                        val response = loadedResponse
                                         val isMovie = response is MovieLoadResponse
                                         val selectedLanguage = selectedLink.languageKey()
                                         val selectedQuality = selectedLink.effectiveQuality()
@@ -384,9 +390,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                val response = APIRepository(api).load(pageUrl)
-                if (response !is Resource.Success) return@launch
-                loadedResponse = response.value
                 val links = cachedLinks.ifEmpty {
                     val resolved = mutableListOf<ExtractorLink>()
                     val data = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
@@ -404,7 +407,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     )
                     filterDownloadLinks(resolved).also {
                         cacheDownloadLinks(cacheKey, it)
-                        RepoLinkGenerator.seedPlaybackCache(apiName, ep.id, it)
                     }
                 }
                 withContext(Dispatchers.Main) {
