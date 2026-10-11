@@ -13,7 +13,10 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.USER_AGENT
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import kotlinx.coroutines.CancellationException
@@ -141,6 +144,7 @@ object DirectDownloadManager {
         apiName: String = "Unknown",
         selectedHeight: Int = 0,
         estimatedSizeBytes: Long = 0L,
+        dataUrl: String? = null,
         reResolveLink: (suspend () -> ExtractorLink?)? = null,
     ): Boolean {
         Log.e("URL_TRACE", "═════════════════════════════")
@@ -290,9 +294,75 @@ object DirectDownloadManager {
                 delay(1_000L)
             }
         }
+        if (dataUrl != null) {
+            downloadEnglishSubtitle(context.applicationContext, dataUrl, title, fileName, apiName)
+        }
         showDownloadNotification(item)
         Log.d(TAG, "Download started: $title")
         return true
+    }
+
+    private fun downloadEnglishSubtitle(
+        context: Context,
+        dataUrl: String,
+        title: String,
+        fileName: String,
+        apiName: String,
+    ) {
+        downloadScope.launch {
+            try {
+                Log.d(TAG, "Looking for English subtitles: $title")
+                val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                val subtitles = mutableListOf<SubtitleFile>()
+                APIRepository(api).loadLinks(
+                    data = dataUrl,
+                    isCasting = false,
+                    subtitleCallback = { subtitle ->
+                        if (isEnglishSubtitle(subtitle)) subtitles += subtitle
+                    },
+                    callback = {},
+                )
+                val subtitle = subtitles.firstOrNull() ?: return@launch
+                val content = fetchSubtitleContent(subtitle.url, subtitle.headers.orEmpty())
+                if (content.isBlank()) return@launch
+                val subtitleFile = File(getDownloadDir(context), "${outputName(fileName)}.srt")
+                subtitleFile.writeText(toSrt(content))
+                Log.d(TAG, "English subtitle saved: ${subtitleFile.absolutePath}")
+            } catch (error: Exception) {
+                Log.w(TAG, "English subtitle download failed for $title", error)
+            }
+        }
+    }
+
+    private fun isEnglishSubtitle(subtitle: SubtitleFile): Boolean {
+        val language = subtitle.lang.trim().lowercase()
+        return language == "en" || language.startsWith("en-") ||
+            language == "eng" || language.contains("english")
+    }
+
+    private fun fetchSubtitleContent(url: String, headers: Map<String, String>): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        return try {
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 30_000
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("User-Agent", USER_AGENT)
+            headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
+            if (connection.responseCode !in 200..299) return ""
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun toSrt(content: String): String {
+        if (!content.trimStart().startsWith("WEBVTT", ignoreCase = true)) return content
+        return content
+            .lineSequence()
+            .drop(1)
+            .joinToString("\n")
+            .replace(Regex("(\\d{2}:\\d{2}:\\d{2})\\.(\\d{3})"), "$1,$2")
+            .trim() + "\n"
     }
 
     fun pauseDownload(downloadId: String) {

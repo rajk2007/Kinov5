@@ -352,6 +352,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 apiName = apiName,
                                                 selectedHeight = selectedHeight,
                                                 estimatedSizeBytes = estimatedSizeBytes,
+                                                dataUrl = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl,
                                             )
                                             if (started) {
                                                 withContext(Dispatchers.Main) {
