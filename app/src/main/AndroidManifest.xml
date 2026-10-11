@@ -114,6 +114,11 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".utils.downloader.DownloadActionReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         
 
         <activity

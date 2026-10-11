@@ -3,9 +3,13 @@ package com.lagradost.cloudstream3.utils.downloader
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
 import android.media.MediaExtractor
 import android.media.MediaMuxer
+import android.graphics.Color
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -13,6 +17,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.FileProvider
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.SubtitleFile
@@ -89,6 +94,11 @@ private fun isDirectFileUrl(url: String): Boolean {
     }
     return false
 }
+
+private const val ACTION_PAUSE = "com.rajk2007.kino.DOWNLOAD_PAUSE"
+private const val ACTION_CANCEL = "com.rajk2007.kino.DOWNLOAD_CANCEL"
+private const val ACTION_RESUME = "com.rajk2007.kino.DOWNLOAD_RESUME"
+private const val ACTION_WATCH = "com.rajk2007.kino.DOWNLOAD_WATCH"
 
 private data class HlsVariant(
     val bandwidth: Int?,
@@ -442,6 +452,16 @@ object DirectDownloadManager {
         _activeDownloads.value = _activeDownloads.value - downloadId
         persistDownloads(force = true)
         appContext?.let { cancelNotification(downloadId, it) }
+    }
+
+    fun openDownloadedFile(context: Context, downloadId: String) {
+        val file = _activeDownloads.value[downloadId]?.filePath?.let(::File) ?: return
+        if (!file.exists()) return
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "video/*")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        })
     }
 
     private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink): Boolean {
@@ -1305,19 +1325,54 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
 
     private fun showDownloadNotification(item: DirectDownloadItem) {
         val context = appContext ?: return
-        notify(item.id, NotificationCompat.Builder(context, CHANNEL_ID).setContentTitle("Downloading: ${item.title}").setContentText("0%").setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(true).setProgress(100, 0, true).build())
+        notify(item.id, NotificationCompat.Builder(context, CHANNEL_ID)
+            .setContentTitle("KINO")
+            .setContentText("Download in progress")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setProgress(100, item.progress, item.totalBytes <= 0L)
+            .setColor(Color.rgb(229, 9, 20))
+            .setColorized(true)
+            .addAction(android.R.drawable.ic_media_pause, "Pause", getActionPendingIntent(context, item.id, ACTION_PAUSE))
+            .addAction(android.R.drawable.ic_delete, "Cancel", getActionPendingIntent(context, item.id, ACTION_CANCEL))
+            .build())
     }
-    private fun updateDownloadNotification(id: String) { val item = _activeDownloads.value[id] ?: return; notify(id, NotificationCompat.Builder(appContext ?: return, CHANNEL_ID).setContentTitle("Downloading: ${item.title}").setContentText("${item.progress}% ${item.speed}").setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(true).setProgress(100, item.progress, item.totalBytes <= 0L).build()) }
+    private fun updateDownloadNotification(id: String) {
+        val context = appContext ?: return
+        val item = _activeDownloads.value[id] ?: return
+        val progressText = "${item.downloadedBytes / 1024 / 1024} MB / ${item.totalBytes / 1024 / 1024} MB (${item.progress}%)"
+        val etaText = if (item.eta.isNotBlank()) " · ${item.eta}" else ""
+        notify(id, NotificationCompat.Builder(context, CHANNEL_ID)
+            .setContentTitle("KINO")
+            .setContentText(item.title)
+            .setSubText("$progressText$etaText")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setProgress(100, item.progress, item.totalBytes <= 0L)
+            .setColor(Color.rgb(229, 9, 20))
+            .setColorized(true)
+            .addAction(android.R.drawable.ic_media_pause, "Pause", getActionPendingIntent(context, id, ACTION_PAUSE))
+            .addAction(android.R.drawable.ic_delete, "Cancel", getActionPendingIntent(context, id, ACTION_CANCEL))
+            .build())
+    }
     private fun showCompletedNotification(id: String) {
         val item = _activeDownloads.value[id] ?: return
-        val actualSize = item.totalBytes
+        val context = appContext ?: return
+        val actualSize = item.filePath?.let(::File)?.length() ?: item.totalBytes
         notify(
             id,
-            NotificationCompat.Builder(appContext ?: return, CHANNEL_ID)
-                .setContentTitle("Download Complete: ${item.title}")
-                .setContentText(formatFileSize(actualSize))
+            NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle("KINO · Download completed")
+                .setContentText(item.title)
+                .setSubText("Ready to watch offline · ${formatFileSize(actualSize)}")
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setAutoCancel(true)
+                .setColor(Color.rgb(229, 9, 20))
+                .setColorized(true)
+                .setContentIntent(getPlayPendingIntent(context, item.id))
+                .addAction(android.R.drawable.ic_media_play, "Watch", getPlayPendingIntent(context, item.id))
                 .build()
         )
     }
@@ -1327,6 +1382,19 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     }
     private fun notify(id: String, notification: Notification) { appContext?.let { runCatching { NotificationManagerCompat.from(it).notify(id.hashCode(), notification) } } }
     private fun cancelNotification(id: String, context: Context) { runCatching { NotificationManagerCompat.from(context).cancel(id.hashCode()) } }
+    private fun getActionPendingIntent(context: Context, downloadId: String, action: String): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            (downloadId + action).hashCode(),
+            Intent(context, DownloadActionReceiver::class.java).apply {
+                putExtra("download_id", downloadId)
+                this.action = action
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    private fun getPlayPendingIntent(context: Context, downloadId: String): PendingIntent =
+        getActionPendingIntent(context, downloadId, ACTION_WATCH)
     private fun httpException(code: Int, message: String?): IOException = when (code) { 401 -> IOException("Authentication required (401)."); 403 -> IOException("Access denied (403)."); 404 -> IOException("File not found (404). The link may have expired."); in 500..599 -> IOException("Server error ($code). Try again later."); else -> IOException("HTTP $code: ${message ?: "Request failed"}") }
     private fun calculateEta(downloadedBytes: Long, totalBytes: Long, speedBps: Double): String {
         Log.e("ETA_DEBUG", "calculateEta: downloaded=$downloadedBytes total=$totalBytes speed=$speedBps")
@@ -1352,4 +1420,16 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun formatFileSize(bytes: Long): String = when { bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0); bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0); bytes >= 1_000L -> String.format("%.1f KB", bytes / 1_000.0); else -> "$bytes B" }
     private fun formatSpeed(bytesPerSecond: Double): String = when { bytesPerSecond >= 1_000_000 -> String.format("%.1f MB/s", bytesPerSecond / 1_000_000.0); bytesPerSecond >= 1_000 -> String.format("%.1f KB/s", bytesPerSecond / 1_000.0); else -> String.format("%.0f B/s", bytesPerSecond) }
     private fun sanitizeFileName(name: String): String = name.replace(Regex("[^\\w\\s.-]"), "").trim().take(100)
+}
+
+class DownloadActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val downloadId = intent.getStringExtra("download_id") ?: return
+        when (intent.action) {
+            ACTION_PAUSE -> DirectDownloadManager.pauseDownload(downloadId)
+            ACTION_CANCEL -> DirectDownloadManager.cancelDownload(downloadId)
+            ACTION_RESUME -> DirectDownloadManager.resumeDownload(downloadId)
+            ACTION_WATCH -> DirectDownloadManager.openDownloadedFile(context, downloadId)
+        }
+    }
 }

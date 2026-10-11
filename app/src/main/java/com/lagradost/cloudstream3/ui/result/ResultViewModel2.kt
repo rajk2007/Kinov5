@@ -2504,6 +2504,8 @@ class ResultViewModel2 : ViewModel() {
         _page.postValue(Resource.Success(loadResponse.toResultData(apiRepository)))
     }
 
+    fun getCurrentResponse(): LoadResponse? = currentResponse
+
     fun hasLoaded() = currentResponse != null
 
     private fun handleAutoStart(activity: Activity?, autostart: AutoResume?) =

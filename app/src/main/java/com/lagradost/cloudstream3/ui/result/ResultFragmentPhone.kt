@@ -180,24 +180,38 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             .toList()
 
     private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
+        if (episodes.isEmpty()) return
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
-        val episode = episodes.sortedBy { it.episode }.firstOrNull() ?: return
-        val episodeId = episode.id ?: return
-        val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-        val cacheKey = downloadCacheKey(pageUrl, episode)
-
         lifecycleScope.launch(Dispatchers.IO) {
-            if (getCachedDownloadLinks(cacheKey) != null) return@launch
             try {
                 val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                android.util.Log.d("PREFETCH_PLAY", "Prefetching shared links for episode $episodeId")
-                RepoLinkGenerator.beginOrAttachLinkRequest(apiName, episodeId, data, api).await()
-                val links = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
-                cacheDownloadLinks(cacheKey, links)
-                android.util.Log.d("PREFETCH_PLAY", "Prefetched ${links.size} links for episode $episodeId")
+                val semaphore = Semaphore(2)
+                episodes.sortedBy { it.episode }.take(5).forEach { episode ->
+                    launch {
+                        semaphore.withPermit {
+                            val episodeId = episode.id ?: return@withPermit
+                            val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                            val cacheKey = downloadCacheKey(pageUrl, episode)
+                            try {
+                                var links = getCachedDownloadLinks(cacheKey).orEmpty()
+                                if (links.isEmpty()) {
+                                    links = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
+                                }
+                                if (links.isEmpty()) {
+                                    RepoLinkGenerator.beginOrAttachLinkRequest(apiName, episodeId, data, api).await()
+                                    links = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
+                                }
+                                cacheDownloadLinks(cacheKey, links)
+                                android.util.Log.d("PREFETCH_PLAY", "Prefetched E${episode.episode}: ${links.size} links")
+                            } catch (error: Exception) {
+                                android.util.Log.d("PrefetchLinks", "E${episode.episode} failed", error)
+                            }
+                        }
+                    }
+                }
             } catch (error: Exception) {
-                android.util.Log.d("PrefetchLinks", "Prefetch failed for $data", error)
+                android.util.Log.d("PrefetchLinks", "Prefetch failed", error)
             }
         }
     }
@@ -281,7 +295,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             return
         }
         val cacheKey = downloadCacheKey(pageUrl, ep)
-        val cachedLinks = getCachedDownloadLinks(cacheKey).orEmpty()
+        var cachedLinks = getCachedDownloadLinks(cacheKey).orEmpty()
+        if (cachedLinks.isEmpty() && ep.id != null) {
+            cachedLinks = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, ep.id))
+            cacheDownloadLinks(cacheKey, cachedLinks)
+        }
         RepoLinkGenerator.seedPlaybackCache(apiName, ep.id, cachedLinks)
         val dialog = BottomSheetDialog(activityContext)
         val composeView = androidx.compose.ui.platform.ComposeView(activityContext).apply {
@@ -290,7 +308,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             )
         }
 
-        var loadedResponse: LoadResponse? = null
+        var loadedResponse: LoadResponse? = viewModel.getCurrentResponse()
         fun renderLinks(links: List<ExtractorLink>) {
             composeView.setContent {
                 androidx.compose.material3.MaterialTheme {
@@ -307,9 +325,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 lifecycleScope.launch(Dispatchers.IO) {
                                     try {
                                         val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                                        val response = loadedResponse ?: APIRepository(api).load(pageUrl).let {
-                                            if (it is Resource.Success) it.value else null
-                                        } ?: return@launch
+                                        val response = loadedResponse ?: viewModel.getCurrentResponse() ?: return@launch
                                         loadedResponse = response
                                         val isMovie = response is MovieLoadResponse
                                         val selectedLanguage = selectedLink.languageKey()
@@ -320,14 +336,16 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 selectedLink
                                             } else {
                                                 val episodeData = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-                                                val episodeLinks = mutableListOf<ExtractorLink>()
-                                                APIRepository(api).loadLinks(
-                                                    data = episodeData,
-                                                    isCasting = false,
-                                                    subtitleCallback = { },
-                                                    callback = { candidate -> episodeLinks += candidate },
-                                                )
-                                                val usable = filterDownloadLinks(episodeLinks)
+                                                val episodeId = episode.id ?: return@forEachIndexed
+                                                var usable = getCachedDownloadLinks(downloadCacheKey(pageUrl, episode)).orEmpty()
+                                                if (usable.isEmpty()) {
+                                                    usable = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
+                                                }
+                                                if (usable.isEmpty()) {
+                                                    RepoLinkGenerator.beginOrAttachLinkRequest(apiName, episodeId, episodeData, api).await()
+                                                    usable = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
+                                                    cacheDownloadLinks(downloadCacheKey(pageUrl, episode), usable)
+                                                }
                                                 val sameSource = usable.filter { it.source.equals(selectedLink.source, true) }
                                                 val sameLanguage = usable.filter { it.languageKey().equals(selectedLanguage, true) }
                                                 sameSource.firstOrNull {
@@ -384,29 +402,18 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                val response = APIRepository(api).load(pageUrl)
-                if (response !is Resource.Success) return@launch
-                loadedResponse = response.value
-                val links = cachedLinks.ifEmpty {
-                    val resolved = mutableListOf<ExtractorLink>()
-                    val data = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-                    APIRepository(api).loadLinks(
-                        data = data,
-                        isCasting = false,
-                        subtitleCallback = { },
-                        callback = { link ->
-                            resolved += link
-                            val progressive = filterDownloadLinks(resolved)
-                            lifecycleScope.launch(Dispatchers.Main) {
-                                if (isAdded && dialog.isShowing) renderLinks(progressive)
-                            }
-                        },
-                    )
-                    filterDownloadLinks(resolved).also {
-                        cacheDownloadLinks(cacheKey, it)
-                        RepoLinkGenerator.seedPlaybackCache(apiName, ep.id, it)
-                    }
+                val episodeId = ep.id ?: return@launch
+                val data = ep.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                var links = cachedLinks
+                if (links.isEmpty()) {
+                    links = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
                 }
+                if (links.isEmpty()) {
+                    RepoLinkGenerator.beginOrAttachLinkRequest(apiName, episodeId, data, api).await()
+                    links = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episodeId))
+                }
+                cacheDownloadLinks(cacheKey, links)
+                RepoLinkGenerator.seedPlaybackCache(apiName, episodeId, links)
                 withContext(Dispatchers.Main) {
                     if (isAdded && dialog.isShowing) renderLinks(links)
                 }
