@@ -781,9 +781,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                         downloadedBytes = downloadedSoFar,
                                         // Commit the segmented estimate once, after enough samples are
                                         // available to make it useful. Never recalculate it afterward.
-                                        totalBytes = if (it.totalBytes <= 0L &&
+                                        totalBytes = if (current.totalBytes <= 0L &&
                                             (finished >= estimateSegmentCount || finished == segmentUrls.size)
-                                        ) estimatedTotalBytes else it.totalBytes,
+                                        ) estimatedTotalBytes else current.totalBytes,
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
