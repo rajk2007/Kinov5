@@ -114,6 +114,7 @@ import com.lagradost.cloudstream3.ui.download.DOWNLOAD_NAVIGATE_TO
 import com.lagradost.cloudstream3.ui.home.HomeViewModel
 import com.rajk2007.kino.ui.intro.IntroScreen
 import com.lagradost.cloudstream3.ui.library.LibraryViewModel
+import com.lagradost.cloudstream3.ui.library.LibraryTabManager
 import com.lagradost.cloudstream3.ui.player.BasicLink
 import com.lagradost.cloudstream3.ui.player.GeneratorPlayer
 import com.lagradost.cloudstream3.ui.player.LinkGenerator
@@ -823,8 +824,36 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
     override fun onNewIntent(intent: Intent) {
-        handleAppIntent(intent)
         super.onNewIntent(intent)
+        handleNotificationIntent(intent)
+        handleAppIntent(intent)
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        intent ?: return
+        if (intent.getStringExtra("navigate_to") == "library") {
+            LibraryTabManager.setSelectedTab(intent.getStringExtra("library_tab") ?: "downloading")
+            binding?.navView?.selectedItemId = R.id.navigation_library
+            binding?.navRailView?.selectedItemId = R.id.navigation_library
+        }
+        if (intent.getStringExtra("action") == "play_download") {
+            val filePath = intent.getStringExtra("file_path") ?: return
+            val file = File(filePath)
+            if (!file.exists()) {
+                Toast.makeText(this, "Downloaded file is no longer available", Toast.LENGTH_LONG).show()
+                return
+            }
+            try {
+                val linkGenerator = LinkGenerator(
+                    listOf(BasicLink(android.net.Uri.fromFile(file).toString(), intent.getStringExtra("title") ?: "Downloaded Video")),
+                    extract = false,
+                    id = file.absolutePath.hashCode(),
+                )
+                navigate(R.id.global_to_navigation_player, GeneratorPlayer.newInstance(linkGenerator, 0))
+            } catch (error: Exception) {
+                Toast.makeText(this, "Failed to play: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun handleAppIntent(intent: Intent?) {
@@ -1793,6 +1822,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
         }
 
         SearchResultBuilder.updateCache(this)
+        handleNotificationIntent(intent)
 
         ioSafe {
             initAll()

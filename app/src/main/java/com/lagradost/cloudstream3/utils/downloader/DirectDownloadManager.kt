@@ -3,7 +3,9 @@ package com.lagradost.cloudstream3.utils.downloader
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.media.MediaExtractor
 import android.media.MediaMuxer
@@ -16,6 +18,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.lagradost.cloudstream3.APIHolder
+import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.SubtitleFile
@@ -1309,38 +1312,90 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun showDownloadNotification(item: DirectDownloadItem) {
         val context = appContext ?: return
         val customView = createProgressView(context, item)
-        notify(item.id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download, ongoing = true))
+        notify(item.id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download, ongoing = true, item = item))
         loadPosterForNotification(context, item, customView)
     }
+
     private fun updateDownloadNotification(id: String) {
         val item = _activeDownloads.value[id] ?: return
         val context = appContext ?: return
         val customView = createProgressView(context, item)
-        notify(id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download, ongoing = true))
+        notify(id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download, ongoing = true, item = item))
     }
+
     private fun showCompletedNotification(id: String) {
         val item = _activeDownloads.value[id] ?: return
         val context = appContext ?: return
+        // Replace the ongoing progress notification with a completed, actionable one.
+        cancelNotification(id, context)
         val customView = RemoteViews(context.packageName, R.layout.notification_download_complete).apply {
             setTextViewText(R.id.notif_complete_title, item.title)
         }
-        notify(id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download_done, ongoing = false, autoCancel = true))
+        notify(id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download_done, ongoing = false, autoCancel = true, item = item, completed = true))
         loadPosterForNotification(context, item, customView, completed = true)
     }
+
     private fun showFailedNotification(id: String, error: String) {
         val context = appContext ?: return
-        notify(id, NotificationCompat.Builder(context, CHANNEL_ID).setContentTitle("Download Failed").setContentText(error).setSmallIcon(android.R.drawable.stat_notify_error).setAutoCancel(true).build())
+        notify(id, NotificationCompat.Builder(context, CHANNEL_ID)
+            .setContentTitle("Download Failed")
+            .setContentText(error)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setAutoCancel(true)
+            .build())
     }
+
     private fun createProgressView(context: Context, item: DirectDownloadItem): RemoteViews =
         RemoteViews(context.packageName, R.layout.notification_download_progress).apply {
             setTextViewText(R.id.notif_app_name, "KINO")
             setTextViewText(R.id.notif_status, "Download in progress")
             setTextViewText(R.id.notif_title, item.title)
-            setTextViewText(R.id.notif_subtitle, "${qualityLabel(item.selectedHeight)} · ${item.apiName}")
+            setTextViewText(R.id.notif_subtitle, buildString {
+                append(qualityLabel(item.selectedHeight))
+                if (item.apiName.isNotBlank()) append(" · ${item.apiName}")
+                if (item.speed.isNotBlank()) append(" · ${item.speed}")
+            })
             setProgressBar(R.id.notif_progress, 100, item.progress, item.totalBytes <= 0L)
             setTextViewText(R.id.notif_progress_text, "${formatFileSize(item.downloadedBytes)} / ${formatFileSize(item.totalBytes)} (${item.progress}%)")
             setTextViewText(R.id.notif_eta, item.eta.ifBlank { "Calculating..." })
         }
+
+    private fun actionPendingIntent(context: Context, item: DirectDownloadItem, action: String): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            (item.id + action).hashCode(),
+            Intent(context, DownloadActionReceiver::class.java).apply {
+                putExtra(DownloadActionReceiver.EXTRA_DOWNLOAD_ID, item.id)
+                putExtra(DownloadActionReceiver.EXTRA_ACTION, action)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    private fun libraryPendingIntent(context: Context, item: DirectDownloadItem, tab: String): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            (item.id + tab).hashCode(),
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("navigate_to", "library")
+                putExtra("library_tab", tab)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    private fun playPendingIntent(context: Context, item: DirectDownloadItem): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            (item.id + "play").hashCode(),
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("action", "play_download")
+                putExtra("file_path", item.filePath)
+                putExtra("title", item.title)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
     private fun qualityLabel(height: Int): String = when {
         height >= 2160 -> "4K"
         height >= 1080 -> "1080p"
@@ -1348,21 +1403,43 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         height >= 480 -> "480p"
         else -> "Auto"
     }
+
     private fun buildCustomNotification(
         context: Context,
         customView: RemoteViews,
         smallIcon: Int,
         ongoing: Boolean,
         autoCancel: Boolean = false,
-    ): Notification = NotificationCompat.Builder(context, CHANNEL_ID)
-        .setSmallIcon(smallIcon)
-        .setCustomContentView(customView)
-        .setCustomBigContentView(customView)
-        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-        .setOngoing(ongoing)
-        .setAutoCancel(autoCancel)
-        .setOnlyAlertOnce(true)
-        .build()
+        item: DirectDownloadItem? = null,
+        completed: Boolean = false,
+    ): Notification {
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(smallIcon)
+            .setCustomContentView(customView)
+            .setCustomBigContentView(customView)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setOngoing(ongoing)
+            .setAutoCancel(autoCancel)
+            .setOnlyAlertOnce(true)
+        item?.let {
+            builder.setContentIntent(libraryPendingIntent(context, it, if (completed) "downloaded" else "downloading"))
+            if (completed) {
+                if (!it.filePath.isNullOrBlank()) {
+                    builder.addAction(android.R.drawable.ic_media_play, "Watch", playPendingIntent(context, it))
+                }
+            } else {
+                val paused = it.status == DirectDownloadStatus.PAUSED
+                builder.addAction(
+                    if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+                    if (paused) "Resume" else "Pause",
+                    actionPendingIntent(context, it, if (paused) DownloadActionReceiver.ACTION_RESUME else DownloadActionReceiver.ACTION_PAUSE),
+                )
+                builder.addAction(android.R.drawable.ic_delete, "Cancel", actionPendingIntent(context, it, DownloadActionReceiver.ACTION_CANCEL))
+            }
+        }
+        return builder.build()
+    }
+
     private fun loadPosterForNotification(
         context: Context,
         item: DirectDownloadItem,
@@ -1381,16 +1458,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         val imageId = if (completed) R.id.notif_complete_poster else R.id.notif_poster
                         customView.setImageViewBitmap(imageId, bitmap)
                         val current = _activeDownloads.value[item.id] ?: item
-                        notify(
-                            current.id,
-                            buildCustomNotification(
-                                context,
-                                customView,
-                                if (completed) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_sys_download,
-                                ongoing = !completed,
-                                autoCancel = completed,
-                            ),
-                        )
+                        notify(current.id, buildCustomNotification(context, customView,
+                            if (completed) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_sys_download,
+                            ongoing = !completed, autoCancel = completed, item = current, completed = completed))
                     }
                 }
             } catch (_: Exception) {

@@ -101,7 +101,8 @@ fun KinoLibraryScreen(
     val legacyDownloads by viewModel.downloads.collectAsState()
     val directDownloads by DirectDownloadManager.activeDownloads.collectAsState()
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val initialTab = remember { LibraryTabManager.consumeSelectedTab() }
+    var selectedTab by remember { mutableIntStateOf(if (initialTab == "downloaded") 1 else 0) }
     var showRemoveDialog by remember { mutableStateOf(false) }
     var itemToRemove by remember { mutableStateOf<KinoLibraryItem?>(null) }
 
