@@ -4,16 +4,19 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.media.MediaExtractor
 import android.media.MediaMuxer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.widget.RemoteViews
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.lagradost.cloudstream3.APIHolder
+import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.ui.APIRepository
@@ -1305,52 +1308,95 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
 
     private fun showDownloadNotification(item: DirectDownloadItem) {
         val context = appContext ?: return
-        notify(item.id, NotificationCompat.Builder(context, CHANNEL_ID)
-            .setColor(0xFFE50914.toInt())
-            .setColorized(true)
-            .setOnlyAlertOnce(true)
-            .setContentTitle("KINO")
-            .setContentText(item.title)
-            .setSubText("0% · ${formatFileSize(item.downloadedBytes)} / ${formatFileSize(item.totalBytes)}")
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(true)
-            .setProgress(100, 0, true)
-            .build())
+        val customView = createProgressView(context, item)
+        notify(item.id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download, ongoing = true))
+        loadPosterForNotification(context, item, customView)
     }
     private fun updateDownloadNotification(id: String) {
         val item = _activeDownloads.value[id] ?: return
-        notify(id, NotificationCompat.Builder(appContext ?: return, CHANNEL_ID)
-            .setColor(0xFFE50914.toInt())
-            .setColorized(true)
-            .setOnlyAlertOnce(true)
-            .setContentTitle("KINO")
-            .setContentText(item.title)
-            .setSubText("${item.progress}% · ${formatFileSize(item.downloadedBytes)} / ${formatFileSize(item.totalBytes)}")
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(true)
-            .setProgress(100, item.progress, item.totalBytes <= 0L)
-            .build())
+        val context = appContext ?: return
+        val customView = createProgressView(context, item)
+        notify(id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download, ongoing = true))
     }
     private fun showCompletedNotification(id: String) {
         val item = _activeDownloads.value[id] ?: return
-        val actualSize = item.totalBytes
-        notify(
-            id,
-            NotificationCompat.Builder(appContext ?: return, CHANNEL_ID)
-                .setColor(0xFFE50914.toInt())
-                .setColorized(true)
-                .setOnlyAlertOnce(true)
-                .setContentTitle("KINO · Download Complete")
-                .setContentText(item.title)
-                .setSubText("Ready to watch offline · ${formatFileSize(actualSize)}")
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setAutoCancel(true)
-                .build()
-        )
+        val context = appContext ?: return
+        val customView = RemoteViews(context.packageName, R.layout.notification_download_complete).apply {
+            setTextViewText(R.id.notif_complete_title, item.title)
+        }
+        notify(id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download_done, ongoing = false, autoCancel = true))
+        loadPosterForNotification(context, item, customView, completed = true)
     }
     private fun showFailedNotification(id: String, error: String) {
         val context = appContext ?: return
         notify(id, NotificationCompat.Builder(context, CHANNEL_ID).setContentTitle("Download Failed").setContentText(error).setSmallIcon(android.R.drawable.stat_notify_error).setAutoCancel(true).build())
+    }
+    private fun createProgressView(context: Context, item: DirectDownloadItem): RemoteViews =
+        RemoteViews(context.packageName, R.layout.notification_download_progress).apply {
+            setTextViewText(R.id.notif_app_name, "KINO")
+            setTextViewText(R.id.notif_status, "Download in progress")
+            setTextViewText(R.id.notif_title, item.title)
+            setTextViewText(R.id.notif_subtitle, "${qualityLabel(item.selectedHeight)} · ${item.apiName}")
+            setProgressBar(R.id.notif_progress, 100, item.progress, item.totalBytes <= 0L)
+            setTextViewText(R.id.notif_progress_text, "${formatFileSize(item.downloadedBytes)} / ${formatFileSize(item.totalBytes)} (${item.progress}%)")
+            setTextViewText(R.id.notif_eta, item.eta.ifBlank { "Calculating..." })
+        }
+    private fun qualityLabel(height: Int): String = when {
+        height >= 2160 -> "4K"
+        height >= 1080 -> "1080p"
+        height >= 720 -> "720p"
+        height >= 480 -> "480p"
+        else -> "Auto"
+    }
+    private fun buildCustomNotification(
+        context: Context,
+        customView: RemoteViews,
+        smallIcon: Int,
+        ongoing: Boolean,
+        autoCancel: Boolean = false,
+    ): Notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        .setSmallIcon(smallIcon)
+        .setCustomContentView(customView)
+        .setCustomBigContentView(customView)
+        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+        .setOngoing(ongoing)
+        .setAutoCancel(autoCancel)
+        .setOnlyAlertOnce(true)
+        .build()
+    private fun loadPosterForNotification(
+        context: Context,
+        item: DirectDownloadItem,
+        customView: RemoteViews,
+        completed: Boolean = false,
+    ) {
+        val posterUrl = item.posterUrl ?: return
+        downloadScope.launch(Dispatchers.IO) {
+            try {
+                val connection = URL(posterUrl).openConnection().apply {
+                    connectTimeout = 10_000
+                    readTimeout = 15_000
+                }
+                connection.getInputStream().use { input ->
+                    BitmapFactory.decodeStream(input)?.let { bitmap ->
+                        val imageId = if (completed) R.id.notif_complete_poster else R.id.notif_poster
+                        customView.setImageViewBitmap(imageId, bitmap)
+                        val current = _activeDownloads.value[item.id] ?: item
+                        notify(
+                            current.id,
+                            buildCustomNotification(
+                                context,
+                                customView,
+                                if (completed) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_sys_download,
+                                ongoing = !completed,
+                                autoCancel = completed,
+                            ),
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                // A poster is optional; the notification remains usable without it.
+            }
+        }
     }
     private fun notify(id: String, notification: Notification) { appContext?.let { runCatching { NotificationManagerCompat.from(it).notify(id.hashCode(), notification) } } }
     private fun cancelNotification(id: String, context: Context) { runCatching { NotificationManagerCompat.from(context).cancel(id.hashCode()) } }
