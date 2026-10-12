@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaExtractor
 import android.media.MediaMuxer
@@ -120,6 +121,7 @@ object DirectDownloadManager {
 
     private val downloadJobs = ConcurrentHashMap<String, Job>()
     private val activeConnections = ConcurrentHashMap<String, HttpURLConnection>()
+    private val posterCache = ConcurrentHashMap<String, Bitmap>()
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var appContext: Context? = null
     private var hasLoadedPersistedDownloads = false
@@ -379,6 +381,7 @@ object DirectDownloadManager {
         downloadJobs.remove(downloadId)?.cancel()
         updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "") }
         persistDownloads(force = true)
+        updateDownloadNotification(downloadId)
     }
 
     fun resumeDownload(downloadId: String) {
@@ -418,6 +421,7 @@ object DirectDownloadManager {
         Log.e(TAG, "Resume link created: referer=${link.referer.isNotBlank()}, headers=${link.headers.keys}, type=${link.type}")
         updateItem(downloadId) { it.copy(status = DirectDownloadStatus.DOWNLOADING, error = null, speed = "", eta = "") }
         persistDownloads(force = true)
+        updateDownloadNotification(downloadId)
         val job = downloadScope.launch {
             Log.e(TAG, "Resume coroutine started for $downloadId")
             try {
@@ -1321,6 +1325,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         val context = appContext ?: return
         val customView = createProgressView(context, item)
         notify(id, buildCustomNotification(context, customView, android.R.drawable.stat_sys_download, ongoing = true, item = item))
+        loadPosterForNotification(context, item, customView)
     }
 
     private fun showCompletedNotification(id: String) {
@@ -1348,7 +1353,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun createProgressView(context: Context, item: DirectDownloadItem): RemoteViews =
         RemoteViews(context.packageName, R.layout.notification_download_progress).apply {
             setTextViewText(R.id.notif_app_name, "KINO")
-            setTextViewText(R.id.notif_status, "Download in progress")
+            setTextViewText(
+                R.id.notif_status,
+                if (item.status == DirectDownloadStatus.PAUSED) "Download paused" else "Download in progress",
+            )
             setTextViewText(R.id.notif_title, item.title)
             setTextViewText(R.id.notif_subtitle, buildString {
                 append(qualityLabel(item.selectedHeight))
@@ -1425,16 +1433,16 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             builder.setContentIntent(libraryPendingIntent(context, it, if (completed) "downloaded" else "downloading"))
             if (completed) {
                 if (!it.filePath.isNullOrBlank()) {
-                    builder.addAction(android.R.drawable.ic_media_play, "Watch", playPendingIntent(context, it))
+                    builder.addAction(R.drawable.ic_notification_play, "Watch", playPendingIntent(context, it))
                 }
             } else {
                 val paused = it.status == DirectDownloadStatus.PAUSED
                 builder.addAction(
-                    if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+                    if (paused) R.drawable.ic_notification_play else R.drawable.ic_notification_pause,
                     if (paused) "Resume" else "Pause",
                     actionPendingIntent(context, it, if (paused) DownloadActionReceiver.ACTION_RESUME else DownloadActionReceiver.ACTION_PAUSE),
                 )
-                builder.addAction(android.R.drawable.ic_delete, "Cancel", actionPendingIntent(context, it, DownloadActionReceiver.ACTION_CANCEL))
+                builder.addAction(R.drawable.ic_notification_cancel, "Cancel", actionPendingIntent(context, it, DownloadActionReceiver.ACTION_CANCEL))
             }
         }
         return builder.build()
@@ -1447,6 +1455,14 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         completed: Boolean = false,
     ) {
         val posterUrl = item.posterUrl ?: return
+        posterCache[posterUrl]?.let { bitmap ->
+            customView.setImageViewBitmap(if (completed) R.id.notif_complete_poster else R.id.notif_poster, bitmap)
+            val current = _activeDownloads.value[item.id] ?: item
+            notify(current.id, buildCustomNotification(context, customView,
+                if (completed) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_sys_download,
+                ongoing = !completed, autoCancel = completed, item = current, completed = completed))
+            return
+        }
         downloadScope.launch(Dispatchers.IO) {
             try {
                 val connection = URL(posterUrl).openConnection().apply {
@@ -1455,6 +1471,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
                 connection.getInputStream().use { input ->
                     BitmapFactory.decodeStream(input)?.let { bitmap ->
+                        posterCache[posterUrl] = bitmap
                         val imageId = if (completed) R.id.notif_complete_poster else R.id.notif_poster
                         customView.setImageViewBitmap(imageId, bitmap)
                         val current = _activeDownloads.value[item.id] ?: item

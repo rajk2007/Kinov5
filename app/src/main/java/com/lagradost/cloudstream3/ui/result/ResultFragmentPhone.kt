@@ -138,21 +138,24 @@ import kotlin.math.roundToInt
 open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     BindingCreator.Inflate(FragmentResultSwipeBinding::inflate)
 ), PlayerView.Callbacks {
-    // Links are expensive to resolve, so keep them for the lifetime of this result screen.
-    // ConcurrentHashMap also keeps background prefetches safe when several episodes finish together.
-    private val cachedDownloadLinks = java.util.concurrent.ConcurrentHashMap<String, List<ExtractorLink>>()
+    // Links are expensive to resolve, so keep them across result-fragment recreation.
     private val prefetchingDownloadLinks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    companion object {
+        private val persistentDownloadLinks =
+            java.util.concurrent.ConcurrentHashMap<String, List<ExtractorLink>>()
+
+        private fun cacheDownloadLinks(key: String, links: List<ExtractorLink>) {
+            if (links.isNotEmpty()) persistentDownloadLinks[key] = links
+        }
+
+        private fun getCachedDownloadLinks(key: String): List<ExtractorLink>? = persistentDownloadLinks[key]
+    }
 
     private fun downloadCacheKey(pageUrl: String, episode: ResultEpisode): String {
         val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
         return "$pageUrl|$data"
     }
-
-    private fun cacheDownloadLinks(key: String, links: List<ExtractorLink>) {
-        if (links.isNotEmpty()) cachedDownloadLinks[key] = links
-    }
-
-    private fun getCachedDownloadLinks(key: String): List<ExtractorLink>? = cachedDownloadLinks[key]
 
     private fun normalizeDownloadLink(link: ExtractorLink): ExtractorLink {
         val quality = if (link.quality == Qualities.Unknown.value || link.quality == 0) {
