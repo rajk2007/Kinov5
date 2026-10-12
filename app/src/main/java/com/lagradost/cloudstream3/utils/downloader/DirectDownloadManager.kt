@@ -122,6 +122,7 @@ object DirectDownloadManager {
     private val downloadJobs = ConcurrentHashMap<String, Job>()
     private val activeConnections = ConcurrentHashMap<String, HttpURLConnection>()
     private val posterCache = ConcurrentHashMap<String, Bitmap>()
+    private val posterFetching = ConcurrentHashMap.newKeySet<String>()
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var appContext: Context? = null
     private var hasLoadedPersistedDownloads = false
@@ -227,6 +228,10 @@ object DirectDownloadManager {
             headers = downloadLink.headers,
         )
         _activeDownloads.value = _activeDownloads.value + (downloadId to item)
+        updateItem(downloadId) { current ->
+            if (current.status == DirectDownloadStatus.PAUSED) current
+            else current.copy(status = DirectDownloadStatus.DOWNLOADING)
+        }
         persistDownloads(force = true)
         downloadJobs[downloadId] = downloadScope.launch {
             var currentLink = downloadLink
@@ -475,6 +480,10 @@ object DirectDownloadManager {
         var authoritativeTotalBytes: Long? = null
         try {
             while (attempt < MAX_RETRIES) {
+                if (!currentCoroutineContext().isActive) throw CancellationException("Download cancelled")
+                if (_activeDownloads.value[downloadId]?.status == DirectDownloadStatus.PAUSED) {
+                    throw CancellationException("Download paused")
+                }
                 var connection: HttpURLConnection? = null
                 try {
                     val existingBytes = tempFile.length()
@@ -565,9 +574,8 @@ object DirectDownloadManager {
                             ?: connection.contentLengthLong.takeIf { it > 0L }?.let { startingBytes + it }
                     }
                     val totalBytes = authoritativeTotalBytes ?: item.totalBytes
-                    updateItem(downloadId) {
-                        it.copy(
-                            status = DirectDownloadStatus.DOWNLOADING,
+                    updateItem(downloadId) { current ->
+                        if (current.status == DirectDownloadStatus.PAUSED) current else current.copy(
                             downloadedBytes = startingBytes,
                             totalBytes = totalBytes,
                         )
@@ -743,12 +751,19 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     batch.map { indexed ->
                         async(Dispatchers.IO) {
                             if (!currentCoroutineContext().isActive) throw CancellationException()
+                            if (_activeDownloads.value[downloadId]?.status == DirectDownloadStatus.PAUSED) {
+                                throw CancellationException("Download paused")
+                            }
                             val bytes = requestHls(indexed.value, headers).body
                             require(bytes.isNotEmpty()) { "Segment ${indexed.index + 1} was empty." }
                             File(segmentDir, "segment_${indexed.index}.bin").writeBytes(bytes)
 
                             val finished = completed.incrementAndGet()
                             val downloaded = totalBytes.addAndGet(bytes.size.toLong())
+                            if (!currentCoroutineContext().isActive) throw CancellationException()
+                            if (_activeDownloads.value[downloadId]?.status == DirectDownloadStatus.PAUSED) {
+                                throw CancellationException("Download paused")
+                            }
                             val now = System.currentTimeMillis()
                             if (finished == segmentUrls.size || now - lastUpdate.get() >= 500L) {
                                 lastUpdate.set(now)
@@ -760,9 +775,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                     (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset)).toLong()
                                 val etaTotalBytes = estimatedTotalBytes.takeIf { it > 0L }
                                     ?: (downloadedSoFar + (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset - finished).coerceAtLeast(0)).toLong())
-                                updateItem(downloadId) {
-                                    it.copy(
-                                        status = DirectDownloadStatus.DOWNLOADING,
+                                updateItem(downloadId) { current ->
+                                    if (current.status == DirectDownloadStatus.PAUSED) current else current.copy(
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
                                         // Commit the segmented estimate once, after enough samples are
@@ -1291,6 +1305,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun markPausedIfNoReplacement(id: String) {
         if (downloadJobs[id]?.isActive != true) {
             updateItem(id) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "") }
+            updateDownloadNotification(id)
         } else {
             Log.d(TAG, "Ignoring stale cancellation for $id because a replacement job is active")
         }
@@ -1463,6 +1478,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 ongoing = !completed, autoCancel = completed, item = current, completed = completed))
             return
         }
+        if (!posterFetching.add(posterUrl)) return
         downloadScope.launch(Dispatchers.IO) {
             try {
                 val connection = URL(posterUrl).openConnection().apply {
@@ -1482,6 +1498,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
             } catch (_: Exception) {
                 // A poster is optional; the notification remains usable without it.
+            } finally {
+                posterFetching.remove(posterUrl)
             }
         }
     }

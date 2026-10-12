@@ -13,6 +13,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,6 +71,13 @@ class RepoLinkGenerator(
             api: MainAPI,
         ): Deferred<Unit> {
             val key = apiName to episodeId
+            synchronized(cache) {
+                cache[key]?.let { entry ->
+                    if (entry.saturated && entry.linkCache.isNotEmpty()) {
+                        return CompletableDeferred(Unit)
+                    }
+                }
+            }
             inflightRequests[key]?.let { return it }
 
             val candidate = requestScope.async(start = CoroutineStart.LAZY) {
