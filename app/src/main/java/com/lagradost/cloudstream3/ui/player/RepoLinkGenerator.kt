@@ -72,10 +72,16 @@ class RepoLinkGenerator(
         ): Deferred<Unit> {
             val key = apiName to episodeId
             val alreadyInFlight = inflightRequests.containsKey(key)
+            val cacheEntry = synchronized(cache) { cache[key] }
+            Log.e("VERIFY", "beginOrAttachLinkRequest: key=$key")
+            Log.e("VERIFY", "  In-flight: $alreadyInFlight")
+            Log.e("VERIFY", "  Cache saturated: ${cacheEntry?.saturated}")
+            Log.e("VERIFY", "  Cached links: ${cacheEntry?.let { synchronized(it) { it.linkCache.size } }}")
             Log.e("SHARED_REQ", "beginOrAttachLinkRequest called: key=$key alreadyInFlight=$alreadyInFlight")
             synchronized(cache) {
                 cache[key]?.let { entry ->
                     if (entry.saturated && entry.linkCache.isNotEmpty()) {
+                        Log.e("VERIFY", "  INSTANT - using cached links")
                         Log.d(TAG, "Using completed shared link request for $key")
                         return CompletableDeferred(Unit)
                     }
@@ -83,6 +89,7 @@ class RepoLinkGenerator(
             }
             inflightRequests[key]?.let {
                 Log.e("SHARED_REQ", "Attaching to existing request for $key")
+                Log.e("VERIFY", "  Attaching to in-flight provider request")
                 return it
             }
 
@@ -92,6 +99,7 @@ class RepoLinkGenerator(
                         .also { cache[key] = it }
                 }
                 try {
+                    Log.e("VERIFY", "  STARTING NEW provider request for $key")
                     Log.e("REQ_COUNT", "loadLinks called for: $apiName ep $episodeId")
                     Log.e("SHARED_REQ", "Starting NEW request for $key")
                     APIRepository(api).loadLinks(
@@ -181,6 +189,9 @@ class RepoLinkGenerator(
         val current = videos.getOrNull(offset) ?: return false
         val currentApi = getApiFromNameNull(current.apiName) ?: return false
         val key = current.apiName to current.id
+        val cachedBeforeLoad = synchronized(cache) { cache[key]?.saturated == true }
+        Log.e("VERIFY", "generateLinks called for: $key")
+        Log.e("VERIFY", "  Cache hit: $cachedBeforeLoad")
         val currentCache = synchronized(cache) {
             cache[key] ?: Cache(mutableSetOf(), mutableSetOf(), unixTime, false).also { cache[key] = it }
         }
@@ -204,8 +215,12 @@ class RepoLinkGenerator(
                 deliverLink(link)
             }
             currentCache.subtitleCache.forEach { deliverSubtitle(it) }
-            if (currentCache.saturated && !clearCache) return true
+            if (currentCache.saturated && !clearCache) {
+                Log.e("VERIFY", "  INSTANT - using cached links")
+                return true
+            }
         }
+        Log.e("VERIFY", "  Cache miss - calling provider")
 
         val linkListener: (ExtractorLink) -> Unit = ::deliverLink
         val subtitleListener: (SubtitleData) -> Unit = ::deliverSubtitle

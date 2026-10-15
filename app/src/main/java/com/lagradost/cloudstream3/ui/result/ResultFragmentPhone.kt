@@ -194,28 +194,51 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl,
             api = api,
         ).await()
-        return filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episode.id))
+        val filteredLinks = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episode.id))
+        if (filteredLinks.isNotEmpty()) {
+            RepoLinkGenerator.seedPlaybackCache(apiName, episode.id, filteredLinks)
+            android.util.Log.e(
+                "SEED_CACHE",
+                "Seeded playback cache: $apiName ep ${episode.id} with ${filteredLinks.size} links"
+            )
+        }
+        return filteredLinks
     }
 
-    /** Resolve the first playable item as soon as the result page has its media data. */
+    /** Resolve the first few playable episodes as soon as the result page has its media data. */
     private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
+        if (episodes.isEmpty()) return
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
-        val episode = episodes.sortedBy { it.episode }.firstOrNull() ?: return
-        val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-        val cacheKey = downloadCacheKey(pageUrl, episode)
+        val episodesToPrefetch = episodes.sortedBy { it.episode }.take(5)
+        val semaphore = Semaphore(2)
 
         lifecycleScope.launch(Dispatchers.IO) {
-            if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return@launch
-            try {
-                android.util.Log.d("BG_PREFETCH", "Fetching download links for $data")
-                val filteredLinks = resolveSharedDownloadLinks(apiName, episode, pageUrl)
-                cacheDownloadLinks(cacheKey, filteredLinks)
-                android.util.Log.d("BG_PREFETCH", "Cached ${filteredLinks.size} links for $data")
-            } catch (error: Exception) {
-                android.util.Log.d("BG_PREFETCH", "Prefetch failed for $data", error)
-            } finally {
-                prefetchingDownloadLinks.remove(cacheKey)
+            episodesToPrefetch.forEach { episode ->
+                launch {
+                    semaphore.withPermit {
+                        val cacheKey = downloadCacheKey(pageUrl, episode)
+                        if (getCachedDownloadLinks(cacheKey) != null ||
+                            !prefetchingDownloadLinks.add(cacheKey)
+                        ) return@withPermit
+                        try {
+                            val filteredLinks = resolveSharedDownloadLinks(apiName, episode, pageUrl)
+                            cacheDownloadLinks(cacheKey, filteredLinks)
+                            android.util.Log.e(
+                                "PREFETCH",
+                                "Prefetched E${episode.episode}: ${filteredLinks.size} links"
+                            )
+                        } catch (error: Exception) {
+                            android.util.Log.e(
+                                "PREFETCH",
+                                "E${episode.episode} prefetch failed: ${error.message}",
+                                error
+                            )
+                        } finally {
+                            prefetchingDownloadLinks.remove(cacheKey)
+                        }
+                    }
+                }
             }
         }
     }
