@@ -71,14 +71,20 @@ class RepoLinkGenerator(
             api: MainAPI,
         ): Deferred<Unit> {
             val key = apiName to episodeId
+            val alreadyInFlight = inflightRequests.containsKey(key)
+            Log.e("SHARED_REQ", "beginOrAttachLinkRequest called: key=$key alreadyInFlight=$alreadyInFlight")
             synchronized(cache) {
                 cache[key]?.let { entry ->
                     if (entry.saturated && entry.linkCache.isNotEmpty()) {
+                        Log.d(TAG, "Using completed shared link request for $key")
                         return CompletableDeferred(Unit)
                     }
                 }
             }
-            inflightRequests[key]?.let { return it }
+            inflightRequests[key]?.let {
+                Log.e("SHARED_REQ", "Attaching to existing request for $key")
+                return it
+            }
 
             val candidate = requestScope.async(start = CoroutineStart.LAZY) {
                 val entry = synchronized(cache) {
@@ -86,7 +92,8 @@ class RepoLinkGenerator(
                         .also { cache[key] = it }
                 }
                 try {
-                    Log.d(TAG, "Starting shared link request for $key")
+                    Log.e("REQ_COUNT", "loadLinks called for: $apiName ep $episodeId")
+                    Log.e("SHARED_REQ", "Starting NEW request for $key")
                     APIRepository(api).loadLinks(
                         data = data,
                         isCasting = false,
@@ -118,12 +125,14 @@ class RepoLinkGenerator(
                     Log.d(TAG, "Shared link request failed for $key", error)
                 } finally {
                     inflightRequests.remove(key)
+                    Log.e("SHARED_REQ", "Completed shared request for $key")
                 }
                 Unit
             }
             val existing = inflightRequests.putIfAbsent(key, candidate)
             if (existing != null) {
                 candidate.cancel()
+                Log.e("SHARED_REQ", "Lost request race; attaching to existing request for $key")
                 return existing
             }
             candidate.start()
