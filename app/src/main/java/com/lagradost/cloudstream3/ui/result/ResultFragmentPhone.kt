@@ -128,6 +128,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -197,7 +199,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         val filteredLinks = filterDownloadLinks(RepoLinkGenerator.getCachedLinks(apiName, episode.id))
         if (filteredLinks.isNotEmpty()) {
             RepoLinkGenerator.seedPlaybackCache(apiName, episode.id, filteredLinks)
-            android.util.Log.e(
+            android.util.Log.d(
                 "SEED_CACHE",
                 "Seeded playback cache: $apiName ep ${episode.id} with ${filteredLinks.size} links"
             )
@@ -210,8 +212,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         if (episodes.isEmpty()) return
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
-        val episodesToPrefetch = episodes.sortedBy { it.episode }.take(5)
-        val semaphore = Semaphore(2)
+        val episodesToPrefetch = episodes.sortedBy { it.episode }.take(1)
+        val semaphore = Semaphore(1)
 
         lifecycleScope.launch(Dispatchers.IO) {
             episodesToPrefetch.forEach { episode ->
@@ -224,12 +226,12 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         try {
                             val filteredLinks = resolveSharedDownloadLinks(apiName, episode, pageUrl)
                             cacheDownloadLinks(cacheKey, filteredLinks)
-                            android.util.Log.e(
+                            android.util.Log.d(
                                 "PREFETCH",
                                 "Prefetched E${episode.episode}: ${filteredLinks.size} links"
                             )
                         } catch (error: Exception) {
-                            android.util.Log.e(
+                            android.util.Log.d(
                                 "PREFETCH",
                                 "E${episode.episode} prefetch failed: ${error.message}",
                                 error
@@ -1110,7 +1112,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     episodes is Resource.Success && episodes.value.isNotEmpty()
 
                 if (episodes is Resource.Success) {
-                    prefetchDownloadLinks(episodes.value)
+                    lifecycleScope.launch {
+                        delay(2000)
+                        if (!isActive || !isAdded) return@launch
+                        prefetchDownloadLinks(episodes.value.take(1))
+                    }
                     (resultEpisodes.adapter as? EpisodeAdapter)?.submitList(episodes.value)
 
                     // Show quality dialog with all sources
@@ -1170,7 +1176,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     data is Resource.Success && viewModel.currentRepo?.api?.hasDownloadSupport == true
 
                 (data as? Resource.Success)?.value?.let { (text, ep) ->
-                    prefetchDownloadLinks(listOf(ep))
+                    lifecycleScope.launch {
+                        delay(2000)
+                        if (!isActive || !isAdded) return@launch
+                        prefetchDownloadLinks(listOf(ep))
+                    }
                     resultPlayMovie.setText(text)
                     resultPlayMovie.setOnClickListener {
                         viewModel.handleAction(

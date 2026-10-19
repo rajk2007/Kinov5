@@ -184,21 +184,21 @@ object DirectDownloadManager {
         Log.e(TAG, "URL_DEBUG original link URL: ${link.url}")
         val downloadUrl = cleanDownloadUrl(link.url)
         Log.e(TAG, "URL_DEBUG clean URL for download: $downloadUrl")
-        Log.e("DL_DEBUG", "═════════════════════════════")
-        Log.e("DL_DEBUG", "startDownload called")
-        Log.e("DL_DEBUG", "URL: ${downloadUrl.take(300)}")
-        Log.e("DL_DEBUG", "URL length: ${downloadUrl.length}")
-        Log.e("DL_DEBUG", "URL lowercase: ${downloadUrl.lowercase().take(150)}")
-        Log.e("DL_DEBUG", "Link type: ${link.type}")
-        Log.e("DL_DEBUG", "Link type name: ${link.type.name}")
-        Log.e("DL_DEBUG", "Contains .mpd: ${downloadUrl.contains(".mpd", ignoreCase = true)}")
-        Log.e("DL_DEBUG", "Contains .m3u8: ${downloadUrl.contains(".m3u8", ignoreCase = true)}")
-        Log.e("DL_DEBUG", "Contains m3u8: ${downloadUrl.contains("m3u8", ignoreCase = true)}")
-        Log.e("DL_DEBUG", "Contains dash: ${downloadUrl.lowercase().contains("dash")}")
-        Log.e("DL_DEBUG", "Contains manifest: ${downloadUrl.lowercase().contains("manifest")}")
-        Log.e("DL_DEBUG", "Type is M3U8: ${link.type == ExtractorLinkType.M3U8}")
-        Log.e("DL_DEBUG", "Type is DASH: ${link.type.name.equals("DASH", ignoreCase = true)}")
-        Log.e("DL_DEBUG", "═════════════════════════════")
+        Log.d("DL_DEBUG", "═════════════════════════════")
+        Log.d("DL_DEBUG", "startDownload called")
+        Log.d("DL_DEBUG", "URL: ${downloadUrl.take(300)}")
+        Log.d("DL_DEBUG", "URL length: ${downloadUrl.length}")
+        Log.d("DL_DEBUG", "URL lowercase: ${downloadUrl.lowercase().take(150)}")
+        Log.d("DL_DEBUG", "Link type: ${link.type}")
+        Log.d("DL_DEBUG", "Link type name: ${link.type.name}")
+        Log.d("DL_DEBUG", "Contains .mpd: ${downloadUrl.contains(".mpd", ignoreCase = true)}")
+        Log.d("DL_DEBUG", "Contains .m3u8: ${downloadUrl.contains(".m3u8", ignoreCase = true)}")
+        Log.d("DL_DEBUG", "Contains m3u8: ${downloadUrl.contains("m3u8", ignoreCase = true)}")
+        Log.d("DL_DEBUG", "Contains dash: ${downloadUrl.lowercase().contains("dash")}")
+        Log.d("DL_DEBUG", "Contains manifest: ${downloadUrl.lowercase().contains("manifest")}")
+        Log.d("DL_DEBUG", "Type is M3U8: ${link.type == ExtractorLinkType.M3U8}")
+        Log.d("DL_DEBUG", "Type is DASH: ${link.type.name.equals("DASH", ignoreCase = true)}")
+        Log.d("DL_DEBUG", "═════════════════════════════")
         val downloadLink = if (downloadUrl == link.url) link else ExtractorLink(
             source = link.source,
             name = link.name,
@@ -286,14 +286,14 @@ object DirectDownloadManager {
                 if (result) return@launch
                 if (result || reResolveLink == null || resolveAttempt >= MAX_RESOLVE_RETRIES) return@launch
                 resolveAttempt++
-                Log.e("DL_404", "🔄 Attempting re-resolve (attempt $resolveAttempt/$MAX_RESOLVE_RETRIES)")
+                Log.d("DL_404", "🔄 Attempting re-resolve (attempt $resolveAttempt/$MAX_RESOLVE_RETRIES)")
                 val freshLink = reResolveLink() ?: run {
-                    Log.e("DL_404", "❌ Re-resolve returned null")
+                    Log.d("DL_404", "❌ Re-resolve returned null")
                     updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = "Could not refresh download link. Please try again.") }
                     showFailedNotification(downloadId, "Could not refresh download link. Please try again.")
                     return@launch
                 }
-                Log.e("DL_404", "✅ Got fresh link: ${freshLink.url.take(150)}")
+                Log.d("DL_404", "✅ Got fresh link: ${freshLink.url.take(150)}")
                 currentLink = freshLink
                 updateItem(downloadId) {
                     it.copy(
@@ -496,16 +496,16 @@ object DirectDownloadManager {
                     }
                     activeConnections[downloadId] = connection
                     val responseCode = connection.responseCode
-                    Log.e("DL_404", "═════════════════════════════")
-                    Log.e("DL_404", "Attempting to download:")
-                    Log.e("DL_404", "  URL: ${link.url.take(300)}")
-                    Log.e("DL_404", "  Type: ${link.type}")
-                    Log.e("DL_404", "  Headers: ${requestHeaders(link)}")
-                    Log.e("DL_404", "Response:")
-                    Log.e("DL_404", "  Code: $responseCode")
-                    Log.e("DL_404", "  Content-Type: ${connection.contentType}")
-                    Log.e("DL_404", "  Content-Length: ${connection.contentLengthLong}")
-                    Log.e("DL_404", "  Final URL: ${connection.url}")
+                    Log.d("DL_404", "═════════════════════════════")
+                    Log.d("DL_404", "Attempting to download:")
+                    Log.d("DL_404", "  URL: ${link.url.take(300)}")
+                    Log.d("DL_404", "  Type: ${link.type}")
+                    Log.d("DL_404", "  Headers: ${requestHeaders(link)}")
+                    Log.d("DL_404", "Response:")
+                    Log.d("DL_404", "  Code: $responseCode")
+                    Log.d("DL_404", "  Content-Type: ${connection.contentType}")
+                    Log.d("DL_404", "  Content-Length: ${connection.contentLengthLong}")
+                    Log.d("DL_404", "  Final URL: ${connection.url}")
                     if (responseCode == 429) {
                         attempt++
                         if (attempt >= MAX_RETRIES) throw httpException(responseCode, connection.responseMessage)
@@ -522,9 +522,9 @@ object DirectDownloadManager {
                     }
                     if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
                         if (responseCode == HttpURLConnection.HTTP_NOT_FOUND || responseCode == HttpURLConnection.HTTP_FORBIDDEN) {
-                            Log.e("DL_404", "❌ $responseCode ERROR - URL may be expired")
+                            Log.d("DL_404", "❌ $responseCode ERROR - URL may be expired")
                             runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(500) } }
-                                .onSuccess { Log.e("DL_404", "  Error body: $it") }
+                                .onSuccess { Log.d("DL_404", "  Error body: $it") }
                         }
                         throw httpException(responseCode, connection.responseMessage)
                     }
@@ -707,7 +707,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         } catch (error: Exception) {
             tempFile.delete()
             if (isRetryableExpiry(error)) {
-                Log.e("DL_404", "❌ HLS request failed with an expired/authenticated URL", error)
+                Log.d("DL_404", "❌ HLS request failed with an expired/authenticated URL", error)
                 return false
             }
             Log.e(TAG, "HLS download failed: ${item.title}", error)
@@ -877,7 +877,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             audioFile.delete()
             muxedFile.delete()
             if (isRetryableExpiry(error)) {
-                Log.e("DL_404", "❌ DASH manifest/segment request failed with an expired/authenticated URL", error)
+                Log.d("DL_404", "❌ DASH manifest/segment request failed with an expired/authenticated URL", error)
                 return false
             }
             Log.e(TAG, "DASH download failed: ${item.title}", error)
@@ -1109,12 +1109,12 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         }
         return try {
             val code = connection.responseCode
-            Log.e("DL_404", "Manifest/segment response: code=$code contentType=${connection.contentType} contentLength=${connection.contentLengthLong} finalUrl=${connection.url}")
+            Log.d("DL_404", "Manifest/segment response: code=$code contentType=${connection.contentType} contentLength=${connection.contentLengthLong} finalUrl=${connection.url}")
             if (code !in 200..299) {
                 if (code == HttpURLConnection.HTTP_NOT_FOUND || code == HttpURLConnection.HTTP_FORBIDDEN) {
-                    Log.e("DL_404", "❌ $code ERROR for ${url.take(300)}")
+                    Log.d("DL_404", "❌ $code ERROR for ${url.take(300)}")
                     runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(500) } }
-                        .onSuccess { Log.e("DL_404", "  Error body: $it") }
+                        .onSuccess { Log.d("DL_404", "  Error body: $it") }
                 }
                 throw httpException(code, connection.responseMessage)
             }
