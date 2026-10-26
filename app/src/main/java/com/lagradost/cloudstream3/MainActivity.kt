@@ -487,47 +487,36 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
     private fun autoInstallRepositories() {
-        val prefs = getSharedPreferences("kino_setup_v17", MODE_PRIVATE)
-        val raghavRepoUrl = "https://raw.githubusercontent.com/KSHITIJ8473/raghav/builds/repo.json"
-        val hasNetNaijaBox = APIHolder.apis.any {
-            (it.name.contains("NetNaija", ignoreCase = true) ||
-                it.name.contains("Net Naija", ignoreCase = true)) &&
-                it.name.contains("box", ignoreCase = true)
+        val prefs = getSharedPreferences("kino_setup_v18", MODE_PRIVATE)
+        val desiRepoUrl = "https://raw.githubusercontent.com/Faisal0786/Desi/main/repo.json"
+        val hasVegamovies = APIHolder.apis.any {
+            it.name.contains("Vegamovies", ignoreCase = true) ||
+                it.name.contains("Vega Movies", ignoreCase = true) ||
+                it.name.contains("Vegamovie", ignoreCase = true)
         }
-        if (hasNetNaijaBox && prefs.getBoolean("repos_installed_v18", false)) return
-
+        if (hasVegamovies && prefs.getBoolean("repos_installed_v18", false)) return
         ioSafe {
-            withContext(Dispatchers.Main) { showToast("Setting up NetNaija-box...") }
+            withContext(Dispatchers.Main) { showToast("Setting up Vegamovies...") }
             try {
                 RepositoryManager.getRepositories()
                     .filter { repo ->
-                        repo.url.contains("flummox", ignoreCase = true) ||
-                            repo.url.contains("FLUMMOX-Repo", ignoreCase = true)
+                        repo.url.contains("raghav", ignoreCase = true) ||
+                            repo.url.contains("KSHITIJ8473", ignoreCase = true)
                     }
                     .forEach { oldRepo ->
                         RepositoryManager.removeRepository(this@MainActivity, oldRepo)
                         Log.i(TAG, "Removed old repository: ${oldRepo.name}")
                     }
-
-                if (RepositoryManager.getRepositories().none { it.url == raghavRepoUrl }) {
-                    RepositoryManager.addRepository(RepositoryData(name = "Raghav", url = raghavRepoUrl))
-                    Log.i(TAG, "Added Raghav repository")
+                if (RepositoryManager.getRepositories().none { it.url == desiRepoUrl }) {
+                    RepositoryManager.addRepository(RepositoryData(name = "Desi Extensions", url = desiRepoUrl))
+                    Log.i(TAG, "Added Desi Extensions repository")
                 }
-
-                RepositoryManager.getRepoPlugins(raghavRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
-                    Log.i(TAG, "Raghav plugin: name='${sitePlugin.name}', internal='${sitePlugin.internalName}'")
-                    val isNetNaijaBox = sitePlugin.name.equals("NetNaija-box", ignoreCase = true) ||
-                        sitePlugin.internalName.equals("NetNaija-box", ignoreCase = true) ||
-                        (sitePlugin.name.contains("NetNaija", ignoreCase = true) &&
-                            sitePlugin.name.contains("box", ignoreCase = true)) ||
-                        (sitePlugin.internalName.contains("NetNaija", ignoreCase = true) &&
-                            sitePlugin.internalName.contains("box", ignoreCase = true))
-                    val isPlainNetNaija = (sitePlugin.name.equals("NetNaija", ignoreCase = true) ||
-                        sitePlugin.internalName.equals("NetNaija", ignoreCase = true)) &&
-                        !sitePlugin.name.contains("box", ignoreCase = true) &&
-                        !sitePlugin.internalName.contains("box", ignoreCase = true)
-                    if (isNetNaijaBox && !isPlainNetNaija) {
-                        Log.i(TAG, "Installing NetNaija-box extension: ${sitePlugin.name} (${sitePlugin.internalName})")
+                RepositoryManager.getRepoPlugins(desiRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
+                    val isVegamovies = sitePlugin.name.contains("Vegamovies", ignoreCase = true) ||
+                        sitePlugin.name.contains("Vega Movies", ignoreCase = true) ||
+                        sitePlugin.internalName.contains("Vegamovies", ignoreCase = true)
+                    if (isVegamovies) {
+                        Log.i(TAG, "Installing Vegamovies extension: ${sitePlugin.name} (${sitePlugin.internalName})")
                         val installed = runCatching {
                             PluginManager.downloadPlugin(
                                 activity = this@MainActivity,
@@ -541,33 +530,23 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         Log.i(TAG, "Installed ${sitePlugin.name}: $installed")
                     }
                 }
-
                 val pluginsFolder = File(filesDir, RepositoryManager.ONLINE_PLUGINS_FOLDER)
                 if (pluginsFolder.exists()) {
                     pluginsFolder.walkBottomUp().forEach { file ->
-                        if (file.isFile &&
-                            (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
-                            (listOf("BingeCloud", "binge", "MovieBox").any { file.name.contains(it, true) } ||
-                                (file.name.contains("NetNaija", ignoreCase = true) &&
-                                    !file.name.contains("box", ignoreCase = true)))) {
-                            if (file.delete()) Log.i(TAG, "Deleted old or incorrect plugin: ${file.name}")
+                        if (file.isFile && (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
+                            file.name.contains("NetNaija", ignoreCase = true)) {
+                            if (file.delete()) Log.i(TAG, "Deleted old plugin: ${file.name}")
                         }
                     }
                 }
-
                 PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
-                val loadedProviders = APIHolder.allProviders
-                val netNaijaBoxLoaded = loadedProviders.any {
-                    (it.name.contains("NetNaija", ignoreCase = true) ||
-                        it.name.contains("Net Naija", ignoreCase = true)) &&
-                        it.name.contains("box", ignoreCase = true)
+                val vegamoviesLoaded = APIHolder.allProviders.any {
+                    it.name.contains("Vegamovies", ignoreCase = true) ||
+                        it.name.contains("Vega Movies", ignoreCase = true)
                 }
-                Log.i(TAG, "NetNaija-box loaded: $netNaijaBoxLoaded")
-                Log.i(TAG, "All providers: ${loadedProviders.map { it.name }}")
-                loadedProviders.filter { it.name.contains("NetNaija", ignoreCase = true) }
-                    .forEach { provider -> Log.i(TAG, "NetNaija variant: ${provider.name}") }
-                if (netNaijaBoxLoaded) prefs.edit().putBoolean("repos_installed_v18", true).apply()
-
+                Log.i(TAG, "Vegamovies loaded: $vegamoviesLoaded")
+                Log.i(TAG, "All providers: ${APIHolder.allProviders.map { it.name }}")
+                if (vegamoviesLoaded) prefs.edit().putBoolean("repos_installed_v18", true).apply()
                 withContext(Dispatchers.Main) {
                     onAllPluginsLoaded(true)
                     afterPluginsLoadedEvent.invoke(true)
@@ -575,7 +554,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 }
             } catch (e: Exception) {
                 logError(e)
-                Log.e(TAG, "Error installing NetNaija-box repository: ${e.message}")
+                Log.e(TAG, "Error installing Vegamovies repository: ${e.message}")
             }
         }
     }

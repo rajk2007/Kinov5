@@ -72,10 +72,10 @@ class KinoHomeViewModel : ViewModel() {
         loadJob = loadData()
     }
 
-    private fun isNetNaijaBox(api: MainAPI): Boolean =
-        (api.name.contains("NetNaija", ignoreCase = true) ||
-            api.name.contains("Net Naija", ignoreCase = true)) &&
-            api.name.contains("box", ignoreCase = true)
+    private fun isVegamovies(api: MainAPI): Boolean =
+        (api.name.contains("Vegamovies", ignoreCase = true) ||
+            api.name.contains("Vega Movies", ignoreCase = true) ||
+            api.name.contains("Vegamovie", ignoreCase = true))
 
     private fun loadData() = viewModelScope.launch(Dispatchers.IO) {
         _isLoading.value = true
@@ -127,22 +127,22 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private suspend fun fetchHomeData(): Pair<List<HomeRow>, List<HeroBannerItem>> {
-        var netNaijaBoxApi: MainAPI? = APIHolder.apis.firstOrNull(::isNetNaijaBox)
+        var vegamoviesApi: MainAPI? = APIHolder.apis.firstOrNull(::isVegamovies)
         var attempts = 0
-        while (netNaijaBoxApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
+        while (vegamoviesApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
             delay(500)
             attempts++
-            netNaijaBoxApi = APIHolder.apis.firstOrNull(::isNetNaijaBox)
+            vegamoviesApi = APIHolder.apis.firstOrNull(::isVegamovies)
         }
 
-        Log.d("KINO_HOME", "NetNaija-box API: ${netNaijaBoxApi?.name ?: "NOT FOUND"}")
-        if (netNaijaBoxApi == null) throw IllegalStateException("NetNaija-box provider not loaded.")
+        Log.d("KINO_HOME", "Vegamovies API: ${vegamoviesApi?.name ?: "NOT FOUND"}")
+        if (vegamoviesApi == null) throw IllegalStateException("Vegamovies provider not loaded.")
 
-        val sections = fetchProviderSections(netNaijaBoxApi)
-        val rows = buildHomeRowsFromNetNaija(sections)
+        val sections = fetchProviderSections(vegamoviesApi)
+        val rows = buildHomeRowsFromVegamovies(sections)
         val allItems = rows.flatMap { it.items }.distinctBy { itemKey(it) }
-        Log.d("KINO_HOME", "NetNaija-box sections: ${sections.keys}; items: ${allItems.size}")
-        if (allItems.isEmpty()) throw IllegalStateException("No content available from NetNaija-box")
+        Log.d("KINO_HOME", "Vegamovies sections: ${sections.keys}; items: ${allItems.size}")
+        if (allItems.isEmpty()) throw IllegalStateException("No content available from Vegamovies")
         return rows to prepareHeroBanner(allItems)
     }
 
@@ -154,12 +154,12 @@ class KinoHomeViewModel : ViewModel() {
                     .forEach { page: HomePageList ->
                         val items = page.list.map { it.toMovieResult(api) }
                         sections[page.name] = items.distinctBy(::itemKey)
-                        Log.d("KINO_HOME", "NetNaija-box section '${page.name}': ${items.size} items")
+                        Log.d("KINO_HOME", "Vegamovies section '${page.name}': ${items.size} items")
                     }
-                else -> Log.e("KINO_HOME", "NetNaija-box homepage request failed")
+                else -> Log.e("KINO_HOME", "Vegamovies homepage request failed")
             }
         } catch (error: Exception) {
-            Log.e("KINO_HOME", "NetNaija-box homepage exception: ${error.message}", error)
+            Log.e("KINO_HOME", "Vegamovies homepage exception: ${error.message}", error)
         }
         return sections
     }
@@ -178,7 +178,7 @@ class KinoHomeViewModel : ViewModel() {
     private fun itemKey(item: MovieResult): String =
         "${item.providerApiName}:${item.providerUrl ?: item.id}"
 
-    private fun buildHomeRowsFromNetNaija(
+    private fun buildHomeRowsFromVegamovies(
         sections: Map<String, List<MovieResult>>
     ): List<HomeRow> {
         val (live, normal) = sections.entries.partition { it.key.contains("live", ignoreCase = true) }

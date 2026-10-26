@@ -109,6 +109,7 @@ import com.lagradost.cloudstream3.utils.DataStoreHelper.getViewPos
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.ui.result.displayLinkName
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToEnglishLanguageName
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToLanguageName
@@ -1114,7 +1115,8 @@ class GeneratorPlayer : FullScreenPlayer() {
 
                         sourcesArrayAdapter.addAll(sortedUrls.map { (link, uri) ->
                             val name = link?.name ?: uri?.name ?: "NULL"
-                            "$name ${Qualities.getStringByInt(link?.quality)}"
+                            val displayName = if (link != null) displayLinkName(name) else name
+                            if (displayName == name) "$name ${Qualities.getStringByInt(link?.quality)}" else displayName
                         })
 
                         providerList.choiceMode = AbsListView.CHOICE_MODE_SINGLE

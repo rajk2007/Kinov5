@@ -32,6 +32,25 @@ import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 
+fun parseQualityFromVegamoviesName(name: String): String? =
+    Regex("""\.(\d{3,4}p)$""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
+
+fun parseSizeFromVegamoviesName(name: String): String? =
+    Regex("""(\d+\.?\d*\s*(?:GB|MB|KB))""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
+
+fun parseVegamoviesLinkName(name: String): Pair<String?, String?> =
+    (parseQualityFromVegamoviesName(name) ?: parseQualityFromLinkName(name)) to parseSizeFromVegamoviesName(name)
+
+fun displayLinkName(name: String): String {
+    val (quality, size) = parseVegamoviesLinkName(name)
+    return when {
+        quality != null && size != null -> "$quality · $size"
+        quality != null -> quality
+        size != null -> size
+        else -> name
+    }
+}
+
 fun parseQualityFromLinkName(name: String): String? {
     val match = Regex("\\b(144|240|360|480|720|1080|1440|2160)p\\b|\\b4[kK]\\b", RegexOption.IGNORE_CASE)
         .find(name)?.value ?: return null
@@ -101,12 +120,13 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
         probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, probed.estimatedSizeBytes) } }
             .distinctBy { it.id }.sortedByDescending { it.height }.ifEmpty {
                 selectedLinks.map { link ->
-                    val fallbackQuality = when {
+                    val parsedDisplay = displayLinkName(link.name)
+                    val fallbackQuality = if (parsedDisplay != link.name) parsedDisplay else when {
                         link.quality >= 2160 -> "2160p"
                         link.quality >= 1080 -> "1080p"
                         link.quality >= 720 -> "720p"
                         link.quality >= 480 -> "480p"
-                        else -> parseQualityFromLinkName(link.name) ?: "Original Quality"
+                        else -> "Original Quality"
                     }
                     QualityOption("${link.url}|fallback", fallbackQuality, 0, 0, link, link.url)
                 }

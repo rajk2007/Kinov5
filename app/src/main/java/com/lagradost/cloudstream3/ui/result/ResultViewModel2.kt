@@ -1231,7 +1231,7 @@ class ResultViewModel2 : ViewModel() {
             //val context = CloudStreamApp.context
             postPopup(
                 text,
-                links.links.map { txt("${it.name} ${Qualities.getStringByInt(it.quality)}") }
+                links.links.map { txt("${displayLinkName(it.name)}") }
                 /*.amap {
                 val size =
                     it.getVideoSize()?.let { size -> " " + formatFileSize(context, size) } ?: ""
