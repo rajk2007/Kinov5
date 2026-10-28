@@ -48,19 +48,23 @@ fun calculateEstimatedSize(
     videoBandwidth: Long?,
     audioBandwidth: Long = 0,
     durationSeconds: Double?,
+    isHlsStream: Boolean = false,
 ): Long? {
     if (videoBandwidth == null || durationSeconds == null || durationSeconds <= 0.0) return null
 
     val effectiveAudioBandwidth = audioBandwidth.coerceAtLeast(0)
     val totalBandwidth = videoBandwidth + effectiveAudioBandwidth
-    val rawBytes = totalBandwidth.toDouble() * durationSeconds / 8.0
+    var rawBytes = totalBandwidth.toDouble() * durationSeconds / 8.0
+    // HLS BANDWIDTH is commonly a peak bitrate. Correct toward the average
+    // bitrate represented by the downloaded media segments.
+    if (isHlsStream) rawBytes *= 0.35
     val estimatedBytes = rawBytes.toLong()
     Log.e("SIZE_FINAL", "═════════════════════════════")
     Log.e("SIZE_FINAL", "calculateEstimatedSize called:")
     Log.e("SIZE_FINAL", "  videoBandwidth: $videoBandwidth bps")
     Log.e("SIZE_FINAL", "  audioBandwidth: $effectiveAudioBandwidth bps")
     Log.e("SIZE_FINAL", "  durationSeconds: $durationSeconds")
-    Log.e("SIZE_FINAL", "  overheadPercent: 0")
+    Log.e("SIZE_FINAL", "  hlsCorrectionApplied: $isHlsStream")
     Log.e("SIZE_FINAL", "  totalBandwidth: $totalBandwidth bps")
     Log.e("SIZE_FINAL", "  rawBytes: $rawBytes")
     Log.e("SIZE_FINAL", "  estimatedBytes: $estimatedBytes")
@@ -214,7 +218,12 @@ object QualityProbe {
                 results += ProbedQuality(
                     width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                     variantUrl, heightToQualityLabel(height),
-                    calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth, duration),
+                    calculateEstimatedSize(
+                        effectiveVideoBandwidth,
+                        audioBandwidth,
+                        duration,
+                        isHlsStream = true,
+                    ),
                     "hls-${height}-${variantUrl.hashCode()}",
                 )
             }

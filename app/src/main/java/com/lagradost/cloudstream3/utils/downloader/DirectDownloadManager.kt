@@ -648,8 +648,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     }
 
     private suspend fun downloadHlsVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem): Boolean {
-        val outputFile = File(getDownloadDir(context), outputName(item.fileName))
-        val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
+        var outputFile: File? = null
+        var tempFile: File? = null
         try {
             val headers = requestHeaders(link)
             Log.e("TRACE_HLS", "═══════════════════════════════════")
@@ -681,14 +681,33 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .filter { it.isNotEmpty() && !it.startsWith("#") }
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
+            val isFragmentedMp4 = segments.any { segment ->
+                URI(segment).path?.lowercase()?.let { path ->
+                    path.endsWith(".m4s") || path.endsWith(".mp4") ||
+                        path.endsWith(".cmfv") || path.endsWith(".cmfa")
+                } == true
+            }
+            val extension = if (isFragmentedMp4) ".mp4" else ".ts"
+            val baseName = item.fileName.removeSuffix(".mp4").removeSuffix(".ts")
+            outputFile = File(getDownloadDir(context), "$baseName$extension")
+            val resolvedOutputFile = requireNotNull(outputFile)
+            tempFile = File(resolvedOutputFile.parentFile, "${resolvedOutputFile.name}.part")
             Log.e("TRACE_HLS", "   Segments found: ${segments.size}")
+            Log.e("TRACE_HLS", "   Output format: ${if (isFragmentedMp4) "fMP4" else "MPEG-TS"}")
             Log.e("DL_EXEC", "HLS segments found: ${segments.size}")
 
-            downloadSegmentsParallel(downloadId, segments, headers, tempFile)
+            downloadSegmentsParallel(
+                downloadId,
+                segments,
+                headers,
+                requireNotNull(tempFile),
+                updateTotalFromSamples = true,
+            )
             if (!currentCoroutineContext().isActive) throw CancellationException()
-            finalizeDownload(downloadId, outputFile, tempFile, validateContainer = false)
-            Log.e("TRACE_HLS", "   Total bytes: ${outputFile.length()}")
-            Log.e("TRACE_HLS", "   File size: ${outputFile.length()}")
+            val resolvedTempFile = requireNotNull(tempFile)
+            finalizeDownload(downloadId, resolvedOutputFile, resolvedTempFile, validateContainer = false)
+            Log.e("TRACE_HLS", "   Total bytes: ${resolvedOutputFile.length()}")
+            Log.e("TRACE_HLS", "   File size: ${resolvedOutputFile.length()}")
             Log.e("TRACE_HLS", "═══════════════════════════════════")
             Log.e("DL_EXEC", "HLS output file size: ${outputFile.length()}")
             showCompletedNotification(downloadId)
@@ -697,7 +716,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             markPausedIfNoReplacement(downloadId)
             return true
         } catch (error: Exception) {
-            tempFile.delete()
+            tempFile?.delete()
             if (isRetryableExpiry(error)) {
                 Log.e("DL_404", "❌ HLS request failed with an expired/authenticated URL", error)
                 return false
@@ -718,6 +737,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         progressOffset: Int = 0,
         progressTotal: Int = segmentUrls.size,
         downloadedBytesOffset: Long = 0L,
+        updateTotalFromSamples: Boolean = false,
     ) {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
@@ -765,9 +785,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
-                                        // Commit the segmented estimate once, after enough samples are
-                                        // available to make it useful. Never recalculate it afterward.
-                                        totalBytes = if (it.totalBytes <= 0L &&
+                                        // For HLS, replace the peak-bandwidth estimate once enough
+                                        // segment samples are available; otherwise keep the first estimate.
+                                        totalBytes = if ((updateTotalFromSamples || it.totalBytes <= 0L) &&
                                             (finished >= estimateSegmentCount || finished == segmentUrls.size)
                                         ) estimatedTotalBytes else it.totalBytes,
                                         speed = formatSpeed(speedBps),
