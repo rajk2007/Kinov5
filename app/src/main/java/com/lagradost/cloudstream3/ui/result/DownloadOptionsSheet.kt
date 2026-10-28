@@ -48,8 +48,14 @@ fun parseKdesaLanguage(name: String): String? =
 fun parseKdesaQuality(name: String): String? =
     Regex("""\b(\d{3,4}p)\b""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
 
-fun filterKdesaLinks(links: List<ExtractorLink>): List<ExtractorLink> =
-    links.filterNot { it.name.contains("Evion", ignoreCase = true) }
+fun filterKdesaLinks(links: List<ExtractorLink>): List<ExtractorLink> {
+    // Kdesa responses can be mixed with other providers. Only apply the Orion
+    // restriction when an Orion source is present, so other providers retain
+    // their existing download options.
+    val hasOrion = links.any { it.name.contains("Orion", ignoreCase = true) }
+    return links
+        .filter { !hasOrion || it.name.contains("Orion", ignoreCase = true) }
+}
 
 fun displayLinkName(name: String): String {
     parseKdesaLanguage(name)?.let { return it }

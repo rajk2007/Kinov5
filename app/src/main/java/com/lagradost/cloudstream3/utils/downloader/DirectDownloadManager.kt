@@ -1020,6 +1020,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             "Downloaded file is only ${formatFileSize(tempFile.length())}; " +
                 "it may be a manifest, not a video."
         }
+        require(!isHtmlResponse(tempFile)) {
+            "Downloaded HTML page instead of video; the link may have expired."
+        }
         require(detectManifestType(tempFile) == null) {
             "Downloaded response is a manifest, not a video."
         }
@@ -1067,6 +1070,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 status = DirectDownloadStatus.COMPLETED,
                 progress = 100,
                 downloadedBytes = actualSize,
+                totalBytes = actualSize,
                 filePath = outputFile.absolutePath,
                 speed = "",
                 eta = "",
@@ -1156,6 +1160,18 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             else -> null
         }
     }.getOrNull()
+
+    private fun isHtmlResponse(file: File): Boolean = runCatching {
+        file.inputStream().use { input ->
+            val bytes = ByteArray(512)
+            val count = input.read(bytes).coerceAtLeast(0)
+            String(bytes, 0, count, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+                .let { sample ->
+                    sample.startsWith("<!doctype html", ignoreCase = true) ||
+                        sample.startsWith("<html", ignoreCase = true)
+                }
+        }
+    }.getOrDefault(false)
 
     private fun isDash(link: ExtractorLink): Boolean =
         link.url.contains(".mpd", ignoreCase = true) ||

@@ -110,7 +110,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.ui.result.displayLinkName
-import com.lagradost.cloudstream3.ui.result.filterKdesaLinks
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToEnglishLanguageName
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToLanguageName
@@ -178,6 +177,21 @@ class GeneratorPlayer : FullScreenPlayer() {
     private var currentSelectedLink: Pair<ExtractorLink?, ExtractorUri?>? = null
     private var currentSelectedSubtitles: SubtitleData? = null
     private val currentMeta: Any? get() = viewModel.state.generatorState?.meta
+
+    private fun filterKdesaSourceLinks(
+        links: List<Pair<ExtractorLink?, ExtractorUri?>>
+    ): List<Pair<ExtractorLink?, ExtractorUri?>> {
+        val hasOrion = links.any { (link, _) ->
+            link?.name?.contains("Orion", ignoreCase = true) == true
+        }
+        return if (hasOrion) {
+            links.filter { (link, _) ->
+                link?.name?.contains("Orion", ignoreCase = true) == true
+            }
+        } else {
+            links
+        }
+    }
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta
 
     private var isPlayerActive: AtomicBoolean = AtomicBoolean(false)
@@ -1103,9 +1117,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                 var sortedUrls = emptyList<Pair<ExtractorLink?, ExtractorUri?>>()
 
                 fun refreshLinks(qualityProfile: Int) {
-                    sortedUrls = viewModel.state.sortLinks(qualityProfile).filter { (link, _) ->
-                        link == null || filterKdesaLinks(listOf(link)).isNotEmpty()
-                    }
+                    sortedUrls = filterKdesaSourceLinks(viewModel.state.sortLinks(qualityProfile))
                     if (sortedUrls.isEmpty()) {
                         sourceDialog.findViewById<LinearLayout>(R.id.sort_sources_holder)?.isGone =
                             true
@@ -1556,7 +1568,7 @@ class GeneratorPlayer : FullScreenPlayer() {
             return
         }
 
-        val links = viewModel.state.sortLinks(currentQualityProfile)
+        val links = filterKdesaSourceLinks(viewModel.state.sortLinks(currentQualityProfile))
         if (links.isEmpty()) {
             noLinksFound()
             return
@@ -1633,12 +1645,12 @@ class GeneratorPlayer : FullScreenPlayer() {
     }
 
     override fun hasNextMirror(): Boolean {
-        val links = viewModel.state.sortLinks(currentQualityProfile)
+        val links = filterKdesaSourceLinks(viewModel.state.sortLinks(currentQualityProfile))
         return links.isNotEmpty() && links.indexOf(currentSelectedLink) + 1 < links.size
     }
 
     override fun nextMirror() {
-        val links = viewModel.state.sortLinks(currentQualityProfile)
+        val links = filterKdesaSourceLinks(viewModel.state.sortLinks(currentQualityProfile))
         if (links.isEmpty()) {
             noLinksFound()
             return
