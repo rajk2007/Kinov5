@@ -2,6 +2,7 @@ package com.lagradost.cloudstream3.ui.library
 
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -62,6 +63,20 @@ class KinoLibraryFragment : Fragment() {
         val uri = rawPath?.let { raw ->
             val parsed = Uri.parse(raw)
             if (parsed.scheme.isNullOrBlank()) Uri.fromFile(File(raw)) else parsed
+        }
+
+        Log.e("PLAY_DEBUG", "Loading downloaded file:")
+        Log.e("PLAY_DEBUG", "  File path: $rawPath")
+        Log.e("PLAY_DEBUG", "  File exists: ${rawPath?.let { File(it).exists() }}")
+        Log.e("PLAY_DEBUG", "  File size: ${rawPath?.let { File(it).length() }}")
+        Log.e("PLAY_DEBUG", "  File extension: ${rawPath?.let { File(it).extension }}")
+        Log.e("PLAY_DEBUG", "  URI: $uri")
+        if (rawPath != null) {
+            runCatching {
+                val header = ByteArray(20)
+                File(rawPath).inputStream().use { it.read(header) }
+                Log.e("PLAY_DEBUG", "  File header: ${String(header, Charsets.ISO_8859_1)}")
+            }.onFailure { Log.e("PLAY_DEBUG", "  Could not read file header", it) }
         }
 
         if (uri == null || !isUsableLocalUri(uri)) {

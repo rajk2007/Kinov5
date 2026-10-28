@@ -40,6 +40,16 @@ class DownloadFileGenerator(
             .firstOrNull { it.isFile && it.length() > 0L }
 
         if (existingFile != null) {
+            Log.e("PLAY_DEBUG", "Loading downloaded file:")
+            Log.e("PLAY_DEBUG", "  File path: ${existingFile.absolutePath}")
+            Log.e("PLAY_DEBUG", "  File exists: ${existingFile.exists()}")
+            Log.e("PLAY_DEBUG", "  File size: ${existingFile.length()}")
+            Log.e("PLAY_DEBUG", "  File extension: ${existingFile.extension}")
+            runCatching {
+                val header = ByteArray(20)
+                existingFile.inputStream().use { it.read(header) }
+                Log.e("PLAY_DEBUG", "  File header: ${String(header, Charsets.ISO_8859_1)}")
+            }.onFailure { Log.e("PLAY_DEBUG", "  Could not read file header", it) }
             Log.d("DownloadFileGenerator", "Using local download: ${existingFile.absolutePath}")
             return Uri.fromFile(existingFile)
         }
