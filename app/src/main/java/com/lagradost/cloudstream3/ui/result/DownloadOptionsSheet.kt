@@ -31,6 +31,29 @@ import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+
+private suspend fun getActualFileSize(link: ExtractorLink): Long? = withContext(Dispatchers.IO) {
+    runCatching {
+        (URL(link.url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "HEAD"
+            connectTimeout = 5_000
+            readTimeout = 5_000
+            instanceFollowRedirects = true
+            link.getAllHeaders().forEach { (key, value) -> setRequestProperty(key, value) }
+        }.let { connection ->
+            try {
+                connection.connect()
+                connection.contentLengthLong.takeIf { it > 0L }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }.getOrNull()
+}
 
 fun parseQualityFromLegacyName(name: String): String? =
     Regex("""\.(\d{3,4}p)$""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
@@ -42,7 +65,7 @@ fun parseLegacyLinkName(name: String): Pair<String?, String?> =
     (parseQualityFromLegacyName(name) ?: parseQualityFromLinkName(name)) to parseSizeFromLegacyName(name)
 
 fun parseKdesaLanguage(name: String): String? =
-    Regex("""Orion[·•.]\s*([A-Za-z][\w-]*)""", RegexOption.IGNORE_CASE)
+    Regex("""Orion\s*[·•.]\s*([A-Za-z][\w-]*)""", RegexOption.IGNORE_CASE)
         .find(name)?.groupValues?.getOrNull(1)?.replaceFirstChar { it.uppercaseChar() }
 
 fun parseKdesaQuality(name: String): String? =
@@ -59,6 +82,12 @@ fun filterKdesaLinks(links: List<ExtractorLink>): List<ExtractorLink> {
 
 fun displayLinkName(name: String): String {
     parseKdesaLanguage(name)?.let { return it }
+    if (name.contains("Orion", ignoreCase = true)) {
+        return name
+            .replace(Regex("""Orion\s*[·•.]\s*""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*\d{3,4}p\s*""", RegexOption.IGNORE_CASE), "")
+            .trim()
+    }
     val (quality, size) = parseLegacyLinkName(name)
     return when {
         quality != null && size != null -> "$quality · $size"
@@ -127,6 +156,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
     var selectedLanguage by remember(languages) { mutableStateOf(languages.firstOrNull() ?: "") }
     val selectedLinks = groupedLinks[selectedLanguage].orEmpty()
     var probedQualities by remember(selectedLanguage) { mutableStateOf<Map<ExtractorLink, List<ProbedQuality>>>(emptyMap()) }
+    var actualSizes by remember(selectedLanguage) { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var isProbing by remember(selectedLanguage) { mutableStateOf(true) }
 
     LaunchedEffect(selectedLanguage, selectedLinks) {
@@ -135,13 +165,16 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
             probedQualities = selectedLinks.map { link ->
                 async { link to QualityProbe.probeVideoQualities(link) }
             }.awaitAll().toMap()
+            actualSizes = selectedLinks.mapNotNull { link ->
+                async { link.url to getActualFileSize(link) }
+            }.awaitAll().mapNotNull { (url, size) -> size?.let { url to it } }.toMap()
         } finally {
             isProbing = false
         }
     }
 
-    val qualityOptions = remember(probedQualities, selectedLinks) {
-        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, probed.estimatedSizeBytes) } }
+    val qualityOptions = remember(probedQualities, selectedLinks, actualSizes) {
+        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, actualSizes[link.url] ?: probed.estimatedSizeBytes) } }
             .distinctBy { it.id }.sortedByDescending { it.height }.ifEmpty {
                 selectedLinks.map { link ->
                     val parsedDisplay = displayLinkName(link.name)
@@ -152,7 +185,7 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
                         link.quality >= 480 -> "480p"
                         else -> "Original Quality"
                     }
-                    QualityOption("${link.url}|fallback", fallbackQuality, 0, 0, link, link.url)
+                    QualityOption("${link.url}|fallback", fallbackQuality, 0, 0, link, link.url, actualSizes[link.url])
                 }
             }
     }

@@ -1015,6 +1015,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun parseXmlAttributes(raw: String): Map<String, String> = Regex("([A-Za-z_:][\\w:.-]*)\\s*=\\s*\"([^\"]*)\"").findAll(raw).associate { it.groupValues[1] to it.groupValues[2] }
 
     private fun finalizeDownload(downloadId: String, outputFile: File, tempFile: File, validateContainer: Boolean = true) {
+        logDownloadedSignature(tempFile)
         require(tempFile.length() > 0L) { "Downloaded file is empty." }
         require(tempFile.length() >= MIN_VALID_VIDEO_BYTES) {
             "Downloaded file is only ${formatFileSize(tempFile.length())}; " +
@@ -1172,6 +1173,25 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
         }
     }.getOrDefault(false)
+
+    private fun logDownloadedSignature(file: File) {
+        runCatching {
+            val bytes = ByteArray(200)
+            val count = file.inputStream().use { it.read(bytes).coerceAtLeast(0) }
+            val sample = String(bytes, 0, count, Charsets.UTF_8)
+            val kind = when {
+                sample.contains("<!doctype html", ignoreCase = true) || sample.contains("<html", ignoreCase = true) -> "HTML error page"
+                sample.contains("#EXTM3U", ignoreCase = true) -> "HLS manifest"
+                sample.contains("<?xml", ignoreCase = true) || sample.contains("<MPD", ignoreCase = true) -> "DASH manifest"
+                count >= 8 && bytes[4] == 'f'.code.toByte() && bytes[5] == 't'.code.toByte() && bytes[6] == 'y'.code.toByte() && bytes[7] == 'p'.code.toByte() -> "MP4 video"
+                count >= 4 && bytes[0] == 0x1A.toByte() && bytes[1] == 0x45.toByte() -> "MKV/WebM video"
+                else -> "unknown"
+            }
+            Log.e("DL_DEBUG", "Downloaded file: ${file.length()} bytes; detected=$kind; firstBytes=${sample.take(200)}")
+        }.onFailure { error ->
+            Log.e("DL_DEBUG", "Could not inspect downloaded file signature", error)
+        }
+    }
 
     private fun isDash(link: ExtractorLink): Boolean =
         link.url.contains(".mpd", ignoreCase = true) ||
