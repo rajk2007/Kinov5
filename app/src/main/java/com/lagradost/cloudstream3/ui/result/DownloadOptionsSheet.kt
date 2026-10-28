@@ -32,17 +32,28 @@ import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 
-fun parseQualityFromVegamoviesName(name: String): String? =
+fun parseQualityFromLegacyName(name: String): String? =
     Regex("""\.(\d{3,4}p)$""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
 
-fun parseSizeFromVegamoviesName(name: String): String? =
+fun parseSizeFromLegacyName(name: String): String? =
     Regex("""(\d+\.?\d*\s*(?:GB|MB|KB))""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
 
-fun parseVegamoviesLinkName(name: String): Pair<String?, String?> =
-    (parseQualityFromVegamoviesName(name) ?: parseQualityFromLinkName(name)) to parseSizeFromVegamoviesName(name)
+fun parseLegacyLinkName(name: String): Pair<String?, String?> =
+    (parseQualityFromLegacyName(name) ?: parseQualityFromLinkName(name)) to parseSizeFromLegacyName(name)
+
+fun parseKdesaLanguage(name: String): String? =
+    Regex("""Orion[·•.]\s*([A-Za-z][\w-]*)""", RegexOption.IGNORE_CASE)
+        .find(name)?.groupValues?.getOrNull(1)?.replaceFirstChar { it.uppercaseChar() }
+
+fun parseKdesaQuality(name: String): String? =
+    Regex("""\b(\d{3,4}p)\b""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
+
+fun filterKdesaLinks(links: List<ExtractorLink>): List<ExtractorLink> =
+    links.filterNot { it.name.contains("Evion", ignoreCase = true) }
 
 fun displayLinkName(name: String): String {
-    val (quality, size) = parseVegamoviesLinkName(name)
+    parseKdesaLanguage(name)?.let { return it }
+    val (quality, size) = parseLegacyLinkName(name)
     return when {
         quality != null && size != null -> "$quality · $size"
         quality != null -> quality
@@ -58,6 +69,7 @@ fun parseQualityFromLinkName(name: String): String? {
 }
 
 fun parseLanguageFromLinkName(name: String): String? {
+    parseKdesaLanguage(name)?.let { return it }
     val afterDot = Regex("""[•·]\s*(?:MB\s+)?([A-Za-z][\w\s-]{1,20})""", RegexOption.IGNORE_CASE)
         .find(name)?.groupValues?.getOrNull(1)?.trim()
     if (!afterDot.isNullOrBlank() && !afterDot.matches(Regex("""\d{3,4}p|4k""", RegexOption.IGNORE_CASE))) {
@@ -73,10 +85,12 @@ fun parseLanguageFromLinkName(name: String): String? {
 
 fun ExtractorLink.effectiveQuality(): Int {
     if (quality != Qualities.Unknown.value && quality != 0) return quality
-    return parseQualityFromLinkName(name)?.let(::getQualityFromName) ?: Qualities.Unknown.value
+    return (parseKdesaQuality(name) ?: parseQualityFromLinkName(name))?.let(::getQualityFromName)
+        ?: Qualities.Unknown.value
 }
 
 fun ExtractorLink.languageKey(): String {
+    parseKdesaLanguage(name)?.let { return it }
     parseLanguageFromLinkName(name)?.let { return it }
     val qStr = Qualities.getStringByInt(effectiveQuality()).ifBlank { parseQualityFromLinkName(name) ?: "" }
     return name.replace(source, "", ignoreCase = true).replace(qStr, "", ignoreCase = true)
@@ -97,7 +111,11 @@ data class QualityOption(
 
 @Composable
 fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink, Int, Long) -> Unit, onDismiss: () -> Unit) {
-    val normalized = remember(links) { links.map { link -> if (link.effectiveQuality() != link.quality) ExtractorLink(link.source, link.name, link.url, link.referer, link.effectiveQuality(), link.headers, link.extractorData, link.type, link.audioTracks) else link } }
+    val normalized = remember(links) {
+        filterKdesaLinks(links).map { link ->
+            if (link.effectiveQuality() != link.quality) ExtractorLink(link.source, link.name, link.url, link.referer, link.effectiveQuality(), link.headers, link.extractorData, link.type, link.audioTracks) else link
+        }
+    }
     val groupedLinks = remember(normalized) { normalized.groupBy { it.languageKey() }.mapValues { (_, group) -> group.distinctBy { it.url }.sortedByDescending { it.effectiveQuality() } }.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
     val languages = groupedLinks.keys.toList()
     var selectedLanguage by remember(languages) { mutableStateOf(languages.firstOrNull() ?: "") }

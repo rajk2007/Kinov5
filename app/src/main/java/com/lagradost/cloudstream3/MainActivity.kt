@@ -487,36 +487,35 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
     }
 
     private fun autoInstallRepositories() {
-        val prefs = getSharedPreferences("kino_setup_v18", MODE_PRIVATE)
-        val desiRepoUrl = "https://raw.githubusercontent.com/Faisal0786/Desi/main/repo.json"
-        val hasVegamovies = APIHolder.apis.any {
-            it.name.contains("Vegamovies", ignoreCase = true) ||
-                it.name.contains("Vega Movies", ignoreCase = true) ||
-                it.name.contains("Vegamovie", ignoreCase = true)
+        val prefs = getSharedPreferences("kino_setup_v19", MODE_PRIVATE)
+        val raghavRepoUrl = "https://raw.githubusercontent.com/KSHITIJ8473/raghav/builds/repo.json"
+        val hasKdesa = APIHolder.apis.any {
+            it.name.contains("Kdesa", ignoreCase = true) ||
+                it.name.contains("K Desa", ignoreCase = true)
         }
-        if (hasVegamovies && prefs.getBoolean("repos_installed_v18", false)) return
+        if (hasKdesa && prefs.getBoolean("repos_installed_v19", false)) return
         ioSafe {
-            withContext(Dispatchers.Main) { showToast("Setting up Vegamovies...") }
+            withContext(Dispatchers.Main) { showToast("Setting up Kdesa...") }
             try {
                 RepositoryManager.getRepositories()
                     .filter { repo ->
-                        repo.url.contains("raghav", ignoreCase = true) ||
-                            repo.url.contains("KSHITIJ8473", ignoreCase = true)
+                        repo.url.contains("Faisal0786", ignoreCase = true) ||
+                            repo.url.contains("Desi", ignoreCase = true)
                     }
                     .forEach { oldRepo ->
                         RepositoryManager.removeRepository(this@MainActivity, oldRepo)
                         Log.i(TAG, "Removed old repository: ${oldRepo.name}")
                     }
-                if (RepositoryManager.getRepositories().none { it.url == desiRepoUrl }) {
-                    RepositoryManager.addRepository(RepositoryData(name = "Desi Extensions", url = desiRepoUrl))
-                    Log.i(TAG, "Added Desi Extensions repository")
+                if (RepositoryManager.getRepositories().none { it.url == raghavRepoUrl }) {
+                    RepositoryManager.addRepository(RepositoryData(name = "Raghav", url = raghavRepoUrl))
+                    Log.i(TAG, "Added Raghav repository")
                 }
-                RepositoryManager.getRepoPlugins(desiRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
-                    val isVegamovies = sitePlugin.name.contains("Vegamovies", ignoreCase = true) ||
-                        sitePlugin.name.contains("Vega Movies", ignoreCase = true) ||
-                        sitePlugin.internalName.contains("Vegamovies", ignoreCase = true)
-                    if (isVegamovies) {
-                        Log.i(TAG, "Installing Vegamovies extension: ${sitePlugin.name} (${sitePlugin.internalName})")
+                RepositoryManager.getRepoPlugins(raghavRepoUrl)?.forEach { (repoUrl, sitePlugin) ->
+                    val isKdesa = sitePlugin.name.contains("Kdesa", ignoreCase = true) ||
+                        sitePlugin.name.contains("K Desa", ignoreCase = true) ||
+                        sitePlugin.internalName.contains("Kdesa", ignoreCase = true)
+                    if (isKdesa) {
+                        Log.i(TAG, "Installing Kdesa extension: ${sitePlugin.name} (${sitePlugin.internalName})")
                         val installed = runCatching {
                             PluginManager.downloadPlugin(
                                 activity = this@MainActivity,
@@ -534,19 +533,20 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 if (pluginsFolder.exists()) {
                     pluginsFolder.walkBottomUp().forEach { file ->
                         if (file.isFile && (file.extension.equals("cs3", true) || file.extension.equals("jar", true)) &&
-                            file.name.contains("NetNaija", ignoreCase = true)) {
+                            (file.name.contains("Vegamovies", ignoreCase = true) ||
+                                file.name.contains("NetNaija", ignoreCase = true))) {
                             if (file.delete()) Log.i(TAG, "Deleted old plugin: ${file.name}")
                         }
                     }
                 }
                 PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(this@MainActivity)
-                val vegamoviesLoaded = APIHolder.allProviders.any {
-                    it.name.contains("Vegamovies", ignoreCase = true) ||
-                        it.name.contains("Vega Movies", ignoreCase = true)
+                val kdesaLoaded = APIHolder.allProviders.any {
+                    it.name.contains("Kdesa", ignoreCase = true) ||
+                        it.name.contains("K Desa", ignoreCase = true)
                 }
-                Log.i(TAG, "Vegamovies loaded: $vegamoviesLoaded")
+                Log.i(TAG, "Kdesa loaded: $kdesaLoaded")
                 Log.i(TAG, "All providers: ${APIHolder.allProviders.map { it.name }}")
-                if (vegamoviesLoaded) prefs.edit().putBoolean("repos_installed_v18", true).apply()
+                if (kdesaLoaded) prefs.edit().putBoolean("repos_installed_v19", true).apply()
                 withContext(Dispatchers.Main) {
                     onAllPluginsLoaded(true)
                     afterPluginsLoadedEvent.invoke(true)
@@ -554,7 +554,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 }
             } catch (e: Exception) {
                 logError(e)
-                Log.e(TAG, "Error installing Vegamovies repository: ${e.message}")
+                Log.e(TAG, "Error installing Kdesa repository: ${e.message}")
             }
         }
     }

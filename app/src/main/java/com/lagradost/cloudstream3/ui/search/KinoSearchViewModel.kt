@@ -110,21 +110,19 @@ class KinoSearchViewModel : ViewModel() {
     private suspend fun searchProviders(searchQuery: String) {
         _isLoading.value = true
         _results.value = emptyList()
-        var vegamovies = APIHolder.apis.firstOrNull { api ->
-            api.name.contains("Vegamovies", ignoreCase = true) ||
-                api.name.contains("Vega Movies", ignoreCase = true) ||
-                api.name.contains("Vegamovie", ignoreCase = true)
+        var kdesa = APIHolder.apis.firstOrNull { api ->
+            api.name.contains("Kdesa", ignoreCase = true) ||
+                api.name.contains("K Desa", ignoreCase = true)
         }
         repeat(60) {
-            if (vegamovies != null) return@repeat
+            if (kdesa != null) return@repeat
             kotlinx.coroutines.delay(500)
-            vegamovies = APIHolder.apis.firstOrNull { api ->
-                api.name.contains("Vegamovies", ignoreCase = true) ||
-                    api.name.contains("Vega Movies", ignoreCase = true) ||
-                    api.name.contains("Vegamovie", ignoreCase = true)
+            kdesa = APIHolder.apis.firstOrNull { api ->
+                api.name.contains("Kdesa", ignoreCase = true) ||
+                    api.name.contains("K Desa", ignoreCase = true)
             }
         }
-        val providers = listOfNotNull(vegamovies)
+        val providers = listOfNotNull(kdesa)
         Log.d("SEARCH_DEBUG", "Search providers: ${providers.map { it.name }}")
         val masterList = mutableListOf<KinoSearchResult>()
         try {

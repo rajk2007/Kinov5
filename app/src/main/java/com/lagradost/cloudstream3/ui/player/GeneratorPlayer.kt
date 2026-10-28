@@ -110,6 +110,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.ui.result.displayLinkName
+import com.lagradost.cloudstream3.ui.result.filterKdesaLinks
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToEnglishLanguageName
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToLanguageName
@@ -1102,7 +1103,9 @@ class GeneratorPlayer : FullScreenPlayer() {
                 var sortedUrls = emptyList<Pair<ExtractorLink?, ExtractorUri?>>()
 
                 fun refreshLinks(qualityProfile: Int) {
-                    sortedUrls = viewModel.state.sortLinks(qualityProfile)
+                    sortedUrls = viewModel.state.sortLinks(qualityProfile).filter { (link, _) ->
+                        link == null || filterKdesaLinks(listOf(link)).isNotEmpty()
+                    }
                     if (sortedUrls.isEmpty()) {
                         sourceDialog.findViewById<LinearLayout>(R.id.sort_sources_holder)?.isGone =
                             true

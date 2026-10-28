@@ -72,10 +72,9 @@ class KinoHomeViewModel : ViewModel() {
         loadJob = loadData()
     }
 
-    private fun isVegamovies(api: MainAPI): Boolean =
-        (api.name.contains("Vegamovies", ignoreCase = true) ||
-            api.name.contains("Vega Movies", ignoreCase = true) ||
-            api.name.contains("Vegamovie", ignoreCase = true))
+    private fun isKdesa(api: MainAPI): Boolean =
+        api.name.contains("Kdesa", ignoreCase = true) ||
+            api.name.contains("K Desa", ignoreCase = true)
 
     private fun loadData() = viewModelScope.launch(Dispatchers.IO) {
         _isLoading.value = true
@@ -127,22 +126,22 @@ class KinoHomeViewModel : ViewModel() {
     }
 
     private suspend fun fetchHomeData(): Pair<List<HomeRow>, List<HeroBannerItem>> {
-        var vegamoviesApi: MainAPI? = APIHolder.apis.firstOrNull(::isVegamovies)
+        var kdesaApi: MainAPI? = APIHolder.apis.firstOrNull(::isKdesa)
         var attempts = 0
-        while (vegamoviesApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
+        while (kdesaApi == null && attempts < PROVIDER_LOOKUP_ATTEMPTS) {
             delay(500)
             attempts++
-            vegamoviesApi = APIHolder.apis.firstOrNull(::isVegamovies)
+            kdesaApi = APIHolder.apis.firstOrNull(::isKdesa)
         }
 
-        Log.d("KINO_HOME", "Vegamovies API: ${vegamoviesApi?.name ?: "NOT FOUND"}")
-        if (vegamoviesApi == null) throw IllegalStateException("Vegamovies provider not loaded.")
+        Log.d("KINO_HOME", "Kdesa API: ${kdesaApi?.name ?: "NOT FOUND"}")
+        if (kdesaApi == null) throw IllegalStateException("Kdesa provider not loaded.")
 
-        val sections = fetchProviderSections(vegamoviesApi)
-        val rows = buildHomeRowsFromVegamovies(sections)
+        val sections = fetchProviderSections(kdesaApi)
+        val rows = buildHomeRowsFromKdesa(sections)
         val allItems = rows.flatMap { it.items }.distinctBy { itemKey(it) }
-        Log.d("KINO_HOME", "Vegamovies sections: ${sections.keys}; items: ${allItems.size}")
-        if (allItems.isEmpty()) throw IllegalStateException("No content available from Vegamovies")
+        Log.d("KINO_HOME", "Kdesa sections: ${sections.keys}; items: ${allItems.size}")
+        if (allItems.isEmpty()) throw IllegalStateException("No content available from Kdesa")
         return rows to prepareHeroBanner(allItems)
     }
 
@@ -154,12 +153,12 @@ class KinoHomeViewModel : ViewModel() {
                     .forEach { page: HomePageList ->
                         val items = page.list.map { it.toMovieResult(api) }
                         sections[page.name] = items.distinctBy(::itemKey)
-                        Log.d("KINO_HOME", "Vegamovies section '${page.name}': ${items.size} items")
+                        Log.d("KINO_HOME", "Kdesa section '${page.name}': ${items.size} items")
                     }
-                else -> Log.e("KINO_HOME", "Vegamovies homepage request failed")
+                else -> Log.e("KINO_HOME", "Kdesa homepage request failed")
             }
         } catch (error: Exception) {
-            Log.e("KINO_HOME", "Vegamovies homepage exception: ${error.message}", error)
+            Log.e("KINO_HOME", "Kdesa homepage exception: ${error.message}", error)
         }
         return sections
     }
@@ -178,7 +177,7 @@ class KinoHomeViewModel : ViewModel() {
     private fun itemKey(item: MovieResult): String =
         "${item.providerApiName}:${item.providerUrl ?: item.id}"
 
-    private fun buildHomeRowsFromVegamovies(
+    private fun buildHomeRowsFromKdesa(
         sections: Map<String, List<MovieResult>>
     ): List<HomeRow> {
         val (live, normal) = sections.entries.partition { it.key.contains("live", ignoreCase = true) }
