@@ -647,6 +647,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         }
     }
 
+    /**
+     * HLS output rules: MPEG-TS segments may be concatenated, but fMP4 segments must stay in a
+     * local HLS playlist (with their init segment); never label a naive fMP4 concat as MP4.
+     */
     private suspend fun downloadHlsVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem): Boolean {
         var outputFile: File? = null
         var tempFile: File? = null
@@ -688,12 +692,19 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .filter { it.isNotEmpty() && !it.startsWith("#") }
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
-            val isFragmentedMp4 = segments.any { segment ->
-                URI(segment).path?.lowercase()?.let { path ->
-                    path.endsWith(".m4s") || path.endsWith(".mp4") ||
-                        path.endsWith(".cmfv") || path.endsWith(".cmfa")
-                } == true
-            } || playlist.contains("#EXT-X-MAP", ignoreCase = true)
+            // URL suffixes are unreliable on signed Kdesa URLs. Probe the first real segment so
+            // that a TS stream cannot accidentally be written and advertised as fMP4 (or vice versa).
+            val firstSegmentBytes = requestHls(segments.first(), headers).body
+            val firstSegmentType = detectHlsSegmentType(firstSegmentBytes)
+            Log.e("TRACE_HLS", "   First segment type: $firstSegmentType")
+            require(firstSegmentType != HlsSegmentType.HTML) {
+                "HLS segment returned an HTML error page; the link may have expired."
+            }
+            require(firstSegmentType != HlsSegmentType.UNKNOWN) {
+                "Unsupported or invalid HLS segment format."
+            }
+            val isFragmentedMp4 = firstSegmentType == HlsSegmentType.FMP4 ||
+                playlist.contains("#EXT-X-MAP", ignoreCase = true)
             val extension = if (isFragmentedMp4) ".mp4" else ".ts"
             val baseName = item.fileName.removeSuffix(".mp4").removeSuffix(".ts")
             outputFile = File(getDownloadDir(context), "$baseName$extension")
@@ -719,10 +730,11 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             val segmentExtension = if (isFragmentedMp4) ".m4s" else ".ts"
             val mapUri = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
                 .find(playlist)?.groupValues?.get(1)?.let { URI(playlistUrl).resolve(it).toString() }
+            requireWritableDirectory(resolvedSegmentDir, "HLS_STEP=create_segment_dir")
             val initializationBytes = mapUri?.let { uri ->
                 val bytes = requestHls(uri, headers).body
                 require(bytes.isNotEmpty()) { "The HLS initialization segment was empty." }
-                File(segmentDir, "init.mp4").writeBytes(bytes)
+                writeHlsFile(File(resolvedSegmentDir, "init.mp4"), bytes, "HLS_STEP=write_segment")
                 bytes.size.toLong()
             } ?: 0L
             val totalDownloadedBytes = initializationBytes + downloadSegmentsParallel(
@@ -746,7 +758,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }
                 .toList()
             val targetDuration = durations.maxOrNull()?.let { kotlin.math.ceil(it).toInt() } ?: 10
-            resolvedPlaylistFile.writeText(buildString {
+            writeHlsText(resolvedPlaylistFile, buildString {
                 appendLine("#EXTM3U")
                 appendLine("#EXT-X-VERSION:3")
                 appendLine("#EXT-X-TARGETDURATION:$targetDuration")
@@ -793,8 +805,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 return false
             }
             Log.e(TAG, "HLS download failed: ${item.title}", error)
-            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = error.message) }
-            showFailedNotification(downloadId, error.message ?: "Unknown HLS download error")
+            val readableError = readableDownloadError(error)
+            updateItem(downloadId) { it.copy(status = DirectDownloadStatus.FAILED, error = readableError) }
+            showFailedNotification(downloadId, readableError)
             return true
         }
     }
@@ -852,7 +865,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                     else -> Log.e("HLS_DEBUG", "Unknown segment type: ${headerString.take(30)}")
                                 }
                             }
-                            segmentFile(indexed.index).writeBytes(bytes)
+                            val target = segmentFile(indexed.index)
+                            writeHlsFile(target, bytes, "HLS_STEP=write_segment")
 
                             val finished = completed.incrementAndGet()
                             val downloaded = totalBytes.addAndGet(bytes.size.toLong())
@@ -887,10 +901,16 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             }
 
         if (!keepSegments) {
-            FileOutputStream(outputFile, false).use { output ->
-                segmentUrls.indices.forEach { index ->
-                    segmentFile(index).inputStream().use { input -> input.copyTo(output) }
+            try {
+                requireWritableDirectory(outputFile.parentFile, "HLS_STEP=concat")
+                FileOutputStream(outputFile, false).use { output ->
+                    segmentUrls.indices.forEach { index ->
+                        segmentFile(index).inputStream().use { input -> input.copyTo(output) }
+                    }
                 }
+            } catch (error: Exception) {
+                Log.e(TAG, "HLS_STEP=concat path=${outputFile.absolutePath} ${error::class.java.simpleName}: ${error.message}", error)
+                throw IOException("Could not concatenate HLS segments to the download file.", error)
             }
         }
         if (logHlsDiagnostics) {
@@ -1151,8 +1171,20 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 throw IOException("Downloaded file is not a valid video container. The URL returned an error page instead of the video file.")
             }
         }
-        if (outputFile.exists()) outputFile.delete()
-        require(tempFile.renameTo(outputFile)) { "Unable to finalize download." }
+        requireWritableDirectory(outputFile.parentFile, "HLS_STEP=finalize")
+        if (outputFile.exists() && !outputFile.delete()) {
+            throw IOException("Could not replace existing download file: ${outputFile.absolutePath}")
+        }
+        if (!tempFile.renameTo(outputFile)) {
+            Log.w(TAG, "HLS_STEP=finalize rename failed; falling back to copy path=${outputFile.absolutePath}")
+            try {
+                tempFile.inputStream().use { input -> outputFile.outputStream().use { output -> input.copyTo(output) } }
+                require(tempFile.delete()) { "Could not remove temporary download after finalize copy." }
+            } catch (error: Exception) {
+                Log.e(TAG, "HLS_STEP=finalize path=${outputFile.absolutePath} ${error::class.java.simpleName}: ${error.message}", error)
+                throw IOException("Could not finalize download file (filesystem error).", error)
+            }
+        }
         val actualSize = outputFile.length()
         Log.e("TRACE_COMPLETE", "═══════════════════════════════════")
         Log.e("TRACE_COMPLETE", "✅ markCompleted() equivalent: finalizeDownload() CALLED")
@@ -1487,9 +1519,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
 
     private fun showFailedNotification(id: String, error: String) {
         val context = appContext ?: return
+        val readableError = readableDownloadError(IOException(error))
         notify(id, NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Download Failed")
-            .setContentText(error)
+            .setContentText(readableError)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setAutoCancel(true)
             .build())
@@ -1657,8 +1690,56 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun formatFileSize(bytes: Long): String = when { bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0); bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0); bytes >= 1_000L -> String.format("%.1f KB", bytes / 1_000.0); else -> "$bytes B" }
     private fun formatSpeed(bytesPerSecond: Double): String = when { bytesPerSecond >= 1_000_000 -> String.format("%.1f MB/s", bytesPerSecond / 1_000_000.0); bytesPerSecond >= 1_000 -> String.format("%.1f KB/s", bytesPerSecond / 1_000.0); else -> String.format("%.0f B/s", bytesPerSecond) }
     private fun sanitizeFileName(name: String): String = name
-        .replace(Regex("[^\\w\\s.-]"), "")
+        .replace(Regex("[\\x00-\\x1F\\x7F/\\\\:*?\"<>|]"), "_")
+        .replace(Regex("[^\\w\\s.-]"), "_")
         .replace(Regex("\\s+"), "_")
+        .replace(Regex("_+"), "_")
         .trim(' ', '_', '.')
-        .take(100)
+        .take(80)
+
+    private enum class HlsSegmentType { TS, FMP4, HTML, UNKNOWN }
+
+    private fun detectHlsSegmentType(bytes: ByteArray): HlsSegmentType {
+        if (bytes.isEmpty()) return HlsSegmentType.UNKNOWN
+        val header = String(bytes.take(256).toByteArray(), Charsets.ISO_8859_1)
+        if (header.contains("<html", true) || header.contains("<!doctype", true)) return HlsSegmentType.HTML
+        if (bytes.first() == 0x47.toByte() || bytes.getOrNull(188) == 0x47.toByte() || bytes.getOrNull(376) == 0x47.toByte()) return HlsSegmentType.TS
+        if (header.contains("ftyp") || header.contains("styp") || header.contains("moof") || header.contains("mdat")) return HlsSegmentType.FMP4
+        return HlsSegmentType.UNKNOWN
+    }
+
+    private fun requireWritableDirectory(directory: File?, step: String) {
+        require(directory != null) { "$step: download parent directory is unavailable." }
+        if (!directory.exists()) require(directory.mkdirs()) { "$step: could not create directory ${directory.absolutePath}." }
+        require(directory.isDirectory && directory.canWrite()) { "$step: directory is not writable: ${directory.absolutePath}." }
+        require(directory.usableSpace > 0L) { "$step: storage is full: ${directory.absolutePath}." }
+    }
+
+    private fun writeHlsFile(file: File, bytes: ByteArray, step: String) {
+        requireWritableDirectory(file.parentFile, step)
+        val part = File(file.parentFile, "${file.name}.part")
+        try {
+            part.outputStream().use { it.write(bytes) }
+            require(part.length() == bytes.size.toLong()) { "$step: incomplete write: ${file.absolutePath}." }
+            if (file.exists() && !file.delete()) throw IOException("Could not replace ${file.absolutePath}")
+            require(part.renameTo(file)) { "Could not finalize ${file.absolutePath}." }
+        } catch (error: Exception) {
+            part.delete()
+            Log.e(TAG, "$step path=${file.absolutePath} ${error::class.java.simpleName}: ${error.message}", error)
+            throw IOException("Could not write download file (filesystem error).", error)
+        }
+    }
+
+    private fun writeHlsText(file: File, content: String) = writeHlsFile(file, content.toByteArray(Charsets.UTF_8), "HLS_STEP=finalize")
+
+    private fun readableDownloadError(error: Throwable): String {
+        val message = error.message.orEmpty().trim()
+        val pathOnly = message.startsWith("/storage/") || message.startsWith("/data/") ||
+            message == error.cause?.message
+        return when {
+            error is java.io.FileNotFoundException || pathOnly -> "Storage error while saving download. Check free space and try again."
+            message.isBlank() -> "Download failed due to an unknown filesystem or network error."
+            else -> message
+        }
+    }
 }
