@@ -650,6 +650,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private suspend fun downloadHlsVideo(context: Context, downloadId: String, link: ExtractorLink, item: DirectDownloadItem): Boolean {
         var outputFile: File? = null
         var tempFile: File? = null
+        var segmentDir: File? = null
+        var localPlaylistFile: File? = null
         try {
             val headers = requestHeaders(link)
             Log.e("TRACE_HLS", "═══════════════════════════════════")
@@ -712,7 +714,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("HLS_DEBUG", "First segment URL: ${segments.firstOrNull()?.take(100)}")
 
             val resolvedTempFile = requireNotNull(tempFile)
-            val segmentDir = File(resolvedTempFile.parentFile, "${resolvedTempFile.name}.segments")
+            segmentDir = File(resolvedTempFile.parentFile, "${resolvedTempFile.name}.segments")
+            val resolvedSegmentDir = requireNotNull(segmentDir)
             val segmentExtension = if (isFragmentedMp4) ".m4s" else ".ts"
             val mapUri = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
                 .find(playlist)?.groupValues?.get(1)?.let { URI(playlistUrl).resolve(it).toString() }
@@ -733,25 +736,26 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             )
             if (!currentCoroutineContext().isActive) throw CancellationException()
             require(segments.indices.all { index ->
-                File(segmentDir, "segment_$index$segmentExtension").let { it.isFile && it.length() > 0L }
+                File(resolvedSegmentDir, "segment_$index$segmentExtension").let { it.isFile && it.length() > 0L }
             }) { "One or more HLS segments failed to download." }
 
-            val localPlaylistFile = File(getDownloadDir(context), "$baseName.m3u8")
+            localPlaylistFile = File(getDownloadDir(context), "$baseName.m3u8")
+            val resolvedPlaylistFile = requireNotNull(localPlaylistFile)
             val durations = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE)
                 .findAll(playlist)
                 .map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }
                 .toList()
             val targetDuration = durations.maxOrNull()?.let { kotlin.math.ceil(it).toInt() } ?: 10
-            localPlaylistFile.writeText(buildString {
+            resolvedPlaylistFile.writeText(buildString {
                 appendLine("#EXTM3U")
                 appendLine("#EXT-X-VERSION:3")
                 appendLine("#EXT-X-TARGETDURATION:$targetDuration")
                 appendLine("#EXT-X-PLAYLIST-TYPE:VOD")
                 appendLine("#EXT-X-MEDIA-SEQUENCE:0")
-                if (mapUri != null) appendLine("#EXT-X-MAP:URI=\"${segmentDir.name}/init.mp4\"")
+                if (mapUri != null) appendLine("#EXT-X-MAP:URI=\"${resolvedSegmentDir.name}/init.mp4\"")
                 segments.indices.forEach { index ->
                     appendLine("#EXTINF:${durations.getOrNull(index) ?: 5.0},")
-                    appendLine("${segmentDir.name}/segment_$index$segmentExtension")
+                    appendLine("${resolvedSegmentDir.name}/segment_$index$segmentExtension")
                 }
                 appendLine("#EXT-X-ENDLIST")
             })
@@ -762,17 +766,17 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     progress = 100,
                     downloadedBytes = totalDownloadedBytes,
                     totalBytes = totalDownloadedBytes,
-                    filePath = localPlaylistFile.absolutePath,
+                    filePath = resolvedPlaylistFile.absolutePath,
                     speed = "",
                     eta = "",
                 )
             }
             persistDownloads(force = true)
-            Log.e("HLS_DEBUG", "Created local playlist: ${localPlaylistFile.absolutePath}")
+            Log.e("HLS_DEBUG", "Created local playlist: ${resolvedPlaylistFile.absolutePath}")
             Log.e("HLS_DEBUG", "Total downloaded: $totalDownloadedBytes bytes")
             Log.e("HLS_DEBUG", "═════════════════════════════")
             Log.e("TRACE_HLS", "   Total bytes: $totalDownloadedBytes")
-            Log.e("TRACE_HLS", "   Playlist size: ${localPlaylistFile.length()}")
+            Log.e("TRACE_HLS", "   Playlist size: ${resolvedPlaylistFile.length()}")
             Log.e("TRACE_HLS", "═══════════════════════════════════")
             showCompletedNotification(downloadId)
             return true
@@ -781,6 +785,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             return true
         } catch (error: Exception) {
             tempFile?.delete()
+            segmentDir?.deleteRecursively()
+            localPlaylistFile?.delete()
+            Log.e("HLS_FIX", "HLS download failed: ${error.message}", error)
             if (isRetryableExpiry(error)) {
                 Log.e("DL_404", "❌ HLS request failed with an expired/authenticated URL", error)
                 return false
@@ -807,7 +814,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     ): Long {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
-        if (!segmentDir.exists()) require(segmentDir.mkdirs()) { "Could not create temporary segment directory." }
+        if (!segmentDir.exists()) require(segmentDir.mkdirs()) { "Could not create temporary segment directory: ${segmentDir.absolutePath}" }
+        require(segmentDir.isDirectory) { "HLS segment path is not a directory: ${segmentDir.absolutePath}" }
         fun segmentFile(index: Int) = File(segmentDir, "segment_$index$segmentExtension")
         val completed = AtomicInteger(0)
         val totalBytes = AtomicLong(0L)
@@ -1648,5 +1656,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     }
     private fun formatFileSize(bytes: Long): String = when { bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0); bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0); bytes >= 1_000L -> String.format("%.1f KB", bytes / 1_000.0); else -> "$bytes B" }
     private fun formatSpeed(bytesPerSecond: Double): String = when { bytesPerSecond >= 1_000_000 -> String.format("%.1f MB/s", bytesPerSecond / 1_000_000.0); bytesPerSecond >= 1_000 -> String.format("%.1f KB/s", bytesPerSecond / 1_000.0); else -> String.format("%.0f B/s", bytesPerSecond) }
-    private fun sanitizeFileName(name: String): String = name.replace(Regex("[^\\w\\s.-]"), "").trim().take(100)
+    private fun sanitizeFileName(name: String): String = name
+        .replace(Regex("[^\\w\\s.-]"), "")
+        .replace(Regex("\\s+"), "_")
+        .trim(' ', '_', '.')
+        .take(100)
 }
