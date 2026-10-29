@@ -79,8 +79,6 @@ class DownloadFileGenerator(
         val ctx = context ?: return true
         val localFile = localUri.path?.let { java.io.File(it) }
         localFile?.parentFile?.let { folder ->
-            val directDisplay = meta.displayName ?: meta.name
-            val directCleanDisplay = cleanDisplayName(directDisplay)
             val directSubtitles = folder.listFiles()
                 ?.filter { file ->
                     val name = file.name
@@ -90,6 +88,7 @@ class DownloadFileGenerator(
                 .orEmpty()
             Log.e("SUBS", "offline scan found=${directSubtitles.size} folder=${folder.absolutePath}")
             directSubtitles.forEach { file ->
+                Log.e("SUBS", "Registered sidecar ${file.absolutePath}")
                 subtitleCallback(
                     SubtitleData(
                         "English",
@@ -103,29 +102,28 @@ class DownloadFileGenerator(
                 )
             }
         }
-        val relative = meta.relativePath ?: return true
-        val display = meta.displayName ?: return true
-
-        val cleanDisplay = cleanDisplayName(display)
-
-        getFolder(ctx, relative, meta.basePath)?.forEach { (name, uri) ->
-            if (isMatchingSubtitle(name, display, cleanDisplay)) {
-                val cleanName = cleanDisplayName(name)
-                val lastNum = Regex(" ([0-9]+)$")
-                val nameSuffix = lastNum.find(cleanName)?.groupValues?.get(1) ?: ""
-                val originalName = cleanName.removePrefix(cleanDisplay).replace(lastNum, "").trim()
-
-                subtitleCallback(
-                    SubtitleData(
-                        originalName.ifBlank { ctx.getString(R.string.default_subtitles) },
-                        nameSuffix,
-                        uri.toString(),
-                        SubtitleOrigin.DOWNLOADED_FILE,
-                        name.toSubtitleMimeType(),
-                        emptyMap(),
-                        fromLanguageToTagIETF(originalName, true)
+        val relative = meta.relativePath
+        val display = meta.displayName
+        if (relative != null && display != null) {
+            val cleanDisplay = cleanDisplayName(display)
+            getFolder(ctx, relative, meta.basePath)?.forEach { (name, uri) ->
+                if (isMatchingSubtitle(name, display, cleanDisplay)) {
+                    val cleanName = cleanDisplayName(name)
+                    val lastNum = Regex(" ([0-9]+)$")
+                    val nameSuffix = lastNum.find(cleanName)?.groupValues?.get(1) ?: ""
+                    val originalName = cleanName.removePrefix(cleanDisplay).replace(lastNum, "").trim()
+                    subtitleCallback(
+                        SubtitleData(
+                            originalName.ifBlank { ctx.getString(R.string.default_subtitles) },
+                            nameSuffix,
+                            uri.toString(),
+                            SubtitleOrigin.DOWNLOADED_FILE,
+                            name.toSubtitleMimeType(),
+                            emptyMap(),
+                            fromLanguageToTagIETF(originalName, true)
+                        )
                     )
-                )
+                }
             }
         }
 

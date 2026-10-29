@@ -12,6 +12,7 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.net.URI
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /** A quality discovered from the media stream rather than from an extractor link name. */
 data class ProbedQuality(
@@ -131,10 +132,15 @@ object QualityProbe {
     private const val TAG = "QualityProbe"
     // KDesa movie manifests can be slow, especially for dubbed links.
     private const val PROBE_TIMEOUT_MS = 15_000L
+    private val sessionCache = ConcurrentHashMap<String, List<ProbedQuality>>()
 
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
+        sessionCache[link.url]?.let {
+            Log.d(TAG, "Using cached qualities for ${link.url.take(120)}")
+            return@withContext it
+        }
         logLink(link)
-        try {
+        val qualities = try {
             withTimeout(PROBE_TIMEOUT_MS) {
                 when {
                     getActualLinkType(link) == "HLS" -> probeHlsQualities(link)
@@ -145,7 +151,6 @@ object QualityProbe {
                             .getOrElse { runCatching { probeDashQualities(link) }.getOrElse { probeProgressiveSafe(link) } }
                     }
                     else -> {
-                        // HDH and similar providers sometimes omit the type and extension.
                         runCatching { probeHlsQualities(link) }
                             .getOrElse {
                                 runCatching { probeDashQualities(link) }
@@ -161,6 +166,8 @@ object QualityProbe {
             Log.e(TAG, "Probe failed for ${link.url.take(120)}; using fallback", e)
             fallback(link)
         }
+        sessionCache[link.url] = qualities
+        qualities
     }
 
     private fun logLink(link: ExtractorLink) {
@@ -218,14 +225,13 @@ object QualityProbe {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
-                val duration = fetchHlsDuration(variantUrl, headers)
                 results += ProbedQuality(
                     width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                     variantUrl, heightToQualityLabel(height),
                     calculateEstimatedSize(
                         effectiveVideoBandwidth,
                         audioBandwidth,
-                        duration,
+                        durationSeconds = null,
                         isHlsStream = true,
                         hasSeparateAudio = hasSeparateAudio,
                     ),

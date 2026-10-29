@@ -172,12 +172,15 @@ fun DownloadOptionsSheet(
         android.util.Log.e("QUALITY_UI", "title=$title type=${if (isMovie) "Movie" else "Episode"} api=$apiName")
         android.util.Log.e("QUALITY_UI", "links count=${selectedLinks.size}")
         try {
-            probedQualities = selectedLinks.map { link ->
+            val probed = selectedLinks.map { link ->
                 async {
                     android.util.Log.e("QUALITY_UI", "probing url=${link.url} type=${getActualLinkType(link)}")
                     link to QualityProbe.probeVideoQualities(link)
                 }
             }.awaitAll().toMap()
+            probedQualities = probed
+            // Do not hold the quality chips behind optional HEAD requests.
+            isProbing = false
             actualSizes = selectedLinks.mapNotNull { link ->
                 async { link.url to getActualFileSize(link) }
             }.awaitAll().mapNotNull { (url, size) -> size?.let { url to it } }.toMap()
