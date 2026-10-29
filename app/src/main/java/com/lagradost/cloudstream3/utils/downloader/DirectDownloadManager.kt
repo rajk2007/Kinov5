@@ -342,7 +342,7 @@ object DirectDownloadManager {
                     callback = {},
                 )
                 Log.e("SUBS", "Provider returned ${subtitles.size} subtitle tracks")
-                subtitles.forEach { Log.e("SUBS", "track lang=${it.lang} name=${it.name} url=${it.url.take(160)}") }
+                subtitles.forEach { Log.e("SUBS", "track lang=${it.lang} url=${it.url.take(160)}") }
                 val subtitle = subtitles.firstOrNull { isEnglishSubtitle(it) }
                 if (subtitle == null) {
                     Log.e("SUBS", "No English provider subtitle track found")
@@ -366,7 +366,7 @@ object DirectDownloadManager {
     private fun isEnglishSubtitle(subtitle: SubtitleFile): Boolean {
         val language = subtitle.lang.trim().lowercase().replace('_', '-')
         return language == "en" || language == "eng" || language.startsWith("en-") ||
-            language.contains("english") || subtitle.name.contains("english", true)
+            language.contains("english")
     }
 
     private fun fetchSubtitleContent(url: String, headers: Map<String, String>): String {
