@@ -354,9 +354,10 @@ object DirectDownloadManager {
                     Log.e("SUBS", "Selected provider subtitle was empty")
                     return@launch
                 }
-                val subtitleFile = File(getDownloadDir(context), "${outputName(fileName)}.srt")
+                val base = fileName.substringBeforeLast('.', fileName).ifBlank { fileName }
+                val subtitleFile = File(getDownloadDir(context), "$base.srt")
                 subtitleFile.writeText(toSrt(content))
-                Log.e("SUBS", "Saved provider English subtitle: ${subtitleFile.absolutePath}")
+                Log.e("SUBS", "saved path=${subtitleFile.absolutePath}")
             } catch (error: Exception) {
                 Log.e("SUBS", "Provider subtitle download failed for $title", error)
             }
@@ -691,6 +692,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             val masterPlaylistUrl = playlistUrl
             val masterPlaylist = playlist.takeIf { it.contains("#EXT-X-STREAM-INF", ignoreCase = true) }
             var selectedAudio: HlsAudioRendition? = null
+            val inputIsMaster = playlist.contains("#EXT-X-STREAM-INF", ignoreCase = true)
+            Log.e("HLS_AUDIO", "input_is_master=$inputIsMaster")
             Log.e("TRACE_HLS", "   Manifest fetched: ${playlist.length} chars")
             Log.e("TRACE_HLS", "   First 300 chars: ${playlist.take(300)}")
             Log.e("DL_EXEC", "HLS manifest length: ${playlist.length}")
@@ -700,11 +703,11 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("HLS_DEBUG", "Playlist first 300 chars: ${playlist.take(300)}")
             Log.e("HLS_DEBUG", "Is encrypted: ${playlist.contains("#EXT-X-KEY", ignoreCase = true)}")
             require(playlist.contains("#EXTM3U")) { "The server did not return an HLS playlist." }
-            if (playlist.contains("#EXT-X-STREAM-INF", ignoreCase = true)) {
+            if (inputIsMaster) {
                 val audioRenditions = parseHlsAudioRenditions(playlist, playlistUrl)
-                Log.e("HLS_AUDIO", "master has ${audioRenditions.size} audio renditions")
-                selectedAudio = audioRenditions.firstOrNull { it.isDefault }
-                    ?: audioRenditions.firstOrNull { isEnglishLanguage(it.language) }
+                Log.e("HLS_AUDIO", "renditions=${audioRenditions.size}")
+                selectedAudio = audioRenditions.firstOrNull { isEnglishLanguage(it.language) }
+                    ?: audioRenditions.firstOrNull { it.isDefault }
                     ?: audioRenditions.firstOrNull()
                 if (selectedAudio != null) {
                     Log.e("HLS_AUDIO", "selected lang=${selectedAudio!!.language} uri=${selectedAudio!!.uri.take(180)}")
@@ -720,6 +723,20 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 playlistResponse = requestHls(requireNotNull(selected).url, headers)
                 playlistUrl = playlistResponse.url
                 playlist = String(playlistResponse.body, Charsets.UTF_8)
+            } else if (link.audioTracks.isNotEmpty()) {
+                // Some extractors return the selected variant playlist directly and expose
+                // separate audio URLs on ExtractorLink instead of returning the master.
+                selectedAudio = HlsAudioRendition(
+                    groupId = "audio",
+                    language = "",
+                    name = "Audio",
+                    isDefault = true,
+                    uri = link.audioTracks.first().url,
+                )
+                Log.e("HLS_AUDIO", "renditions=${link.audioTracks.size} from ExtractorLink.audioTracks")
+                Log.e("HLS_AUDIO", "selected lang=${selectedAudio!!.language.ifBlank { "unknown" }} uri=${selectedAudio!!.uri.take(180)}")
+            } else {
+                Log.e("HLS_AUDIO", "renditions=0; no separate audio, assuming muxed in video")
             }
             require(!playlist.contains("#EXT-X-KEY", ignoreCase = true)) { "Encrypted HLS downloads are not supported." }
             val segments = playlist.lineSequence().map(String::trim)
@@ -819,7 +836,6 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 val audioFirst = requestHls(audioSegments.first(), headers).body
                 val audioFmp4 = detectHlsSegmentType(audioFirst) == HlsSegmentType.FMP4 || audioPlaylist.contains("#EXT-X-MAP", true)
                 val audioExtension = if (audioFmp4) ".m4s" else ".ts"
-                val audioBase = File(getDownloadDir(context), "$baseName.audio")
                 audioTempFile = File(getDownloadDir(context), "$baseName.audio.part")
                 val audioSegmentDir = File(audioTempFile!!.parentFile, "${audioTempFile!!.name}.segments")
                 requireWritableDirectory(audioSegmentDir, "HLS_STEP=create_segment_dir")
@@ -836,6 +852,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 audioTempFile!!.delete()
                 val masterFile = File(getDownloadDir(context), "$baseName.master.m3u8")
                 writeHlsText(masterFile, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"${rendition.name.ifBlank { "English" }}\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"${rendition.language}\",URI=\"${audioPlaylistFile!!.name}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"audio\"\n${resolvedPlaylistFile.name}\n")
+                Log.e("HLS_AUDIO", "audio_segments=${audioSegments.size} bytes=$audioBytes")
+                Log.e("HLS_AUDIO", "master_path=${masterFile.absolutePath}")
                 Log.e("HLS_AUDIO", "wrote local master with audio group")
                 updateItem(downloadId) { it.copy(filePath = masterFile.absolutePath, downloadedBytes = totalDownloadedBytes + audioBytes, totalBytes = totalDownloadedBytes + audioBytes) }
             }
@@ -852,6 +870,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 )
             }
             persistDownloads(force = true)
+            Log.e("HLS_AUDIO", "final filePath=${audioPlaylistFile?.let { File(getDownloadDir(context), "$baseName.master.m3u8").absolutePath } ?: resolvedPlaylistFile.absolutePath}")
             masterPlaylist?.let { downloadHlsEnglishSubtitleFallback(context, it, masterPlaylistUrl, headers, item.fileName) }
             Log.e("HLS_DEBUG", "Created local playlist: ${resolvedPlaylistFile.absolutePath}")
             Log.e("HLS_DEBUG", "Total downloaded: $totalDownloadedBytes bytes")
@@ -1313,8 +1332,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 body.lineSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }.map { URI(response.url).resolve(it).toString() }.joinToString("\n") { String(requestHls(it, headers).body, Charsets.UTF_8) }
             } else body
             if (subtitleContent.isBlank()) { Log.e("SUBS", "HLS subtitle rendition was empty"); return }
-            val subtitleFile = File(getDownloadDir(context), "${outputName(fileName)}.srt")
-            if (!subtitleFile.exists()) { subtitleFile.writeText(toSrt(subtitleContent)); Log.e("SUBS", "Saved HLS English subtitle: ${subtitleFile.absolutePath}") }
+            val base = fileName.substringBeforeLast('.', fileName).ifBlank { fileName }
+            val subtitleFile = File(getDownloadDir(context), "$base.srt")
+            if (!subtitleFile.exists()) { subtitleFile.writeText(toSrt(subtitleContent)); Log.e("SUBS", "saved path=${subtitleFile.absolutePath}") }
         } catch (error: Exception) { Log.e("SUBS", "HLS subtitle fallback failed", error) }
     }
 

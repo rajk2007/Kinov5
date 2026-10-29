@@ -77,6 +77,41 @@ class DownloadFileGenerator(
         callback(null to meta.copy(uri = localUri))
 
         val ctx = context ?: return true
+        val directDownloadFile = DirectDownloadManager.activeDownloads.value.values
+            .asSequence()
+            .filter { it.status == DirectDownloadStatus.COMPLETED && it.title == meta.name }
+            .mapNotNull { it.filePath?.let { path -> java.io.File(path) } }
+            .firstOrNull { it.isFile && it.length() > 0L }
+        directDownloadFile?.parentFile?.let { folder ->
+            val directDisplay = meta.displayName ?: meta.name
+            val directCleanDisplay = cleanDisplayName(directDisplay)
+            val directSubtitles = folder.listFiles()
+                ?.filter { file ->
+                    val name = file.name
+                    val lower = name.lowercase()
+                    val normalizedName = cleanDisplayName(name).replace('_', ' ')
+                    val normalizedDisplay = directCleanDisplay.replace('_', ' ')
+                    (lower.endsWith(".srt") || lower.endsWith(".vtt") || lower.endsWith(".ass")) &&
+                        (isMatchingSubtitle(name, directDisplay, directCleanDisplay) ||
+                            normalizedName.startsWith(normalizedDisplay, true) ||
+                            lower.endsWith(".en.srt") || lower.endsWith(".en.vtt"))
+                }
+                .orEmpty()
+            Log.e("SUBS", "offline scan found=${directSubtitles.size} folder=${folder.absolutePath}")
+            directSubtitles.forEach { file ->
+                subtitleCallback(
+                    SubtitleData(
+                        "English",
+                        "",
+                        Uri.fromFile(file).toString(),
+                        SubtitleOrigin.DOWNLOADED_FILE,
+                        file.name.toSubtitleMimeType(),
+                        emptyMap(),
+                        "en",
+                    )
+                )
+            }
+        }
         val relative = meta.relativePath ?: return true
         val display = meta.displayName ?: return true
 
