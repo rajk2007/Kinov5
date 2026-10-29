@@ -1666,6 +1666,7 @@ class CS3IPlayer : IPlayer {
                 "webm" -> MimeTypes.VIDEO_WEBM
                 else -> MimeTypes.VIDEO_MP4
             }
+            Log.e("PLAY_DEBUG", "loadOfflinePlayer mime=$offlineMimeType path=${data.uri}")
             val mediaItem = getMediaItem(offlineMimeType, data.uri)
             val offlineSourceFactory = context.createOfflineSource()
 

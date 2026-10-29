@@ -77,14 +77,14 @@ class DownloadFileGenerator(
         callback(null to meta.copy(uri = localUri))
 
         val ctx = context ?: return true
-        val directDownloadFile = DirectDownloadManager.activeDownloads.value.values
-            .asSequence()
-            .filter { it.status == DirectDownloadStatus.COMPLETED && it.title == meta.name }
-            .mapNotNull { it.filePath?.let { path -> java.io.File(path) } }
-            .firstOrNull { it.isFile && it.length() > 0L }
-        directDownloadFile?.parentFile?.let { folder ->
+        val localFile = localUri.path?.let { java.io.File(it) }
+        localFile?.parentFile?.let { folder ->
             val directDisplay = meta.displayName ?: meta.name
             val directCleanDisplay = cleanDisplayName(directDisplay)
+            val localStem = cleanDisplayName(localFile.name)
+                .removeSuffix(".master")
+                .removeSuffix(".video")
+                .replace('_', ' ')
             val directSubtitles = folder.listFiles()
                 ?.filter { file ->
                     val name = file.name
@@ -93,6 +93,7 @@ class DownloadFileGenerator(
                     val normalizedDisplay = directCleanDisplay.replace('_', ' ')
                     (lower.endsWith(".srt") || lower.endsWith(".vtt") || lower.endsWith(".ass")) &&
                         (isMatchingSubtitle(name, directDisplay, directCleanDisplay) ||
+                            normalizedName.startsWith(localStem, true) ||
                             normalizedName.startsWith(normalizedDisplay, true) ||
                             lower.endsWith(".en.srt") || lower.endsWith(".en.vtt"))
                 }
