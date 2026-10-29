@@ -129,7 +129,8 @@ fun formatFileSize(bytes: Long): String = when {
 
 object QualityProbe {
     private const val TAG = "QualityProbe"
-    private const val PROBE_TIMEOUT_MS = 5_000L
+    // KDesa movie manifests can be slow, especially for dubbed links.
+    private const val PROBE_TIMEOUT_MS = 15_000L
 
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
         logLink(link)
@@ -184,7 +185,7 @@ object QualityProbe {
             return probeProgressiveSafe(link)
         }
         val content = response.text
-        Log.e(TAG, "Probe content: length=${content.length}, first200=${content.take(200)}")
+        Log.e(TAG, "content first200=${content.take(200)}")
 
         if (content.contains("<MPD", true) || content.contains("<?xml", true) && content.contains("MPD", true)) {
             Log.w(TAG, "Response is DASH despite HLS/unknown link metadata; switching parser")
@@ -232,7 +233,9 @@ object QualityProbe {
                 )
             }
         }
-        return results.distinctBy { it.selectionKey }.sortedByDescending { it.height }.ifEmpty { fallback(link) }
+        val parsed = results.distinctBy { it.selectionKey }.sortedByDescending { it.height }
+        Log.e(TAG, "found variants=${parsed.size} heights=${parsed.map { it.height }}")
+        return parsed.ifEmpty { fallback(link) }
     }
 
     /** Parse the MPD with an XML pull parser, including attributes inherited from AdaptationSet. */
@@ -337,7 +340,7 @@ object QualityProbe {
     }
 
     private fun fallback(link: ExtractorLink): List<ProbedQuality> = listOf(
-        ProbedQuality(0, 0, null, link.url, parseQualityFromLinkName(link.name) ?: "Auto", selectionKey = "fallback-${link.url.hashCode()}")
+        ProbedQuality(0, 0, null, link.url, "Auto (best available)", selectionKey = "fallback-${link.url.hashCode()}"),
     )
 
     private fun resolve(base: String, child: String): String = runCatching { URI(base).resolve(child).toString() }.getOrDefault(child)

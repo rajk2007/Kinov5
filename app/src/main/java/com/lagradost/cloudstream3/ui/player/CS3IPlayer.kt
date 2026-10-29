@@ -1659,14 +1659,16 @@ class CS3IPlayer : IPlayer {
         try {
             currentDownloadedFile = data
 
-            val offlineMimeType = when (data.uri.path?.substringAfterLast('.', "")?.lowercase()) {
-                "m3u8" -> MimeTypes.APPLICATION_M3U8
-                "ts", "m2ts", "mts" -> MimeTypes.VIDEO_MP2T
-                "mkv" -> MimeTypes.VIDEO_MATROSKA
-                "webm" -> MimeTypes.VIDEO_WEBM
+            val path = data.uri.path.orEmpty().lowercase()
+            val offlineMimeType = when {
+                path.endsWith(".m3u8") -> MimeTypes.APPLICATION_M3U8
+                path.endsWith(".mpd") -> MimeTypes.APPLICATION_MPD
+                path.endsWith(".ts") || path.endsWith(".m2ts") || path.endsWith(".mts") -> MimeTypes.VIDEO_MP2T
+                path.endsWith(".mkv") -> MimeTypes.VIDEO_MATROSKA
+                path.endsWith(".webm") -> MimeTypes.VIDEO_WEBM
                 else -> MimeTypes.VIDEO_MP4
             }
-            Log.e("PLAY_DEBUG", "loadOfflinePlayer mime=$offlineMimeType path=${data.uri}")
+            Log.e("PLAY_DEBUG", "offline mime=$offlineMimeType uri=${data.uri}")
             val mediaItem = getMediaItem(offlineMimeType, data.uri)
             val offlineSourceFactory = context.createOfflineSource()
 

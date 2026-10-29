@@ -314,6 +314,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     } else {
                         DownloadOptionsSheet(
                             links = links,
+                            title = loadedResponse.name,
+                            apiName = apiName,
+                            isMovie = loadedResponse is MovieLoadResponse,
                             onDownload = { selectedLink, selectedHeight, estimatedSizeBytes ->
                                 dialog.dismiss()
                                 lifecycleScope.launch(Dispatchers.IO) {

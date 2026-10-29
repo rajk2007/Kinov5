@@ -28,6 +28,7 @@ import com.lagradost.cloudstream3.utils.QualityProbe
 import com.lagradost.cloudstream3.utils.heightToQualitiesInt
 import com.lagradost.cloudstream3.utils.formatFileSize
 import com.lagradost.cloudstream3.utils.getQualityFromName
+import com.lagradost.cloudstream3.utils.getActualLinkType
 import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -145,7 +146,14 @@ data class QualityOption(
 )
 
 @Composable
-fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink, Int, Long) -> Unit, onDismiss: () -> Unit) {
+fun DownloadOptionsSheet(
+    links: List<ExtractorLink>,
+    title: String = "",
+    apiName: String = "",
+    isMovie: Boolean = false,
+    onDownload: (ExtractorLink, Int, Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val normalized = remember(links) {
         filterKdesaLinks(links).map { link ->
             if (link.effectiveQuality() != link.quality) ExtractorLink(link.source, link.name, link.url, link.referer, link.effectiveQuality(), link.headers, link.extractorData, link.type, link.audioTracks) else link
@@ -161,9 +169,14 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
 
     LaunchedEffect(selectedLanguage, selectedLinks) {
         isProbing = true
+        android.util.Log.e("QUALITY_UI", "title=$title type=${if (isMovie) "Movie" else "Episode"} api=$apiName")
+        android.util.Log.e("QUALITY_UI", "links count=${selectedLinks.size}")
         try {
             probedQualities = selectedLinks.map { link ->
-                async { link to QualityProbe.probeVideoQualities(link) }
+                async {
+                    android.util.Log.e("QUALITY_UI", "probing url=${link.url} type=${getActualLinkType(link)}")
+                    link to QualityProbe.probeVideoQualities(link)
+                }
             }.awaitAll().toMap()
             actualSizes = selectedLinks.mapNotNull { link ->
                 async { link.url to getActualFileSize(link) }
@@ -174,7 +187,21 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
     }
 
     val qualityOptions = remember(probedQualities, selectedLinks, actualSizes) {
-        probedQualities.flatMap { (link, qualities) -> qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, actualSizes[link.url] ?: probed.estimatedSizeBytes) } }
+        probedQualities.flatMap { (link, qualities) ->
+            val unknownOnly = qualities.size == 1 && qualities.first().height <= 0
+            val shouldOfferPresets = isMovie && unknownOnly && getActualLinkType(link) == "HLS"
+            if (shouldOfferPresets) {
+                listOf(0, 480, 720, 1080).map { height ->
+                    QualityOption(
+                        "${link.url}|preset-$height",
+                        if (height == 0) "Auto (best available)" else "${height}p",
+                        0, height, link, link.url, actualSizes[link.url],
+                    )
+                }
+            } else {
+                qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, actualSizes[link.url] ?: probed.estimatedSizeBytes) }
+            }
+        }
             .distinctBy { it.id }.sortedByDescending { it.height }.ifEmpty {
                 selectedLinks.map { link ->
                     val parsedDisplay = displayLinkName(link.name)
@@ -191,6 +218,9 @@ fun DownloadOptionsSheet(links: List<ExtractorLink>, onDownload: (ExtractorLink,
     }
     var selectedId by remember(selectedLanguage, qualityOptions) { mutableStateOf(qualityOptions.firstOrNull()?.id.orEmpty()) }
     val selectedOption = qualityOptions.firstOrNull { it.id == selectedId }
+    LaunchedEffect(qualityOptions) {
+        android.util.Log.e("QUALITY_UI", "displaying options=${qualityOptions.map { it.label }}")
+    }
 
     Column(Modifier.fillMaxWidth().background(Color(0xFF121212)).clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))) {
         Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
