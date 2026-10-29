@@ -26,6 +26,7 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.parseHlsDuration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -703,6 +704,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("HLS_DEBUG", "Playlist first 300 chars: ${playlist.take(300)}")
             Log.e("HLS_DEBUG", "Is encrypted: ${playlist.contains("#EXT-X-KEY", ignoreCase = true)}")
             require(playlist.contains("#EXTM3U")) { "The server did not return an HLS playlist." }
+            var selectedVariantBandwidth: Long? = null
             if (inputIsMaster) {
                 val audioRenditions = parseHlsAudioRenditions(playlist, playlistUrl)
                 Log.e("HLS_AUDIO", "renditions=${audioRenditions.size}")
@@ -720,6 +722,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     variants.filter { (it.height ?: 0) <= item.selectedHeight }.maxByOrNull { it.height ?: 0 }
                         ?: variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 }
                 } else variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 }
+                selectedVariantBandwidth = selected?.bandwidth?.toLong()
                 playlistResponse = requestHls(requireNotNull(selected).url, headers)
                 playlistUrl = playlistResponse.url
                 playlist = String(playlistResponse.body, Charsets.UTF_8)
@@ -743,6 +746,15 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .filter { it.isNotEmpty() && !it.startsWith("#") }
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
+            val mediaDurationSeconds = parseHlsDuration(playlist)
+            val estimatedMediaBytes = selectedVariantBandwidth?.let { bandwidth ->
+                (bandwidth.toDouble() * mediaDurationSeconds / 8.0 * 0.35).toLong()
+            }?.takeIf { it > 0L }
+            if (item.totalBytes <= 0L && estimatedMediaBytes != null) {
+                updateItem(downloadId) { current ->
+                    current.copy(totalBytes = estimatedMediaBytes.coerceAtLeast(current.downloadedBytes))
+                }
+            }
             // URL suffixes are unreliable on signed Kdesa URLs. Probe the first real segment so
             // that a TS stream cannot accidentally be written and advertised as fMP4 (or vice versa).
             val firstSegmentBytes = requestHls(segments.first(), headers).body
@@ -823,6 +835,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 appendLine("#EXT-X-ENDLIST")
             })
             var audioPlaylistFile: File? = null
+            var combinedDownloadedBytes = totalDownloadedBytes
             var audioTempFile: File? = null
             selectedAudio?.let { rendition ->
                 val audioResponse = requestHls(rendition.uri, headers)
@@ -855,15 +868,16 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 Log.e("HLS_AUDIO", "audio_segments=${audioSegments.size} bytes=$audioBytes")
                 Log.e("HLS_AUDIO", "master_path=${masterFile.absolutePath}")
                 Log.e("HLS_AUDIO", "wrote local master with audio group")
-                updateItem(downloadId) { it.copy(filePath = masterFile.absolutePath, downloadedBytes = totalDownloadedBytes + audioBytes, totalBytes = totalDownloadedBytes + audioBytes) }
+                combinedDownloadedBytes += audioBytes
+                updateItem(downloadId) { it.copy(filePath = masterFile.absolutePath, downloadedBytes = combinedDownloadedBytes, totalBytes = combinedDownloadedBytes) }
             }
             resolvedTempFile.delete()
             updateItem(downloadId) {
                 it.copy(
                     status = DirectDownloadStatus.COMPLETED,
                     progress = 100,
-                    downloadedBytes = totalDownloadedBytes,
-                    totalBytes = totalDownloadedBytes,
+                    downloadedBytes = combinedDownloadedBytes,
+                    totalBytes = combinedDownloadedBytes,
                     filePath = audioPlaylistFile?.let { File(getDownloadDir(context), "$baseName.master.m3u8").absolutePath } ?: resolvedPlaylistFile.absolutePath,
                     speed = "",
                     eta = "",
@@ -971,14 +985,20 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val etaTotalBytes = estimatedTotalBytes.takeIf { it > 0L }
                                     ?: (downloadedSoFar + (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset - finished).coerceAtLeast(0)).toLong())
                                 updateItem(downloadId) {
+                                    val lockedTotal = when {
+                                        it.totalBytes > 0L -> it.totalBytes
+                                        estimatedTotalBytes > it.totalBytes -> estimatedTotalBytes
+                                        else -> it.totalBytes
+                                    }.coerceAtLeast(downloadedSoFar)
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
+                                        totalBytes = lockedTotal,
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
-                                            etaTotalBytes,
+                                            lockedTotal.coerceAtLeast(etaTotalBytes),
                                             speedBps,
                                         ),
                                     )
@@ -1011,6 +1031,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             it.copy(
                 progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                 downloadedBytes = downloadedBytesOffset + totalBytes.get(),
+                totalBytes = it.totalBytes.coerceAtLeast(downloadedBytesOffset + totalBytes.get()),
             )
         }
         // Keep the segment directory for local HLS playback; other callers clean up

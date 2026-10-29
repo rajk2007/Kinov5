@@ -603,6 +603,7 @@ private fun formatDuration(milliseconds: Long): String {
     return if (hours > 0) "${hours}h ${remainder}m" else "${remainder}m"
 }
 private fun formatBytes(bytes: Long): String = when {
+    bytes <= 0L -> "?"
     bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0)
     bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0)
     bytes >= 1_000L -> String.format("%.1f KB", bytes / 1_000.0)
