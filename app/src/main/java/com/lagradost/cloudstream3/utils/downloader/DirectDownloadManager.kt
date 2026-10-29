@@ -691,7 +691,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     path.endsWith(".m4s") || path.endsWith(".mp4") ||
                         path.endsWith(".cmfv") || path.endsWith(".cmfa")
                 } == true
-            }
+            } || playlist.contains("#EXT-X-MAP", ignoreCase = true)
             val extension = if (isFragmentedMp4) ".mp4" else ".ts"
             val baseName = item.fileName.removeSuffix(".mp4").removeSuffix(".ts")
             outputFile = File(getDownloadDir(context), "$baseName$extension")
@@ -711,22 +711,69 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("HLS_DEBUG", "Number of segments: ${segments.size}")
             Log.e("HLS_DEBUG", "First segment URL: ${segments.firstOrNull()?.take(100)}")
 
-            downloadSegmentsParallel(
+            val resolvedTempFile = requireNotNull(tempFile)
+            val segmentDir = File(resolvedTempFile.parentFile, "${resolvedTempFile.name}.segments")
+            val segmentExtension = if (isFragmentedMp4) ".m4s" else ".ts"
+            val mapUri = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
+                .find(playlist)?.groupValues?.get(1)?.let { URI(playlistUrl).resolve(it).toString() }
+            val initializationBytes = mapUri?.let { uri ->
+                val bytes = requestHls(uri, headers).body
+                require(bytes.isNotEmpty()) { "The HLS initialization segment was empty." }
+                File(segmentDir, "init.mp4").writeBytes(bytes)
+                bytes.size.toLong()
+            } ?: 0L
+            val totalDownloadedBytes = initializationBytes + downloadSegmentsParallel(
                 downloadId,
                 segments,
                 headers,
-                requireNotNull(tempFile),
+                resolvedTempFile,
                 logHlsDiagnostics = true,
+                keepSegments = true,
+                segmentExtension = segmentExtension,
             )
             if (!currentCoroutineContext().isActive) throw CancellationException()
-            val resolvedTempFile = requireNotNull(tempFile)
-            finalizeDownload(downloadId, resolvedOutputFile, resolvedTempFile, validateContainer = false)
-            Log.e("HLS_DEBUG", "Output file size: ${resolvedOutputFile.length()} bytes")
+            require(segments.indices.all { index ->
+                File(segmentDir, "segment_$index$segmentExtension").let { it.isFile && it.length() > 0L }
+            }) { "One or more HLS segments failed to download." }
+
+            val localPlaylistFile = File(getDownloadDir(context), "$baseName.m3u8")
+            val durations = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE)
+                .findAll(playlist)
+                .map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }
+                .toList()
+            val targetDuration = durations.maxOrNull()?.let { kotlin.math.ceil(it).toInt() } ?: 10
+            localPlaylistFile.writeText(buildString {
+                appendLine("#EXTM3U")
+                appendLine("#EXT-X-VERSION:3")
+                appendLine("#EXT-X-TARGETDURATION:$targetDuration")
+                appendLine("#EXT-X-PLAYLIST-TYPE:VOD")
+                appendLine("#EXT-X-MEDIA-SEQUENCE:0")
+                if (mapUri != null) appendLine("#EXT-X-MAP:URI=\"${segmentDir.name}/init.mp4\"")
+                segments.indices.forEach { index ->
+                    appendLine("#EXTINF:${durations.getOrNull(index) ?: 5.0},")
+                    appendLine("${segmentDir.name}/segment_$index$segmentExtension")
+                }
+                appendLine("#EXT-X-ENDLIST")
+            })
+            resolvedTempFile.delete()
+            updateItem(downloadId) {
+                it.copy(
+                    status = DirectDownloadStatus.COMPLETED,
+                    progress = 100,
+                    downloadedBytes = totalDownloadedBytes,
+                    totalBytes = totalDownloadedBytes,
+                    filePath = localPlaylistFile.absolutePath,
+                    speed = "",
+                    eta = "",
+                )
+            }
+            persistDownloads(force = true)
+            Log.e("HLS_DEBUG", "Created local playlist: ${localPlaylistFile.absolutePath}")
+            Log.e("HLS_DEBUG", "Total downloaded: $totalDownloadedBytes bytes")
             Log.e("HLS_DEBUG", "═════════════════════════════")
-            Log.e("TRACE_HLS", "   Total bytes: ${resolvedOutputFile.length()}")
-            Log.e("TRACE_HLS", "   File size: ${resolvedOutputFile.length()}")
+            Log.e("TRACE_HLS", "   Total bytes: $totalDownloadedBytes")
+            Log.e("TRACE_HLS", "   Playlist size: ${localPlaylistFile.length()}")
             Log.e("TRACE_HLS", "═══════════════════════════════════")
-            Log.e("DL_EXEC", "HLS output file size: ${resolvedOutputFile.length()}")
             showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
@@ -755,25 +802,28 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         progressTotal: Int = segmentUrls.size,
         downloadedBytesOffset: Long = 0L,
         logHlsDiagnostics: Boolean = false,
-    ) {
+        keepSegments: Boolean = false,
+        segmentExtension: String = ".bin",
+    ): Long {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
         if (!segmentDir.exists()) require(segmentDir.mkdirs()) { "Could not create temporary segment directory." }
+        fun segmentFile(index: Int) = File(segmentDir, "segment_$index$segmentExtension")
         val completed = AtomicInteger(0)
         val totalBytes = AtomicLong(0L)
         segmentUrls.forEachIndexed { index, _ ->
-            val segmentFile = File(segmentDir, "segment_$index.bin")
-            if (segmentFile.exists() && segmentFile.length() > 0L) {
+            val existingSegment = segmentFile(index)
+            if (existingSegment.exists() && existingSegment.length() > 0L) {
                 completed.incrementAndGet()
-                totalBytes.addAndGet(segmentFile.length())
+                totalBytes.addAndGet(existingSegment.length())
             }
         }
         val lastUpdate = AtomicLong(0L)
         val startedAt = System.currentTimeMillis()
         coroutineScope {
-            segmentUrls.withIndex()
+                segmentUrls.withIndex()
                     .filterNot { (index, _) ->
-                        val segmentFile = File(segmentDir, "segment_$index.bin")
+                        val segmentFile = segmentFile(index)
                         segmentFile.exists() && segmentFile.length() > 0L
                     }
                     .chunked(parallelCount).forEach { batch ->
@@ -794,7 +844,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                     else -> Log.e("HLS_DEBUG", "Unknown segment type: ${headerString.take(30)}")
                                 }
                             }
-                            File(segmentDir, "segment_${indexed.index}.bin").writeBytes(bytes)
+                            segmentFile(indexed.index).writeBytes(bytes)
 
                             val finished = completed.incrementAndGet()
                             val downloaded = totalBytes.addAndGet(bytes.size.toLong())
@@ -828,14 +878,16 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
             }
 
-        FileOutputStream(outputFile, false).use { output ->
-            segmentUrls.indices.forEach { index ->
-                File(segmentDir, "segment_$index.bin").inputStream().use { input -> input.copyTo(output) }
+        if (!keepSegments) {
+            FileOutputStream(outputFile, false).use { output ->
+                segmentUrls.indices.forEach { index ->
+                    segmentFile(index).inputStream().use { input -> input.copyTo(output) }
+                }
             }
         }
         if (logHlsDiagnostics) {
             Log.e("HLS_DEBUG", "Total downloaded: ${totalBytes.get()} bytes")
-            Log.e("HLS_DEBUG", "Output file size: ${outputFile.length()} bytes")
+            Log.e("HLS_DEBUG", "Output file size: ${if (keepSegments) totalBytes.get() else outputFile.length()} bytes")
         }
         updateItem(downloadId) {
             it.copy(
@@ -843,8 +895,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 downloadedBytes = downloadedBytesOffset + totalBytes.get(),
             )
         }
-        // Cleanup is safe only after every segment has been concatenated successfully.
-        segmentDir.deleteRecursively()
+        // Keep the segment directory for local HLS playback; other callers clean up
+        // only after every segment has been concatenated successfully.
+        if (!keepSegments) segmentDir.deleteRecursively()
+        return totalBytes.get()
     }
 
     private data class DashRepresentation(val width: Int, val height: Int, val bandwidth: Long, val segments: List<String>)

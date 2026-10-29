@@ -105,7 +105,11 @@ class KinoLibraryFragment : Fragment() {
         if (uri.scheme == "file") {
             val path = uri.path ?: return false
             val file = File(path)
-            return file.isFile && file.length() > 1024L
+            return file.isFile && if (file.extension.equals("m3u8", ignoreCase = true)) {
+                file.length() > 0L
+            } else {
+                file.length() > 1024L
+            }
         }
         // Persisted SAF downloads may be content:// URIs. They are local by
         // construction; LinkGenerator still bypasses extraction for them.

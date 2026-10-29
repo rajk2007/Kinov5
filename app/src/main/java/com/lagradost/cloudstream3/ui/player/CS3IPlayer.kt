@@ -1660,6 +1660,7 @@ class CS3IPlayer : IPlayer {
             currentDownloadedFile = data
 
             val offlineMimeType = when (data.uri.path?.substringAfterLast('.', "")?.lowercase()) {
+                "m3u8" -> MimeTypes.APPLICATION_M3U8
                 "ts", "m2ts", "mts" -> MimeTypes.VIDEO_MP2T
                 "mkv" -> MimeTypes.VIDEO_MATROSKA
                 "webm" -> MimeTypes.VIDEO_WEBM
