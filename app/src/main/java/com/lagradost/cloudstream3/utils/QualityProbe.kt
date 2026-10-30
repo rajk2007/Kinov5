@@ -225,13 +225,14 @@ object QualityProbe {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
+                val durationSeconds = fetchHlsDuration(variantUrl, headers)
                 results += ProbedQuality(
                     width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                     variantUrl, heightToQualityLabel(height),
                     calculateEstimatedSize(
                         effectiveVideoBandwidth,
                         audioBandwidth,
-                        durationSeconds = null,
+                        durationSeconds = durationSeconds,
                         isHlsStream = true,
                         hasSeparateAudio = hasSeparateAudio,
                     ),

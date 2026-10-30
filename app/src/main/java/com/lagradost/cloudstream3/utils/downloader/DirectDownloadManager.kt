@@ -690,8 +690,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             var playlistResponse = requestHls(link.url, headers)
             var playlistUrl = playlistResponse.url
             var playlist = String(playlistResponse.body, Charsets.UTF_8)
-            val masterPlaylistUrl = playlistUrl
-            val masterPlaylist = playlist.takeIf { it.contains("#EXT-X-STREAM-INF", ignoreCase = true) }
+            var masterPlaylistUrl = playlistUrl
+            var masterPlaylistText = playlist.takeIf { it.contains("#EXT-X-STREAM-INF", ignoreCase = true) }
             var selectedAudio: HlsAudioRendition? = null
             val inputIsMaster = playlist.contains("#EXT-X-STREAM-INF", ignoreCase = true)
             Log.e("HLS_AUDIO", "input_is_master=$inputIsMaster")
@@ -726,6 +726,20 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 playlistResponse = requestHls(requireNotNull(selected).url, headers)
                 playlistUrl = playlistResponse.url
                 playlist = String(playlistResponse.body, Charsets.UTF_8)
+            }
+            // Legacy links can point at a media playlist while still carrying audioTracks.
+            // Re-fetch the original URL once so subtitle renditions are not lost when a
+            // master is available there.
+            if (masterPlaylistText == null) {
+                runCatching { requestHls(link.url, headers) }
+                    .getOrNull()
+                    ?.let { candidate ->
+                        val candidateText = String(candidate.body, Charsets.UTF_8)
+                        if (candidateText.contains("#EXT-X-STREAM-INF", ignoreCase = true)) {
+                            masterPlaylistText = candidateText
+                            masterPlaylistUrl = candidate.url
+                        }
+                    }
             }
             // Some extractors return the selected variant playlist directly and expose
             // separate audio URLs on ExtractorLink instead of returning the master. Recover
@@ -857,7 +871,17 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 requireWritableDirectory(audioSegmentDir, "HLS_STEP=create_segment_dir")
                 val audioMap = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(audioPlaylist)?.groupValues?.get(1)?.let { URI(audioResponse.url).resolve(it).toString() }
                 if (audioMap != null) writeHlsFile(File(audioSegmentDir, "init.mp4"), requestHls(audioMap, headers).body, "HLS_STEP=write_segment")
-                val audioBytes = downloadSegmentsParallel(downloadId, audioSegments, headers, audioTempFile!!, progressOffset = 0, progressTotal = audioSegments.size, keepSegments = true, segmentExtension = audioExtension)
+                val audioBytes = downloadSegmentsParallel(
+                    downloadId,
+                    audioSegments,
+                    headers,
+                    audioTempFile!!,
+                    progressOffset = segments.size,
+                    progressTotal = segments.size + audioSegments.size,
+                    downloadedBytesOffset = totalDownloadedBytes,
+                    keepSegments = true,
+                    segmentExtension = audioExtension,
+                )
                 audioPlaylistFile = File(getDownloadDir(context), "$baseName.audio.m3u8")
                 val audioDurations = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).findAll(audioPlaylist).map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }.toList()
                 writeHlsText(audioPlaylistFile!!, buildString {
@@ -888,7 +912,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             }
             persistDownloads(force = true)
             Log.e("HLS_AUDIO", "final filePath=${audioPlaylistFile?.let { File(getDownloadDir(context), "$baseName.master.m3u8").absolutePath } ?: resolvedPlaylistFile.absolutePath}")
-            masterPlaylist?.let { downloadHlsEnglishSubtitleFallback(context, it, masterPlaylistUrl, headers, item.fileName) }
+            masterPlaylistText?.let { downloadHlsEnglishSubtitleFallback(context, it, masterPlaylistUrl, headers, item.fileName) }
             Log.e("HLS_DEBUG", "Created local playlist: ${resolvedPlaylistFile.absolutePath}")
             Log.e("HLS_DEBUG", "Total downloaded: $totalDownloadedBytes bytes")
             Log.e("HLS_DEBUG", "═════════════════════════════")

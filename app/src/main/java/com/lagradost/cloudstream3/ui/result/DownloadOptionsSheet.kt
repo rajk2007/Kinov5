@@ -262,8 +262,11 @@ fun DownloadOptionsSheet(
         }
         Button(onClick = {
             selectedOption?.let { option ->
-                val realUrl = cleanDownloadUrl(option.variantUrl)
-                val downloadLink = if (realUrl != option.link.url || option.height > 0) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
+                // The probed HLS variant is only a quality selection. Keep the original
+                // master URL so the downloader can resolve its audio/subtitle renditions.
+                val isHls = getActualLinkType(option.link) == "HLS"
+                val realUrl = if (isHls) cleanDownloadUrl(option.link.url) else cleanDownloadUrl(option.variantUrl)
+                val downloadLink = if (realUrl != option.link.url || option.height > 0 && !isHls) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
                 onDownload(downloadLink, option.height, option.estimatedSizeBytes ?: 0L)
             }
         }, enabled = selectedOption != null && !isProbing, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
