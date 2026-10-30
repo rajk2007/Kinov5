@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -851,52 +852,71 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
                 appendLine("#EXT-X-ENDLIST")
             })
+            Log.e("HLS_PHASE", "video_done bytes=${totalDownloadedBytes}")
             var audioPlaylistFile: File? = null
+            var audioMasterFile: File? = null
             var combinedDownloadedBytes = totalDownloadedBytes
             var audioTempFile: File? = null
-            selectedAudio?.let { rendition ->
-                val audioResponse = requestHls(rendition.uri, headers)
-                val audioPlaylist = String(audioResponse.body, Charsets.UTF_8)
-                require(audioPlaylist.contains("#EXTM3U", true)) { "Selected HLS audio rendition is not a playlist." }
-                val audioSegments = audioPlaylist.lineSequence().map(String::trim)
-                    .filter { it.isNotEmpty() && !it.startsWith("#") }
-                    .map { URI(audioResponse.url).resolve(it).toString() }.toList()
-                require(audioSegments.isNotEmpty()) { "Selected HLS audio rendition has no segments." }
-                Log.e("HLS_AUDIO", "audio segments count=${audioSegments.size}")
-                val audioFirst = requestHls(audioSegments.first(), headers).body
-                val audioFmp4 = detectHlsSegmentType(audioFirst) == HlsSegmentType.FMP4 || audioPlaylist.contains("#EXT-X-MAP", true)
-                val audioExtension = if (audioFmp4) ".m4s" else ".ts"
-                audioTempFile = File(getDownloadDir(context), "$baseName.audio.part")
-                val audioSegmentDir = File(audioTempFile!!.parentFile, "${audioTempFile!!.name}.segments")
-                requireWritableDirectory(audioSegmentDir, "HLS_STEP=create_segment_dir")
-                val audioMap = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(audioPlaylist)?.groupValues?.get(1)?.let { URI(audioResponse.url).resolve(it).toString() }
-                if (audioMap != null) writeHlsFile(File(audioSegmentDir, "init.mp4"), requestHls(audioMap, headers).body, "HLS_STEP=write_segment")
-                val audioBytes = downloadSegmentsParallel(
-                    downloadId,
-                    audioSegments,
-                    headers,
-                    audioTempFile!!,
-                    progressOffset = segments.size,
-                    progressTotal = segments.size + audioSegments.size,
-                    downloadedBytesOffset = totalDownloadedBytes,
-                    keepSegments = true,
-                    segmentExtension = audioExtension,
-                )
-                audioPlaylistFile = File(getDownloadDir(context), "$baseName.audio.m3u8")
-                val audioDurations = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).findAll(audioPlaylist).map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }.toList()
-                writeHlsText(audioPlaylistFile!!, buildString {
-                    appendLine("#EXTM3U"); appendLine("#EXT-X-VERSION:3"); appendLine("#EXT-X-TARGETDURATION:${audioDurations.maxOrNull()?.let { kotlin.math.ceil(it).toInt() } ?: 10}"); appendLine("#EXT-X-PLAYLIST-TYPE:VOD"); appendLine("#EXT-X-MEDIA-SEQUENCE:0")
-                    if (audioMap != null) appendLine("#EXT-X-MAP:URI=\"${audioSegmentDir.name}/init.mp4\"")
-                    audioSegments.indices.forEach { index -> appendLine("#EXTINF:${audioDurations.getOrNull(index) ?: 5.0},"); appendLine("${audioSegmentDir.name}/segment_$index$audioExtension") }; appendLine("#EXT-X-ENDLIST")
-                })
-                audioTempFile!!.delete()
-                val masterFile = File(getDownloadDir(context), "$baseName.master.m3u8")
-                writeHlsText(masterFile, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"${rendition.name.ifBlank { "English" }}\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"${rendition.language}\",URI=\"${audioPlaylistFile!!.name}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"audio\"\n${resolvedPlaylistFile.name}\n")
-                Log.e("HLS_AUDIO", "audio_segments=${audioSegments.size} bytes=$audioBytes")
-                Log.e("HLS_AUDIO", "master_path=${masterFile.absolutePath}")
-                Log.e("HLS_AUDIO", "wrote local master with audio group")
-                combinedDownloadedBytes += audioBytes
-                updateItem(downloadId) { it.copy(filePath = masterFile.absolutePath, downloadedBytes = combinedDownloadedBytes, totalBytes = combinedDownloadedBytes) }
+            if (selectedAudio != null) {
+                val rendition = selectedAudio!!
+                Log.e("HLS_PHASE", "audio_start uri=${rendition.uri.take(180)}")
+                try {
+                    withTimeout(120_000L) {
+                        val audioResponse = requestHls(rendition.uri, headers)
+                        val audioPlaylist = String(audioResponse.body, Charsets.UTF_8)
+                        require(audioPlaylist.contains("#EXTM3U", true)) { "Selected HLS audio rendition is not a playlist." }
+                        val audioSegments = audioPlaylist.lineSequence().map(String::trim)
+                            .filter { it.isNotEmpty() && !it.startsWith("#") }
+                            .map { URI(audioResponse.url).resolve(it).toString() }.toList()
+                        require(audioSegments.isNotEmpty()) { "Selected HLS audio rendition has no segments." }
+                        Log.e("HLS_AUDIO", "audio segments count=${audioSegments.size}")
+                        val audioFirst = requestHls(audioSegments.first(), headers).body
+                        val audioFmp4 = detectHlsSegmentType(audioFirst) == HlsSegmentType.FMP4 || audioPlaylist.contains("#EXT-X-MAP", true)
+                        val audioExtension = if (audioFmp4) ".m4s" else ".ts"
+                        audioTempFile = File(getDownloadDir(context), "$baseName.audio.part")
+                        val audioSegmentDir = File(audioTempFile!!.parentFile, "${audioTempFile!!.name}.segments")
+                        requireWritableDirectory(audioSegmentDir, "HLS_STEP=create_segment_dir")
+                        val audioMap = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(audioPlaylist)?.groupValues?.get(1)?.let { URI(audioResponse.url).resolve(it).toString() }
+                        if (audioMap != null) writeHlsFile(File(audioSegmentDir, "init.mp4"), requestHls(audioMap, headers).body, "HLS_STEP=write_segment")
+                        val audioBytes = downloadSegmentsParallel(
+                            downloadId,
+                            audioSegments,
+                            headers,
+                            audioTempFile!!,
+                            progressOffset = segments.size,
+                            progressTotal = segments.size + audioSegments.size,
+                            downloadedBytesOffset = totalDownloadedBytes,
+                            keepSegments = true,
+                            segmentExtension = audioExtension,
+                        )
+                        audioPlaylistFile = File(getDownloadDir(context), "$baseName.audio.m3u8")
+                        val audioDurations = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).findAll(audioPlaylist).map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }.toList()
+                        writeHlsText(audioPlaylistFile!!, buildString {
+                            appendLine("#EXTM3U"); appendLine("#EXT-X-VERSION:3"); appendLine("#EXT-X-TARGETDURATION:${audioDurations.maxOrNull()?.let { kotlin.math.ceil(it).toInt() } ?: 10}"); appendLine("#EXT-X-PLAYLIST-TYPE:VOD"); appendLine("#EXT-X-MEDIA-SEQUENCE:0")
+                            if (audioMap != null) appendLine("#EXT-X-MAP:URI=\"${audioSegmentDir.name}/init.mp4\"")
+                            audioSegments.indices.forEach { index -> appendLine("#EXTINF:${audioDurations.getOrNull(index) ?: 5.0},"); appendLine("${audioSegmentDir.name}/segment_$index$audioExtension") }; appendLine("#EXT-X-ENDLIST")
+                        })
+                        audioTempFile!!.delete()
+                        audioMasterFile = File(getDownloadDir(context), "$baseName.master.m3u8")
+                        writeHlsText(audioMasterFile!!, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"${rendition.name.ifBlank { "English" }}\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"${rendition.language}\",URI=\"${audioPlaylistFile!!.name}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"audio\"\n${resolvedPlaylistFile.name}\n")
+                        Log.e("HLS_AUDIO", "audio_segments=${audioSegments.size} bytes=$audioBytes")
+                        Log.e("HLS_AUDIO", "master_path=${audioMasterFile!!.absolutePath}")
+                        combinedDownloadedBytes += audioBytes
+                        Log.e("HLS_PHASE", "audio_done bytes=$audioBytes")
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.e("HLS_AUDIO", "audio phase failed; completing video-only", error)
+                    Log.e("HLS_PHASE", "audio_failed")
+                    audioPlaylistFile?.delete()
+                    audioMasterFile?.delete()
+                    audioTempFile?.delete()
+                    audioTempFile?.let { File("${it.absolutePath}.segments").deleteRecursively() }
+                    audioPlaylistFile = null
+                    audioMasterFile = null
+                    selectedAudio = null
+                }
             }
             resolvedTempFile.delete()
             updateItem(downloadId) {
@@ -905,13 +925,13 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     progress = 100,
                     downloadedBytes = combinedDownloadedBytes,
                     totalBytes = combinedDownloadedBytes,
-                    filePath = audioPlaylistFile?.let { File(getDownloadDir(context), "$baseName.master.m3u8").absolutePath } ?: resolvedPlaylistFile.absolutePath,
+                    filePath = audioMasterFile?.absolutePath ?: resolvedPlaylistFile.absolutePath,
                     speed = "",
                     eta = "",
                 )
             }
             persistDownloads(force = true)
-            Log.e("HLS_AUDIO", "final filePath=${audioPlaylistFile?.let { File(getDownloadDir(context), "$baseName.master.m3u8").absolutePath } ?: resolvedPlaylistFile.absolutePath}")
+            Log.e("HLS_PHASE", "completed filePath=${audioMasterFile?.absolutePath ?: resolvedPlaylistFile.absolutePath}")
             masterPlaylistText?.let { downloadHlsEnglishSubtitleFallback(context, it, masterPlaylistUrl, headers, item.fileName) }
             Log.e("HLS_DEBUG", "Created local playlist: ${resolvedPlaylistFile.absolutePath}")
             Log.e("HLS_DEBUG", "Total downloaded: $totalDownloadedBytes bytes")
@@ -1022,11 +1042,13 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                         downloadedBytes = downloadedSoFar,
                                         totalBytes = newTotal,
                                         speed = formatSpeed(speedBps),
-                                        eta = calculateEta(
-                                            downloadedSoFar,
-                                            newTotal,
-                                            speedBps,
-                                        ),
+                                        eta = if (progressOffset > 0 &&
+                                            ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)) >= 99
+                                        ) {
+                                            "Finishing audio..."
+                                        } else {
+                                            calculateEta(downloadedSoFar, newTotal, speedBps)
+                                        },
                                     )
                                 }
                                 updateDownloadNotification(downloadId)
@@ -1408,7 +1430,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     private fun requestHls(url: String, headers: Map<String, String>): HlsResponse {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
-            readTimeout = 60_000
+            readTimeout = 30_000
             instanceFollowRedirects = true
             headers.forEach { (key, value) -> setRequestProperty(key, value) }
         }
