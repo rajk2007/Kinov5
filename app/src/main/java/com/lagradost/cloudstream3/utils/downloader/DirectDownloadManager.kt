@@ -726,9 +726,12 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 playlistResponse = requestHls(requireNotNull(selected).url, headers)
                 playlistUrl = playlistResponse.url
                 playlist = String(playlistResponse.body, Charsets.UTF_8)
-            } else if (link.audioTracks.isNotEmpty()) {
-                // Some extractors return the selected variant playlist directly and expose
-                // separate audio URLs on ExtractorLink instead of returning the master.
+            }
+            // Some extractors return the selected variant playlist directly and expose
+            // separate audio URLs on ExtractorLink instead of returning the master. Recover
+            // those tracks after resolving the media playlist too, not only in the direct-URL
+            // branch above. AudioFile currently exposes URL and headers but not language.
+            if (selectedAudio == null && link.audioTracks.isNotEmpty()) {
                 selectedAudio = HlsAudioRendition(
                     groupId = "audio",
                     language = "",
@@ -738,7 +741,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 )
                 Log.e("HLS_AUDIO", "renditions=${link.audioTracks.size} from ExtractorLink.audioTracks")
                 Log.e("HLS_AUDIO", "selected lang=${selectedAudio!!.language.ifBlank { "unknown" }} uri=${selectedAudio!!.uri.take(180)}")
-            } else {
+            } else if (selectedAudio == null) {
                 Log.e("HLS_AUDIO", "renditions=0; no separate audio, assuming muxed in video")
             }
             require(!playlist.contains("#EXT-X-KEY", ignoreCase = true)) { "Encrypted HLS downloads are not supported." }
@@ -982,23 +985,22 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val downloadedSoFar = downloadedBytesOffset + downloaded
                                 val estimatedTotalBytes = downloadedBytesOffset +
                                     (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset)).toLong()
-                                val etaTotalBytes = estimatedTotalBytes.takeIf { it > 0L }
-                                    ?: (downloadedSoFar + (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset - finished).coerceAtLeast(0)).toLong())
                                 updateItem(downloadId) {
-                                    val lockedTotal = when {
-                                        it.totalBytes > 0L -> it.totalBytes
-                                        estimatedTotalBytes > it.totalBytes -> estimatedTotalBytes
-                                        else -> it.totalBytes
-                                    }.coerceAtLeast(downloadedSoFar)
+                                    val newTotal = when {
+                                        it.totalBytes > 0L -> maxOf(it.totalBytes, downloadedSoFar)
+                                        estimatedTotalBytes > 0L -> maxOf(estimatedTotalBytes, downloadedSoFar)
+                                        else -> downloadedSoFar
+                                    }
+                                    Log.e("SIZE", "progress downloadId=$downloadId downloaded=$downloadedSoFar totalBytes=$newTotal")
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
                                         progress = ((progressOffset + finished) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                                         downloadedBytes = downloadedSoFar,
-                                        totalBytes = lockedTotal,
+                                        totalBytes = newTotal,
                                         speed = formatSpeed(speedBps),
                                         eta = calculateEta(
                                             downloadedSoFar,
-                                            lockedTotal.coerceAtLeast(etaTotalBytes),
+                                            newTotal,
                                             speedBps,
                                         ),
                                     )

@@ -247,13 +247,13 @@ fun DownloadOptionsSheet(
             ) {
                 items(qualityOptions, key = { it.id }) { option ->
                     val selected = option.id == selectedId
-                    val display = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
+                    val qualityDisplay = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
+                    val display = option.estimatedSizeBytes?.takeIf { it > 0L }?.let {
+                        "$qualityDisplay · ~${formatFileSize(it)}"
+                    } ?: qualityDisplay
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            option.estimatedSizeBytes?.let { bytes ->
-                                Text("~${formatFileSize(bytes)} (est.)", color = Color.Gray, fontSize = 12.sp)
-                            }
                         }
                         Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (selected) Color(0xFFE50914) else Color.Gray, CircleShape).padding(3.dp)) { if (selected) Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFE50914))) }
                     }
