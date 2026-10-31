@@ -85,6 +85,7 @@ class DownloadFileGenerator(
                 Log.e("PLAY_DEBUG", "  File header: ${String(header, Charsets.ISO_8859_1)}")
             }.onFailure { Log.e("PLAY_DEBUG", "  Could not read file header", it) }
             Log.d("DownloadFileGenerator", "Using local download: ${existingFile.absolutePath}")
+            Log.e("PLAY_DEBUG", "final path opened=${existingFile.absolutePath}")
             return Uri.fromFile(existingFile)
         }
 
