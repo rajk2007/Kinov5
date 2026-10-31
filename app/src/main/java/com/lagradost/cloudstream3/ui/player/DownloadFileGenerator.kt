@@ -12,6 +12,7 @@ import com.lagradost.cloudstream3.utils.SubtitleHelper.fromLanguageToTagIETF
 import com.lagradost.cloudstream3.utils.SubtitleUtils.cleanDisplayName
 import com.lagradost.cloudstream3.utils.SubtitleUtils.isMatchingSubtitle
 import com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement.getFolder
+import com.lagradost.cloudstream3.utils.downloader.DirectDownloadItem
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.getDownloadFileInfo
@@ -25,21 +26,54 @@ class DownloadFileGenerator(
     override fun getId(index: Int): Int? = this.videos.getOrNull(index)?.id
 
     private fun resolveLocalUri(meta: ExtractorUri): Uri? {
+        fun normalized(value: String): String = value
+            .replace(Regex("[^\\w\\s.-]"), "_")
+            .replace(Regex("\\s+"), "_")
+            .replace(Regex("_+"), "_")
+            .trim(' ', '_', '.')
+            .lowercase()
+
         val storedFile = meta.id?.let { id ->
             activity?.let { act -> getDownloadFileInfo(act, id)?.path?.toString() }
         }?.let { java.io.File(it) }
 
-        val directFile = DirectDownloadManager.activeDownloads.value.values
+        val expectedBases = listOfNotNull(meta.name, meta.displayName)
+            .map(::normalized)
+            .filter { it.isNotBlank() }
+            .toSet()
+        val directCandidates = DirectDownloadManager.activeDownloads.value.values
             .asSequence()
-            .filter { it.status == DirectDownloadStatus.COMPLETED && it.title == meta.name }
-            .mapNotNull { it.filePath?.let { path -> java.io.File(path) } }
+            .filter { it.status == DirectDownloadStatus.COMPLETED }
+            .mapNotNull { item -> item.filePath?.let { path -> item to java.io.File(path) } }
+            .filter { (item, file) ->
+                val pathBase = normalized(file.name.substringBeforeLast('.'))
+                    .removeSuffix(".master")
+                    .removeSuffix(".audio")
+                val titleMatch = item.title == meta.name || normalized(item.title) in expectedBases
+                val pathMatch = pathBase in expectedBases || expectedBases.any { pathBase.startsWith("$it_") }
+                titleMatch || pathMatch
+            }
+            .sortedWith(
+                compareByDescending<Pair<DirectDownloadItem, java.io.File>> { (_, file) -> file.name.endsWith(".master.m3u8", true) }
+                    .thenByDescending { (_, file) -> file.name.endsWith(".m3u8", true) }
+            )
             .firstOrNull()
+        val directFile = directCandidates?.second
+        directCandidates?.let { (item, file) ->
+            Log.e("PLAY_DEBUG", "resolve matched path=${file.absolutePath} titleMatch=${item.title == meta.name}")
+        }
 
         val existingFile = sequenceOf(storedFile, directFile)
             .filterNotNull()
-            .firstOrNull { it.isFile && it.length() > 0L }
+            .filter { it.isFile && it.length() > 0L }
+            .sortedWith(
+                compareByDescending<java.io.File> { it.name.endsWith(".master.m3u8", true) }
+                    .thenByDescending { it.name.endsWith(".m3u8", true) }
+            )
+            .firstOrNull()
 
         if (existingFile != null) {
+            Log.e("PLAY_DEBUG", "resolve matched path=${existingFile.absolutePath} titleMatch=${existingFile.name.substringBeforeLast('.').removeSuffix(".master").removeSuffix(".audio").let(::normalized) in expectedBases}")
             Log.e("PLAY_DEBUG", "Loading downloaded file:")
             Log.e("PLAY_DEBUG", "  File path: ${existingFile.absolutePath}")
             Log.e("PLAY_DEBUG", "  File exists: ${existingFile.exists()}")
