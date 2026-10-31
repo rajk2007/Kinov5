@@ -1671,6 +1671,9 @@ class CS3IPlayer : IPlayer {
                 else -> MimeTypes.VIDEO_MP4
             }
             Log.e("PLAY_DEBUG", "offline mime=$offlineMimeType path=${data.uri.path}")
+            if (offlineMimeType == MimeTypes.APPLICATION_M3U8) {
+                Log.e("PLAY_DEBUG", "mime=APPLICATION_M3U8 path=${data.uri.path}")
+            }
             val mediaItem = getMediaItem(offlineMimeType, data.uri)
             val offlineSourceFactory = context.createOfflineSource()
 
