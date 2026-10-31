@@ -50,7 +50,7 @@ class DownloadFileGenerator(
                     .removeSuffix(".master")
                     .removeSuffix(".audio")
                 val titleMatch = item.title == meta.name || normalized(item.title) in expectedBases
-                val pathMatch = pathBase in expectedBases || expectedBases.any { pathBase.startsWith("$it_") }
+                val pathMatch = pathBase in expectedBases || expectedBases.any { pathBase.startsWith("${it}_") }
                 titleMatch || pathMatch
             }
             .sortedWith(
