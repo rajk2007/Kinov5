@@ -72,13 +72,13 @@ object HlsCompletionGuard {
                 // or let it propagate (genuine parent cancel — we WANT that).
                 throw ce
             } catch (e: Exception) {
-                Log.i(tag, "best-effort failed: ${e.javaClass.simpleName}: ${e.message}")
+                Log.e(tag, "best-effort failed: ${e.javaClass.simpleName}: ${e.message}", e)
                 false
             }
         }
         return when (outcome) {
             null -> {
-                Log.i(tag, "best-effort timed out after ${timeoutMs}ms — completing without this phase")
+                Log.e(tag, "best-effort timed out after ${timeoutMs}ms — completing without this phase")
                 false
             }
             true -> true
@@ -99,7 +99,7 @@ object HlsCompletionGuard {
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: Exception) {
-            Log.i(tag, "safeCall($label) failed: ${e.javaClass.simpleName}: ${e.message}")
+            Log.e(tag, "safeCall($label) failed: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }

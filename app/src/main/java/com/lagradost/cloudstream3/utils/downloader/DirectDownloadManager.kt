@@ -936,10 +936,18 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         )
                         audioPlaylistFile = File(getDownloadDir(context), "$baseName.audio.m3u8")
                         val audioDurations = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).findAll(audioPlaylist).map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }.toList()
+                        // After per-segment tolerance (Anchor 1), some segment files may be
+                        // missing. Write the playlist referencing ONLY the segments that
+                        // actually exist on disk, so the player does not 404 on a gap.
+                        val survivingAudioIndices = audioSegments.indices.filter { idx ->
+                            File(audioSegmentDir, "segment_$idx$audioExtension").let { it.isFile && it.length() > 0L }
+                        }
+                        Log.e("HLS_AUDIO", "audio_segments_total=${audioSegments.size} surviving=${survivingAudioIndices.size} missing=${audioSegments.size - survivingAudioIndices.size}")
+                        require(survivingAudioIndices.isNotEmpty()) { "All audio segments failed to download." }
                         writeHlsText(audioPlaylistFile!!, buildString {
                             appendLine("#EXTM3U"); appendLine("#EXT-X-VERSION:3"); appendLine("#EXT-X-TARGETDURATION:${audioDurations.maxOrNull()?.let { kotlin.math.ceil(it).toInt() } ?: 10}"); appendLine("#EXT-X-PLAYLIST-TYPE:VOD"); appendLine("#EXT-X-MEDIA-SEQUENCE:0")
                             if (audioMap != null) appendLine("#EXT-X-MAP:URI=\"${audioSegmentDir.name}/init.mp4\"")
-                            audioSegments.indices.forEach { index -> appendLine("#EXTINF:${audioDurations.getOrNull(index) ?: 5.0},"); appendLine("${audioSegmentDir.name}/segment_$index$audioExtension") }; appendLine("#EXT-X-ENDLIST")
+                            survivingAudioIndices.forEach { index -> appendLine("#EXTINF:${audioDurations.getOrNull(index) ?: 5.0},"); appendLine("${audioSegmentDir.name}/segment_$index$audioExtension") }; appendLine("#EXT-X-ENDLIST")
                         })
                         audioTempFile!!.delete()
                         audioMasterFile = File(getDownloadDir(context), "$baseName.master.m3u8")
@@ -1054,8 +1062,17 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     batch.map { indexed ->
                         async(Dispatchers.IO) {
                             if (!currentCoroutineContext().isActive) throw CancellationException()
-                            val bytes = requestHls(indexed.value, headers).body
-                            require(bytes.isNotEmpty()) { "Segment ${indexed.index + 1} was empty." }
+                            val bytes = try {
+                                requestHls(indexed.value, headers).body
+                            } catch (e: Exception) {
+                                if (e is CancellationException) throw e
+                                Log.e(TAG, "HLS_STEP=segment_fetch_failed index=${indexed.index + 1}/${segmentUrls.size} ${e::class.simpleName}: ${e.message}")
+                                return@async
+                            }
+                            if (bytes.isEmpty()) {
+                                Log.e(TAG, "HLS_STEP=segment_empty index=${indexed.index + 1}/${segmentUrls.size} url=${indexed.value.take(120)}")
+                                return@async
+                            }
                             if (logHlsDiagnostics && indexed.index == 0) {
                                 val headerString = String(bytes.take(50).toByteArray(), Charsets.ISO_8859_1)
                                 Log.e("HLS_DEBUG", "First segment size: ${bytes.size} bytes")
