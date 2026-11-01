@@ -366,6 +366,15 @@
             app:popExitAnim="@anim/exit_anim" />
     </fragment>
     <fragment
+        android:id="@+id/navigation_settings_diagnostics"
+        android:name="com.lagradost.cloudstream3.ui.settings.KinoDiagnosticsFragment"
+        android:label="@string/diagnostics"
+        app:enterAnim="@anim/enter_anim"
+        app:exitAnim="@anim/exit_anim"
+        app:popEnterAnim="@anim/enter_anim"
+        app:popExitAnim="@anim/exit_anim" />
+
+    <fragment
         android:id="@+id/navigation_settings"
         android:name="com.lagradost.cloudstream3.ui.settings.SettingsFragment"
         android:layout_height="match_parent"
@@ -385,6 +394,13 @@
         app:popEnterAnim="@anim/enter_anim"
         app:popExitAnim="@anim/exit_anim"
         tools:layout="@layout/main_settings" />
+    <action
+        android:id="@+id/action_navigation_global_to_navigation_diagnostics"
+        app:destination="@id/navigation_settings_diagnostics"
+        app:enterAnim="@anim/enter_anim"
+        app:exitAnim="@anim/exit_anim"
+        app:popEnterAnim="@anim/enter_anim"
+        app:popExitAnim="@anim/exit_anim" />
     <action
         android:id="@+id/action_navigation_global_to_navigation_settings_ui"
         app:destination="@id/navigation_settings_ui"

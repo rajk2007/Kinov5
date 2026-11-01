@@ -102,6 +102,11 @@
                 android:text="@string/category_account" />
 
             <TextView
+                android:id="@+id/settings_diagnostics"
+                style="@style/SettingsItem"
+                android:nextFocusUp="@id/settings_extensions"
+                android:text="@string/diagnostics" />
+            <TextView
                 android:id="@+id/settings_extensions"
                 style="@style/SettingsItem"
                 android:nextFocusUp="@id/settings_credits"

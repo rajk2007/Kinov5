@@ -42,7 +42,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -125,6 +124,7 @@ object DirectDownloadManager {
     private const val SAVED_DOWNLOADS = "saved_downloads"
     private const val MAX_RETRIES = 5
     private const val MAX_RESOLVE_RETRIES = 2
+    private const val AUDIO_PHASE_TIMEOUT_MS = 90_000L
     private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L // 1 MiB minimum for valid video
 
     private val _activeDownloads = MutableStateFlow<Map<String, DirectDownloadItem>>(emptyMap())
@@ -854,19 +854,26 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 writeHlsFile(File(resolvedSegmentDir, "init.mp4"), bytes, "HLS_STEP=write_segment")
                 bytes.size.toLong()
             } ?: 0L
-            val totalDownloadedBytes = initializationBytes + downloadSegmentsParallel(
-                downloadId,
-                segments,
-                headers,
-                resolvedTempFile,
-                logHlsDiagnostics = true,
-                keepSegments = true,
-                segmentExtension = segmentExtension,
-            )
-            if (!currentCoroutineContext().isActive) throw CancellationException()
-            require(segments.indices.all { index ->
-                File(resolvedSegmentDir, "segment_$index$segmentExtension").let { it.isFile && it.length() > 0L }
-            }) { "One or more HLS segments failed to download." }
+            DownloadLog.phase("video-start: segments=${segments.size} url=${playlistUrl.take(240)}")
+            val totalDownloadedBytes = try {
+                initializationBytes + downloadSegmentsParallel(
+                    downloadId,
+                    segments,
+                    headers,
+                    resolvedTempFile,
+                    logHlsDiagnostics = true,
+                    keepSegments = true,
+                    segmentExtension = segmentExtension,
+                ).also {
+                    if (!currentCoroutineContext().isActive) throw CancellationException()
+                    require(segments.indices.all { index ->
+                        File(resolvedSegmentDir, "segment_$index$segmentExtension").let { it.isFile && it.length() > 0L }
+                    }) { "One or more HLS segments failed to download." }
+                }
+            } catch (error: Exception) {
+                DownloadLog.phase("video-failed: ${error.javaClass.simpleName}: ${error.message}")
+                throw error
+            }
 
             localPlaylistFile = File(getDownloadDir(context), "$baseName.m3u8")
             val resolvedPlaylistFile = requireNotNull(localPlaylistFile)
@@ -888,15 +895,18 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
                 appendLine("#EXT-X-ENDLIST")
             })
-            Log.e("HLS_PHASE", "video_done bytes=${totalDownloadedBytes}")
+            DownloadLog.phase("video-done: ${segments.size} segments -> ${resolvedPlaylistFile.absolutePath}")
             var combinedDownloadedBytes = totalDownloadedBytes
             var audioTempFile: File? = null
-            if (selectedAudio != null) {
+            val audioOk = if (selectedAudio == null) {
+                DownloadLog.phase("audio-start: hasAudioRendition=false")
+                DownloadLog.audio("no TYPE=AUDIO rendition in master — completing video-only")
+                false
+            } else {
                 val rendition = selectedAudio!!
-                Log.e("HLS_PHASE", "audio_start uri=${rendition.uri.take(180)}")
-                try {
+                DownloadLog.phase("audio-start: hasAudioRendition=true")
+                HlsCompletionGuard.bestEffort(DownloadLog.HLS_AUDIO, AUDIO_PHASE_TIMEOUT_MS) {
                     val audioHeaders = headers + rendition.headers
-                    withTimeout(120_000L) {
                         val audioResponse = requestHls(rendition.uri, audioHeaders)
                         val audioPlaylist = String(audioResponse.body, Charsets.UTF_8)
                         require(audioPlaylist.contains("#EXTM3U", true)) { "Selected HLS audio rendition is not a playlist." }
@@ -939,19 +949,24 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         Log.e("HLS_PHASE", "local_master=${audioMasterFile!!.exists()} size=${audioMasterFile!!.length()} video_playlist=${resolvedPlaylistFile.exists()} video_size=${resolvedPlaylistFile.length()} audio_playlist=${audioPlaylistFile!!.exists()} audio_size=${audioPlaylistFile!!.length()} video_segment=${File(resolvedSegmentDir, "segment_0$segmentExtension").length()} audio_segment=${File(audioSegmentDir, "segment_0$audioExtension").length()}")
                         combinedDownloadedBytes += audioBytes
                         Log.e("HLS_PHASE", "audio_done bytes=$audioBytes")
+                }
+                .also { ok ->
+                    DownloadLog.phase("audio-done: ok=$ok")
+                    if (!ok) {
+                        audioPlaylistFile?.delete()
+                        audioMasterFile?.delete()
+                        audioTempFile?.delete()
+                        audioTempFile?.let { File("${it.absolutePath}.segments").deleteRecursively() }
                     }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    Log.e("HLS_AUDIO", "audio phase failed; refusing video-only completion", error)
-                    Log.e("HLS_PHASE", "audio_failed exception=${error.message}")
-                    audioPlaylistFile?.delete()
-                    audioMasterFile?.delete()
-                    audioTempFile?.delete()
-                    audioTempFile?.let { File("${it.absolutePath}.segments").deleteRecursively() }
-                    throw IOException("HLS audio rendition download failed: ${error.message}", error)
                 }
             }
+            DownloadLog.phase("subs-start")
+            val subsOk = HlsCompletionGuard.bestEffort(DownloadLog.HLS_SUBS, 30_000L) {
+                if (masterPlaylistText != null) {
+                    downloadHlsEnglishSubtitleFallback(context, masterPlaylistText!!, masterPlaylistUrl, headers, item.fileName)
+                }
+            }
+            DownloadLog.phase("subs-done: ok=$subsOk")
             resolvedTempFile.delete()
             updateItem(downloadId) {
                 it.copy(
@@ -959,18 +974,13 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     progress = 100,
                     downloadedBytes = combinedDownloadedBytes,
                     totalBytes = combinedDownloadedBytes,
-                    filePath = audioMasterFile?.absolutePath ?: resolvedPlaylistFile.absolutePath,
+                    filePath = if (audioOk && audioMasterFile?.isFile == true) audioMasterFile!!.absolutePath else resolvedPlaylistFile.absolutePath,
                     speed = "",
                     eta = "",
                 )
             }
             persistDownloads(force = true)
-            Log.e("HLS_PHASE", "completed filePath=${audioMasterFile?.absolutePath ?: resolvedPlaylistFile.absolutePath}")
-            if (masterPlaylistText != null) {
-                downloadHlsEnglishSubtitleFallback(context, masterPlaylistText!!, masterPlaylistUrl, headers, item.fileName)
-            } else {
-                Log.e("SUBS", "none reason=no master playlist available")
-            }
+            DownloadLog.phase("completed: opening ${if (audioOk && audioMasterFile?.isFile == true) "master" else "video-only"} -> ${if (audioOk && audioMasterFile?.isFile == true) audioMasterFile!!.absolutePath else resolvedPlaylistFile.absolutePath}")
             val sidecar = File(getDownloadDir(context), "${item.fileName.substringBeforeLast('.', item.fileName)}.srt")
             Log.e("HLS_PHASE", "files master=${audioMasterFile?.absolutePath ?: "none"} master_size=${audioMasterFile?.length() ?: 0L} video=${resolvedPlaylistFile.absolutePath} video_size=${resolvedPlaylistFile.length()} audio=${audioPlaylistFile?.absolutePath ?: "none"} audio_size=${audioPlaylistFile?.length() ?: 0L} srt=${sidecar.exists()} srt_size=${sidecar.length()}")
             Log.e("HLS_DEBUG", "Created local playlist: ${resolvedPlaylistFile.absolutePath}")

@@ -2,6 +2,7 @@ package com.lagradost.cloudstream3.ui.player
 
 import android.net.Uri
 import android.util.Log
+import java.io.File
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.context
 import com.lagradost.cloudstream3.CommonActivity.activity
 import com.lagradost.cloudstream3.R
@@ -15,6 +16,8 @@ import com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement.getFol
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadItem
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
+import com.lagradost.cloudstream3.utils.downloader.DownloadLog
+import com.lagradost.cloudstream3.utils.downloader.FileNamingUtil
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.getDownloadFileInfo
 
 class DownloadFileGenerator(
@@ -63,7 +66,11 @@ class DownloadFileGenerator(
             Log.e("PLAY_DEBUG", "resolve matched path=${file.absolutePath} titleMatch=${item.title == meta.name}")
         }
 
-        val existingFile = sequenceOf(storedFile, directFile)
+        val requestedBase = FileNamingUtil.sanitize(meta.name)
+        val candidateDir = listOfNotNull(storedFile?.parentFile, directFile?.parentFile).firstOrNull()
+        val masterCandidate = candidateDir?.let { File(it, "$requestedBase.master.m3u8") }
+        val videoCandidate = candidateDir?.let { File(it, "$requestedBase.m3u8") }
+        val existingFile = sequenceOf(masterCandidate, videoCandidate, storedFile, directFile)
             .filterNotNull()
             .filter { it.isFile && it.length() > 0L }
             .sortedWith(
@@ -72,6 +79,13 @@ class DownloadFileGenerator(
             )
             .firstOrNull()
 
+        DownloadLog.play(
+            "resolve: requested='${meta.name}' baseName='$requestedBase' " +
+                "dir=${candidateDir?.absolutePath ?: "NONE"} " +
+                "video_exists=${videoCandidate?.isFile == true} video_size=${videoCandidate?.takeIf { it.isFile }?.length() ?: -1} " +
+                "master_exists=${masterCandidate?.isFile == true} master_size=${masterCandidate?.takeIf { it.isFile }?.length() ?: -1} " +
+                "opening='${existingFile?.name ?: "NONE"}'"
+        )
         if (existingFile != null) {
             Log.e("PLAY_DEBUG", "resolve matched path=${existingFile.absolutePath} titleMatch=${existingFile.name.substringBeforeLast('.').removeSuffix(".master").removeSuffix(".audio").let(::normalized) in expectedBases}")
             Log.e("PLAY_DEBUG", "Loading downloaded file:")
@@ -109,6 +123,7 @@ class DownloadFileGenerator(
             Log.w("DownloadFileGenerator", "No valid local file found for: ${meta.name}; aborting playback")
             return false
         }
+        DownloadLog.play("hand-off: opening=${localUri.path ?: localUri} player=GeneratorPlayer")
         callback(null to meta.copy(uri = localUri))
 
         val ctx = context ?: return true
