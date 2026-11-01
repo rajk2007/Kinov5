@@ -4,14 +4,14 @@
 # and this workflow builds the APK and uploads it as a downloadable artifact.
 # You then grab it from the Actions tab on github.com (mobile browser works).
 #
-# Trigger branches: main, master, and "build". Push to "build" if you don't
-# want every main commit to trigger a build.
+# Trigger branches include the focused diagnostic branch so its APK is built
+# automatically after every pushed diagnostic change.
 
 name: Build Debug APK
 
 on:
   push:
-    branches: [ main, master, build ]
+    branches: [ main, master, build, hls-diagnostic-build ]
   workflow_dispatch:   # lets you trigger a build manually from the Actions tab
 
 jobs:
@@ -50,6 +50,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kino-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/**/debug/*.apk
           retention-days: 30
           if-no-files-found: error
