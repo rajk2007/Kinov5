@@ -1,4 +1,4 @@
-package com.lagradost.cloudstream3.debug
+package com.rajk2007.kino.debug
 
 import android.content.Intent
 import android.os.Build

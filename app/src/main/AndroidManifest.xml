@@ -169,6 +169,9 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
             android:exported="false"
             android:theme="@style/Theme.CloudStream.NoActionBar" />
+        <activity android:name="com.rajk2007.kino.debug.DebugDiagnosticsActivity"
+            android:exported="false"
+            android:label="Diagnostics" />
 
     </application>
 
