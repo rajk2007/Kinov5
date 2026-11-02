@@ -26,6 +26,7 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.parseHlsAudioBandwidth
 import com.lagradost.cloudstream3.utils.parseHlsDuration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -389,14 +390,72 @@ object DirectDownloadManager {
         }
     }
 
-    private fun toSrt(content: String): String {
-        if (!content.trimStart().startsWith("WEBVTT", ignoreCase = true)) return content
-        return content
-            .lineSequence()
-            .drop(1)
-            .joinToString("\n")
-            .replace(Regex("(\\d{2}:\\d{2}:\\d{2})\\.(\\d{3})"), "$1,$2")
-            .trim() + "\n"
+    private fun toSrt(content: String): String = vttSegmentsToSrt(listOf(content), listOf(0.0))
+
+    /**
+     * Convert one or more WebVTT segment bodies into one valid SRT file.
+     * Each HLS subtitle segment is its own VTT file whose cue timestamps are LOCAL
+     * to that segment (they restart at zero), so [offsetsSeconds] must carry the
+     * cumulative start time of each segment. Strips per-segment headers, offsets
+     * every cue, removes bridged duplicates, and renumbers cues sequentially.
+     */
+    private fun vttSegmentsToSrt(segmentBodies: List<String>, offsetsSeconds: List<Double>): String {
+        data class Cue(var start: Double, var end: Double, val lines: MutableList<String>)
+        val timestampRegex = Regex("""(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})""")
+
+        fun parseTimestamp(value: String): Double? {
+            val match = timestampRegex.matchEntire(value.trim()) ?: return null
+            val (hours, minutes, seconds, millis) = match.destructured
+            return (hours.toDoubleOrNull() ?: 0.0) * 3600.0 +
+                minutes.toDouble() * 60.0 + seconds.toDouble() + millis.toDouble() / 1000.0
+        }
+
+        fun formatTimestamp(totalSeconds: Double): String {
+            val totalMillis = Math.round(totalSeconds.coerceAtLeast(0.0) * 1000.0)
+            return String.format(
+                java.util.Locale.US, "%02d:%02d:%02d,%03d",
+                totalMillis / 3_600_000, (totalMillis % 3_600_000) / 60_000,
+                (totalMillis % 60_000) / 1_000, totalMillis % 1_000,
+            )
+        }
+
+        val cues = mutableListOf<Cue>()
+        segmentBodies.forEachIndexed { index, body ->
+            val offset = offsetsSeconds.getOrElse(index) { 0.0 }
+            var current: Cue? = null
+            body.lineSequence().forEach { raw ->
+                val line = raw.trimEnd()
+                when {
+                    line.isBlank() -> {
+                        current?.let { cue -> if (cue.lines.isNotEmpty()) cues += cue }
+                        current = null
+                    }
+                    line.contains("-->") -> {
+                        current?.let { cue -> if (cue.lines.isNotEmpty()) cues += cue }
+                        val parts = line.split("-->")
+                        val start = parseTimestamp(parts.firstOrNull().orEmpty())
+                        val end = parseTimestamp(parts.getOrNull(1)?.trim()?.substringBefore(' ') ?: "")
+                        if (start != null && end != null) current = Cue(start + offset, end + offset, mutableListOf())
+                    }
+                    line.startsWith("WEBVTT", true) || line.startsWith("X-TIMESTAMP-MAP", true) ||
+                        line.startsWith("NOTE", true) || line.startsWith("Kind:", true) ||
+                        line.startsWith("Language:", true) -> Unit
+                    current != null -> current!!.lines.add(line.replace(Regex("<[^>]+>"), ""))
+                }
+            }
+            current?.let { cue -> if (cue.lines.isNotEmpty()) cues += cue }
+        }
+
+        val distinct = cues.sortedBy { it.start }
+            .distinctBy { "${it.start}|${it.end}|${it.lines.joinToString(" ")}" }
+        return buildString {
+            distinct.forEachIndexed { index, cue ->
+                appendLine(index + 1)
+                appendLine("${formatTimestamp(cue.start)} --> ${formatTimestamp(cue.end)}")
+                cue.lines.forEach { appendLine(it) }
+                appendLine()
+            }
+        }
     }
 
     fun pauseDownload(downloadId: String) {
@@ -797,17 +856,23 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
             val mediaDurationSeconds = parseHlsDuration(playlist)
-            val estimatedMediaBytes = selectedVariantBandwidth?.let { bandwidth ->
-                (bandwidth.toDouble() * mediaDurationSeconds / 8.0 * 0.35).toLong()
-            }?.takeIf { it > 0L }
-            if (item.totalBytes <= 0L && estimatedMediaBytes != null) {
-                updateItem(downloadId) { current ->
-                    current.copy(totalBytes = estimatedMediaBytes.coerceAtLeast(current.downloadedBytes))
-                }
-            }
             // URL suffixes are unreliable on signed Kdesa URLs. Probe the first real segment so
             // that a TS stream cannot accidentally be written and advertised as fMP4 (or vice versa).
             val firstSegmentBytes = requestHls(segments.first(), headers).body
+            // Measure the real first segment and include the separate audio share when present.
+            val firstExtinfSeconds = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE)
+                .find(playlist)?.groupValues?.get(1)?.toDoubleOrNull() ?: 5.0
+            val audioShare = if (selectedAudio != null) {
+                val audioBandwidth = masterPlaylistText?.let { parseHlsAudioBandwidth(it) } ?: 128_000L
+                (audioBandwidth.toDouble() / (selectedVariantBandwidth ?: 1_000_000L).coerceAtLeast(1L)).coerceIn(0.0, 0.5)
+            } else 0.0
+            if (mediaDurationSeconds > 0.0 && firstSegmentBytes.isNotEmpty()) {
+                val measuredTotalBytes = (firstSegmentBytes.size / firstExtinfSeconds * mediaDurationSeconds * (1.0 + audioShare)).toLong().coerceAtLeast(1L)
+                updateItem(downloadId) { current -> current.copy(totalBytes = maxOf(measuredTotalBytes, current.downloadedBytes)) }
+                Log.e("SIZE_FINAL", "measured_at_start firstSegmentBytes=${firstSegmentBytes.size} firstExtinfSeconds=$firstExtinfSeconds durationSeconds=$mediaDurationSeconds audioShare=$audioShare measuredTotalBytes=$measuredTotalBytes")
+            }
+            // extrapolationScale carries the separate audio share through video progress.
+            val videoExtrapolationScale = 1.0 + audioShare
             val firstSegmentType = detectHlsSegmentType(firstSegmentBytes)
             Log.e("TRACE_HLS", "   First segment type: $firstSegmentType")
             Log.e("HLS_PHASE", "first_segment_type=$firstSegmentType")
@@ -864,6 +929,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     logHlsDiagnostics = true,
                     keepSegments = true,
                     segmentExtension = segmentExtension,
+                    extrapolationScale = videoExtrapolationScale,
                 ).also {
                     if (!currentCoroutineContext().isActive) throw CancellationException()
                     require(segments.indices.all { index ->
@@ -1035,6 +1101,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         logHlsDiagnostics: Boolean = false,
         keepSegments: Boolean = false,
         segmentExtension: String = ".bin",
+        extrapolationScale: Double = 1.0,
     ): Long {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
@@ -1097,10 +1164,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val speedBps = downloaded / elapsedSeconds
                                 val downloadedSoFar = downloadedBytesOffset + downloaded
                                 val estimatedTotalBytes = downloadedBytesOffset +
-                                    (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset)).toLong()
+                                    (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset) * extrapolationScale).toLong()
                                 updateItem(downloadId) {
                                     val newTotal = when {
-                                        it.totalBytes > 0L -> maxOf(it.totalBytes, downloadedSoFar)
                                         estimatedTotalBytes > 0L -> maxOf(estimatedTotalBytes, downloadedSoFar)
                                         else -> downloadedSoFar
                                     }
@@ -1467,14 +1533,35 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             if (selected == null) { Log.e("SUBS", "HLS subtitle none reason=no TYPE=SUBTITLES rendition"); return }
             val response = requestHls(selected.third, headers)
             val body = String(response.body, Charsets.UTF_8)
-            val subtitleContent = if (body.contains("#EXTM3U", true)) {
-                body.lineSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }.map { URI(response.url).resolve(it).toString() }.joinToString("\n") { String(requestHls(it, headers).body, Charsets.UTF_8) }
-            } else body
-            if (subtitleContent.isBlank()) { Log.e("SUBS", "HLS subtitle none reason=selected rendition empty"); return }
             val safeBase = sanitizeFileName(fileName).ifBlank { "download" }
             val base = safeBase.substringBeforeLast('.', safeBase)
             val subtitleFile = File(getDownloadDir(context), "$base.srt")
-            if (!subtitleFile.exists()) { subtitleFile.writeText(toSrt(subtitleContent)); Log.e("SUBS", "saved path=${subtitleFile.absolutePath}") }
+            if (body.contains("#EXTM3U", true)) {
+                var cumulative = 0.0
+                val segmentBodies = mutableListOf<String>()
+                val offsets = mutableListOf<Double>()
+                body.lineSequence().forEach { raw ->
+                    val line = raw.trim()
+                    val extinf = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).find(line)?.groupValues?.get(1)?.toDoubleOrNull()
+                    if (extinf != null) {
+                        offsets += cumulative
+                        cumulative += extinf
+                    } else if (line.isNotEmpty() && !line.startsWith("#")) {
+                        segmentBodies += String(requestHls(URI(response.url).resolve(line).toString(), headers).body, Charsets.UTF_8)
+                    }
+                }
+                if (segmentBodies.isEmpty()) { Log.e("SUBS", "HLS subtitle none reason=playlist had no segments"); return }
+                while (offsets.size < segmentBodies.size) offsets += cumulative
+                val srt = vttSegmentsToSrt(segmentBodies, offsets)
+                if (srt.isBlank()) { Log.e("SUBS", "HLS subtitle none reason=no cues after conversion (segments=${segmentBodies.size})"); return }
+                subtitleFile.writeText(srt)
+                Log.e("SUBS", "saved path=${subtitleFile.absolutePath} segments=${segmentBodies.size} cues=${Regex("\\n\\n").split(srt.trim()).size}")
+            } else {
+                val srt = vttSegmentsToSrt(listOf(body), listOf(0.0))
+                if (srt.isBlank()) { Log.e("SUBS", "HLS subtitle none reason=rendition had no cues"); return }
+                subtitleFile.writeText(srt)
+                Log.e("SUBS", "saved path=${subtitleFile.absolutePath}")
+            }
         } catch (error: Exception) { Log.e("SUBS", "HLS subtitle fallback failed", error) }
     }
 

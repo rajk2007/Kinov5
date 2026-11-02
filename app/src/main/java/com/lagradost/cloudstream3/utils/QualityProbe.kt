@@ -49,30 +49,16 @@ fun calculateEstimatedSize(
     videoBandwidth: Long?,
     audioBandwidth: Long = 0,
     durationSeconds: Double?,
-    isHlsStream: Boolean = false,
     hasSeparateAudio: Boolean = false,
+    videoBandwidthIsAverage: Boolean = false,
 ): Long? {
     if (videoBandwidth == null || durationSeconds == null || durationSeconds <= 0.0) return null
 
     val effectiveAudioBandwidth = if (hasSeparateAudio) audioBandwidth.coerceAtLeast(0) else 0L
-    val totalBandwidth = videoBandwidth + effectiveAudioBandwidth
-    var rawBytes = totalBandwidth.toDouble() * durationSeconds / 8.0
-    // HLS BANDWIDTH is commonly a peak bitrate. Correct toward the average
-    // bitrate represented by the downloaded media segments.
-    if (isHlsStream) rawBytes *= 0.24
-    val estimatedBytes = rawBytes.toLong()
-    Log.e("SIZE_FINAL", "═════════════════════════════")
-    Log.e("SIZE_FINAL", "calculateEstimatedSize called:")
-    Log.e("SIZE_FINAL", "  videoBandwidth: $videoBandwidth bps")
-    Log.e("SIZE_FINAL", "  audioBandwidth: $effectiveAudioBandwidth bps")
-    Log.e("SIZE_FINAL", "  durationSeconds: $durationSeconds")
-    Log.e("SIZE_FINAL", "  hlsCorrectionApplied: $isHlsStream (factor=${if (isHlsStream) 0.24 else 1.0})")
-    Log.e("SIZE_FINAL", "  separateAudioIncluded: $hasSeparateAudio")
-    Log.e("SIZE_FINAL", "  totalBandwidth: $totalBandwidth bps")
-    Log.e("SIZE_FINAL", "  rawBytes: $rawBytes")
-    Log.e("SIZE_FINAL", "  estimatedBytes: $estimatedBytes")
-    Log.e("SIZE_FINAL", "  formatted: ${formatFileSize(estimatedBytes)}")
-    Log.e("SIZE_FINAL", "═════════════════════════════")
+    val effectiveVideoBandwidth = if (videoBandwidthIsAverage) videoBandwidth else videoBandwidth / 2L
+    val totalBandwidth = effectiveVideoBandwidth + effectiveAudioBandwidth
+    val estimatedBytes = (totalBandwidth.toDouble() * durationSeconds / 8.0).toLong()
+    Log.e("SIZE_FINAL", "calculateEstimatedSize: videoBandwidth=$videoBandwidth isAverage=$videoBandwidthIsAverage audioBandwidth=$effectiveAudioBandwidth durationSeconds=$durationSeconds estimatedBytes=$estimatedBytes formatted=${formatFileSize(estimatedBytes)}")
     return estimatedBytes
 }
 
@@ -131,7 +117,7 @@ fun formatFileSize(bytes: Long): String = when {
 object QualityProbe {
     private const val TAG = "QualityProbe"
     // KDesa movie manifests can be slow, especially for dubbed links.
-    private const val PROBE_TIMEOUT_MS = 15_000L
+    private const val PROBE_TIMEOUT_MS = 20_000L
     private val sessionCache = ConcurrentHashMap<String, List<ProbedQuality>>()
 
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
@@ -225,17 +211,20 @@ object QualityProbe {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
-                val durationSeconds = fetchHlsDuration(variantUrl, headers)
+                val variantInfo = fetchHlsVariantInfo(variantUrl, headers)
+                val measuredSizeBytes = variantInfo?.let { info ->
+                    measureFirstSegmentEstimate(info, headers, audioBandwidth, effectiveVideoBandwidth, hasSeparateAudio)
+                }
+                val estimate = measuredSizeBytes ?: calculateEstimatedSize(
+                    effectiveVideoBandwidth,
+                    audioBandwidth,
+                    durationSeconds = variantInfo?.durationSeconds,
+                    hasSeparateAudio = hasSeparateAudio,
+                    videoBandwidthIsAverage = averageBandwidth != null,
+                )
                 results += ProbedQuality(
                     width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
-                    variantUrl, heightToQualityLabel(height),
-                    calculateEstimatedSize(
-                        effectiveVideoBandwidth,
-                        audioBandwidth,
-                        durationSeconds = durationSeconds,
-                        isHlsStream = true,
-                        hasSeparateAudio = hasSeparateAudio,
-                    ),
+                    variantUrl, heightToQualityLabel(height), estimate,
                     "hls-${height}-${variantUrl.hashCode()}",
                 )
             }
@@ -280,7 +269,7 @@ object QualityProbe {
                         results += ProbedQuality(
                             width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                             "${link.url}#track=$height", heightToQualityLabel(height),
-                            calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth, manifestDuration),
+                            calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth, durationSeconds = manifestDuration, videoBandwidthIsAverage = true),
                             selectionKey,
                         )
                     }
@@ -311,9 +300,45 @@ object QualityProbe {
         return fallbackRegex.findAll(mpd).mapNotNull { it.groupValues[1].toLongOrNull() }.maxOrNull() ?: 96_000L
     }
 
-    private suspend fun fetchHlsDuration(url: String, headers: Map<String, String>): Double? = runCatching {
-        parseHlsDuration(app.get(url, headers = headers, allowRedirects = true).text).takeIf { it > 0.0 }
+    private class HlsVariantInfo(
+        val durationSeconds: Double?,
+        val firstSegmentUrl: String?,
+        val firstSegmentDurationSeconds: Double?,
+    )
+
+    private suspend fun fetchHlsVariantInfo(url: String, headers: Map<String, String>): HlsVariantInfo? = runCatching {
+        val text = app.get(url, headers = headers, allowRedirects = true).text
+        if (!text.contains("#EXTM3U", true)) return@runCatching null
+        val duration = parseHlsDuration(text).takeIf { it > 0.0 }
+        val firstSegment = text.lineSequence().map(String::trim).firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+        val firstExtinf = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toDoubleOrNull()
+        HlsVariantInfo(duration, firstSegment?.let { resolve(url, it) }, firstExtinf?.takeIf { it > 0.0 })
     }.getOrNull()
+
+    private suspend fun measureFirstSegmentEstimate(
+        info: HlsVariantInfo,
+        headers: Map<String, String>,
+        audioBandwidth: Long,
+        videoBandwidth: Long?,
+        hasSeparateAudio: Boolean,
+    ): Long? {
+        val segmentUrl = info.firstSegmentUrl ?: return null
+        val duration = info.durationSeconds ?: return null
+        val firstDuration = info.firstSegmentDurationSeconds ?: return null
+        val segmentBytes = kotlinx.coroutines.withTimeoutOrNull(4_000L) {
+            runCatching {
+                app.get(segmentUrl, headers = headers, allowRedirects = true)
+                    .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+            }.getOrNull()
+        } ?: return null
+        val videoEstimate = segmentBytes / firstDuration * duration
+        val audioShare = if (hasSeparateAudio && videoBandwidth != null && videoBandwidth > 0L) {
+            (audioBandwidth.toDouble() / videoBandwidth).coerceIn(0.0, 0.5)
+        } else 0.0
+        val estimate = (videoEstimate * (1.0 + audioShare)).toLong().takeIf { it > 0L }
+        Log.e("SIZE_FINAL", "measured_first_segment bytes=$segmentBytes firstSegmentSeconds=$firstDuration durationSeconds=$duration audioShare=$audioShare estimateBytes=$estimate formatted=${estimate?.let(::formatFileSize)}")
+        return estimate
+    }
 
     private suspend fun probeProgressiveSafe(link: ExtractorLink): List<ProbedQuality> {
         val url = link.url.lowercase(Locale.US)

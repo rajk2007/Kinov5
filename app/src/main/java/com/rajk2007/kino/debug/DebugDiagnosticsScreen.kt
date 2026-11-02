@@ -108,7 +108,7 @@ fun DebugDiagnosticsScreen(
                             .lineSequence()
                             .filter { line -> FILTER_TAGS.any { line.contains("/$it") || line.contains(" $it:") } }
                             .toList()
-                            .takeLast(400)
+                            .takeLast(800)
                             .joinToString("\n")
                     }
                 }.getOrElse { "logcat read failed: ${it.javaClass.simpleName}: ${it.message}" }
@@ -287,6 +287,7 @@ private val FILTER_TAGS = listOf(
     "HLS_PHASE", "HLS_AUDIO", "HLS_SUBS", "PLAY_DEBUG", "KINO_DL",
     "ExoPlayer", "AudioTrack", "MediaCodec", "okhttp", "OkHttp",
     "Download", "DirectDownload",
+    "SIZE", "SIZE_FINAL", "BW_SOURCE", "SUBS", "DL_404", "TRACE_HLS", "QualityProbe",
 )
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -128,27 +128,25 @@ class DownloadFileGenerator(
 
         val ctx = context ?: return true
         val localFile = localUri.path?.let { java.io.File(it) }
+        val registeredSubtitlePaths = mutableSetOf<String>()
         localFile?.parentFile?.let { folder ->
+            val videoBase = localFile.name.substringBeforeLast('.')
+                .removeSuffix(".master").removeSuffix(".audio")
             val directSubtitles = folder.listFiles()
                 ?.filter { file ->
-                    val name = file.name
-                    val lower = name.lowercase()
-                    lower.endsWith(".srt") || lower.endsWith(".vtt") || lower.endsWith(".ass")
+                    val lower = file.name.lowercase()
+                    (lower.endsWith(".srt") || lower.endsWith(".vtt") || lower.endsWith(".ass")) &&
+                        file.name.substringBeforeLast('.').removeSuffix(".master").removeSuffix(".audio")
+                            .equals(videoBase, ignoreCase = true)
                 }
                 .orEmpty()
-            Log.e("SUBS", "offline scan found=${directSubtitles.size} folder=${folder.absolutePath}")
+            Log.e("SUBS", "offline scan found=${directSubtitles.size} folder=${folder.absolutePath} videoBase=$videoBase")
             directSubtitles.forEach { file ->
                 Log.e("SUBS", "Registered sidecar ${file.absolutePath}")
+                registeredSubtitlePaths += file.absolutePath
                 subtitleCallback(
-                    SubtitleData(
-                        "English",
-                        "",
-                        Uri.fromFile(file).toString(),
-                        SubtitleOrigin.DOWNLOADED_FILE,
-                        file.name.toSubtitleMimeType(),
-                        emptyMap(),
-                        "en",
-                    )
+                    SubtitleData("English", "", Uri.fromFile(file).toString(), SubtitleOrigin.DOWNLOADED_FILE,
+                        file.name.toSubtitleMimeType(), emptyMap(), "en")
                 )
             }
         }
@@ -157,7 +155,9 @@ class DownloadFileGenerator(
         if (relative != null && display != null) {
             val cleanDisplay = cleanDisplayName(display)
             getFolder(ctx, relative, meta.basePath)?.forEach { (name, uri) ->
-                if (isMatchingSubtitle(name, display, cleanDisplay)) {
+                val alreadyRegistered = runCatching { Uri.parse(uri.toString()).path }
+                    .getOrNull()?.let { it in registeredSubtitlePaths } == true
+                if (isMatchingSubtitle(name, display, cleanDisplay) && !alreadyRegistered) {
                     val cleanName = cleanDisplayName(name)
                     val lastNum = Regex(" ([0-9]+)$")
                     val nameSuffix = lastNum.find(cleanName)?.groupValues?.get(1) ?: ""
