@@ -902,7 +902,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     audioSegment?.let { requestHls(URI(audioPlaylistUrl).resolve(it).toString(), audioRendition.headers).body }
                 }.getOrNull()
             }
-            val audioBytesPerSegment = audioFirstBytes?.size?.takeIf { it > 0 } ?: 0L
+            val audioBytesPerSegment = audioFirstBytes?.size?.toLong()?.takeIf { it > 0L } ?: 0L
             if (mediaDurationSeconds > 0.0 && firstSegmentBytes.isNotEmpty()) {
                 val videoTotal = firstSegmentBytes.size / firstExtinfSeconds * mediaDurationSeconds
                 val audioTotal = audioBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
