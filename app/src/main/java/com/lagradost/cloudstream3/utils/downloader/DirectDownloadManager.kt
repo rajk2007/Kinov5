@@ -360,9 +360,19 @@ object DirectDownloadManager {
                 }
                 val safeBase = sanitizeFileName(fileName).ifBlank { "download" }
                 val base = safeBase.substringBeforeLast('.', safeBase)
+                // Save the raw subtitle content so we can inspect what the provider
+                // actually returned if the converted SRT doesn't render.
+                val rawFile = File(getDownloadDir(context), "$base.raw.sub")
+                rawFile.writeText(content)
+                val isVtt = content.trimStart().startsWith("WEBVTT", ignoreCase = true)
+                val isM3u = content.trimStart().startsWith("#EXTM3U", ignoreCase = true)
+                val firstLine = content.lineSequence().firstOrNull()?.take(80) ?: ""
+                Log.e("SUBS", "raw saved=${rawFile.absolutePath} size=${content.length} isVtt=$isVtt isM3u=$isM3u firstLine=$firstLine")
                 val subtitleFile = File(getDownloadDir(context), "$base.srt")
-                subtitleFile.writeText(toSrt(content))
-                Log.e("SUBS", "saved path=${subtitleFile.absolutePath}")
+                val srt = toSrt(content)
+                subtitleFile.writeText(srt)
+                val cueCount = if (srt.isNotBlank()) Regex("^\\d+$", RegexOption.MULTILINE).findAll(srt).count() else 0
+                Log.e("SUBS", "saved path=${subtitleFile.absolutePath} srtSize=${srt.length} cues=$cueCount")
             } catch (error: Exception) {
                 Log.e("SUBS", "Provider subtitle download failed for $title", error)
             }
@@ -390,7 +400,13 @@ object DirectDownloadManager {
         }
     }
 
-    private fun toSrt(content: String): String = vttSegmentsToSrt(listOf(content), listOf(0.0))
+    private fun toSrt(content: String): String {
+        // Only convert actual WebVTT. SRT, TTML, or any other format is returned
+        // unchanged so the player's own parser handles it. vttSegmentsToSrt on
+        // non-VTT content can produce garbled or empty output.
+        if (!content.trimStart().startsWith("WEBVTT", ignoreCase = true)) return content
+        return vttSegmentsToSrt(listOf(content), listOf(0.0))
+    }
 
     /**
      * Convert one or more WebVTT segment bodies into one valid SRT file.
@@ -858,6 +874,15 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             val mediaDurationSeconds = parseHlsDuration(playlist)
             // URL suffixes are unreliable on signed Kdesa URLs. Probe the first real segment so
             // that a TS stream cannot accidentally be written and advertised as fMP4 (or vice versa).
+            // Delete any stale subtitle files from a previous download so a broken
+            // old .srt doesn't survive if neither subtitle path overwrites it this time.
+            val staleBase = item.fileName.substringBeforeLast('.')
+            listOf("$staleBase.srt", "$staleBase.raw.sub").forEach { name ->
+                File(getDownloadDir(context), name).takeIf { it.exists() }?.let {
+                    it.delete()
+                    Log.e("SUBS", "deleted stale $name before download")
+                }
+            }
             val firstSegmentBytes = requestHls(segments.first(), headers).body
             // Measure the real first segment and include the separate audio share when present.
             val firstExtinfSeconds = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE)
@@ -1166,7 +1191,14 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val estimatedTotalBytes = downloadedBytesOffset +
                                     (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset) * extrapolationScale).toLong()
                                 updateItem(downloadId) {
+                                    // The total is set once at download start (measured-at-start).
+                                    // During download, allow it to grow if the extrapolation exceeds
+                                    // the current value, but never let it shrink — video segment sizes
+                                    // vary 3-5x (I-frames vs P-frames), so the per-segment average
+                                    // swings and a shrinking total jitters up and down. Monotonic
+                                    // growth + a snap to actualSize at completion is stable.
                                     val newTotal = when {
+                                        it.totalBytes > 0L -> maxOf(it.totalBytes, estimatedTotalBytes, downloadedSoFar)
                                         estimatedTotalBytes > 0L -> maxOf(estimatedTotalBytes, downloadedSoFar)
                                         else -> downloadedSoFar
                                     }

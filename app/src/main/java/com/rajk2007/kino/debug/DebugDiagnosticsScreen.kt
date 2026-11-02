@@ -195,6 +195,17 @@ fun DebugDiagnosticsScreen(
                 appendLine(audioContent)
             }
             appendLine()
+            appendLine("=== SUBTITLE FILES ===")
+            val moviesDir = File(context.getExternalFilesDir(null), "Movies")
+            moviesDir.listFiles()?.filter { it.name.endsWith(".srt") || it.name.endsWith(".raw.sub") }
+                ?.sortedByDescending { it.lastModified() }
+                ?.take(5)
+                ?.forEach { file ->
+                    appendLine("--- ${file.name} (${file.length()} bytes) ---")
+                    file.useLines { it.take(15).forEach { line -> appendLine(line.take(200)) } }
+                    appendLine()
+                }
+            appendLine()
             appendLine("=== LOGCAT (filtered) ===")
             appendLine(logcatText)
             appendLine()
