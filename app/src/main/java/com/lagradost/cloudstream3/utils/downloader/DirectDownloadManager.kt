@@ -314,6 +314,19 @@ object DirectDownloadManager {
                 delay(1_000L)
             }
         }
+        // Delete stale subtitle files ONCE, up front, before either subtitle path
+        // runs. The provider fetch (downloadEnglishSubtitle) launches a background
+        // coroutine and the HLS path runs concurrently; a delete inside either path
+        // races the other and can wipe a file the other just wrote. Doing it here,
+        // synchronously, before downloadEnglishSubtitle is launched, guarantees
+        // neither writer can clobber the other.
+        val staleBase = fileName.substringBeforeLast('.')
+        listOf("$staleBase.srt", "$staleBase.raw.sub").forEach { name ->
+            File(getDownloadDir(context), name).takeIf { it.exists() }?.let {
+                it.delete()
+                Log.e("SUBS", "deleted stale $name before download (startDownload)")
+            }
+        }
         if (dataUrl != null) {
             downloadEnglishSubtitle(context.applicationContext, dataUrl, title, fileName, apiName)
         } else {
@@ -874,30 +887,34 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             val mediaDurationSeconds = parseHlsDuration(playlist)
             // URL suffixes are unreliable on signed Kdesa URLs. Probe the first real segment so
             // that a TS stream cannot accidentally be written and advertised as fMP4 (or vice versa).
-            // Delete any stale subtitle files from a previous download so a broken
-            // old .srt doesn't survive if neither subtitle path overwrites it this time.
-            val staleBase = item.fileName.substringBeforeLast('.')
-            listOf("$staleBase.srt", "$staleBase.raw.sub").forEach { name ->
-                File(getDownloadDir(context), name).takeIf { it.exists() }?.let {
-                    it.delete()
-                    Log.e("SUBS", "deleted stale $name before download")
-                }
-            }
             val firstSegmentBytes = requestHls(segments.first(), headers).body
-            // Measure the real first segment and include the separate audio share when present.
+            // Measure the real first segment. For separate-audio HLS, also fetch and
+            // measure the first AUDIO segment and add its real bytes, instead of guessing
+            // the audio share from a BANDWIDTH ratio.
             val firstExtinfSeconds = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE)
                 .find(playlist)?.groupValues?.get(1)?.toDoubleOrNull() ?: 5.0
-            val audioShare = if (selectedAudio != null) {
-                val audioBandwidth = masterPlaylistText?.let { parseHlsAudioBandwidth(it) } ?: 128_000L
-                (audioBandwidth.toDouble() / (selectedVariantBandwidth ?: 1_000_000L).coerceAtLeast(1L)).coerceIn(0.0, 0.5)
-            } else 0.0
-            if (mediaDurationSeconds > 0.0 && firstSegmentBytes.isNotEmpty()) {
-                val measuredTotalBytes = (firstSegmentBytes.size / firstExtinfSeconds * mediaDurationSeconds * (1.0 + audioShare)).toLong().coerceAtLeast(1L)
-                updateItem(downloadId) { current -> current.copy(totalBytes = maxOf(measuredTotalBytes, current.downloadedBytes)) }
-                Log.e("SIZE_FINAL", "measured_at_start firstSegmentBytes=${firstSegmentBytes.size} firstExtinfSeconds=$firstExtinfSeconds durationSeconds=$mediaDurationSeconds audioShare=$audioShare measuredTotalBytes=$measuredTotalBytes")
+            val audioFirstBytes = selectedAudio?.let { audioRendition ->
+                runCatching {
+                    val audioPlaylistUrl = URI(playlistUrl).resolve(audioRendition.uri).toString()
+                    val audioPlaylistText = String(requestHls(audioPlaylistUrl, audioRendition.headers).body, Charsets.UTF_8)
+                    val audioSegment = audioPlaylistText.lineSequence().map(String::trim)
+                        .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+                    audioSegment?.let { requestHls(URI(audioPlaylistUrl).resolve(it).toString(), audioRendition.headers).body }
+                }.getOrNull()
             }
-            // extrapolationScale carries the separate audio share through video progress.
-            val videoExtrapolationScale = 1.0 + audioShare
+            val audioBytesPerSegment = audioFirstBytes?.size?.takeIf { it > 0 } ?: 0L
+            if (mediaDurationSeconds > 0.0 && firstSegmentBytes.isNotEmpty()) {
+                val videoTotal = firstSegmentBytes.size / firstExtinfSeconds * mediaDurationSeconds
+                val audioTotal = audioBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
+                val measuredTotalBytes = (videoTotal + audioTotal).toLong().coerceAtLeast(1L)
+                updateItem(downloadId) { current -> current.copy(totalBytes = maxOf(measuredTotalBytes, current.downloadedBytes)) }
+                Log.e("SIZE_FINAL", "measured_at_start firstSegmentBytes=${firstSegmentBytes.size} audioFirstBytes=$audioBytesPerSegment firstExtinfSeconds=$firstExtinfSeconds durationSeconds=$mediaDurationSeconds videoTotal=$videoTotal audioTotal=$audioTotal measuredTotalBytes=$measuredTotalBytes")
+            }
+            // Derive the extrapolation scale from measured bytes so it stays consistent
+            // with the measured_at_start total.
+            val videoExtrapolationScale = if (firstSegmentBytes.isNotEmpty() && audioBytesPerSegment > 0L) {
+                1.0 + (audioBytesPerSegment.toDouble() / firstSegmentBytes.size)
+            } else 1.0
             val firstSegmentType = detectHlsSegmentType(firstSegmentBytes)
             Log.e("TRACE_HLS", "   First segment type: $firstSegmentType")
             Log.e("HLS_PHASE", "first_segment_type=$firstSegmentType")

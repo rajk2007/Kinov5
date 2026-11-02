@@ -73,8 +73,10 @@ fun parseHlsBandwidth(line: String): Pair<Long?, Long?> {
 
 /** Returns the highest declared audio rendition bandwidth in an HLS master playlist. */
 fun parseHlsAudioBandwidth(playlist: String): Long? {
+    // Stop at the end of the #EXT-X-MEDIA line; the previous character class
+    // could cross a newline and capture a video variant's BANDWIDTH.
     val audioMediaRegex = Regex(
-        """#EXT-X-MEDIA:TYPE=AUDIO[^>]*?BANDWIDTH=(\d+)""",
+        """#EXT-X-MEDIA:TYPE=AUDIO[^>\r\n]*?BANDWIDTH=(\d+)""",
         RegexOption.IGNORE_CASE,
     )
     return audioMediaRegex.findAll(playlist)
@@ -211,9 +213,25 @@ object QualityProbe {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
+                val audioFirstSegmentUrl = if (hasSeparateAudio) {
+                    val audioPlaylistUri = Regex(
+                        """#EXT-X-MEDIA:TYPE=AUDIO[^>\r\n]*?URI=\"([^\"]+)\"""",
+                        RegexOption.IGNORE_CASE,
+                    ).find(content)?.groupValues?.get(1)
+                    audioPlaylistUri?.let { uri ->
+                        runCatching {
+                            val audioPlaylistUrl = resolve(response.url, uri)
+                            val audioPlaylistResponse = app.get(audioPlaylistUrl, headers = headers, allowRedirects = true)
+                            val firstAudioSegment = audioPlaylistResponse.text.lineSequence()
+                                .map(String::trim)
+                                .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+                            firstAudioSegment?.let { resolve(audioPlaylistResponse.url, it) }
+                        }.getOrNull()
+                    }
+                } else null
                 val variantInfo = fetchHlsVariantInfo(variantUrl, headers)
                 val measuredSizeBytes = variantInfo?.let { info ->
-                    measureFirstSegmentEstimate(info, headers, audioBandwidth, effectiveVideoBandwidth, hasSeparateAudio)
+                    measureFirstSegmentEstimate(info, headers, audioFirstSegmentUrl, headers)
                 }
                 val estimate = measuredSizeBytes ?: calculateEstimatedSize(
                     effectiveVideoBandwidth,
@@ -318,9 +336,8 @@ object QualityProbe {
     private suspend fun measureFirstSegmentEstimate(
         info: HlsVariantInfo,
         headers: Map<String, String>,
-        audioBandwidth: Long,
-        videoBandwidth: Long?,
-        hasSeparateAudio: Boolean,
+        audioFirstSegmentUrl: String?,
+        audioHeaders: Map<String, String>,
     ): Long? {
         val segmentUrl = info.firstSegmentUrl ?: return null
         val duration = info.durationSeconds ?: return null
@@ -332,11 +349,16 @@ object QualityProbe {
             }.getOrNull()
         } ?: return null
         val videoEstimate = segmentBytes / firstDuration * duration
-        val audioShare = if (hasSeparateAudio && videoBandwidth != null && videoBandwidth > 0L) {
-            (audioBandwidth.toDouble() / videoBandwidth).coerceIn(0.0, 0.5)
+        val audioEstimate = if (audioFirstSegmentUrl != null) {
+            kotlinx.coroutines.withTimeoutOrNull(4_000L) {
+                runCatching {
+                    app.get(audioFirstSegmentUrl, headers = audioHeaders, allowRedirects = true)
+                        .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+                }.getOrNull()
+            }?.let { it / firstDuration * duration } ?: 0.0
         } else 0.0
-        val estimate = (videoEstimate * (1.0 + audioShare)).toLong().takeIf { it > 0L }
-        Log.e("SIZE_FINAL", "measured_first_segment bytes=$segmentBytes firstSegmentSeconds=$firstDuration durationSeconds=$duration audioShare=$audioShare estimateBytes=$estimate formatted=${estimate?.let(::formatFileSize)}")
+        val estimate = (videoEstimate + audioEstimate).toLong().takeIf { it > 0L }
+        Log.e("SIZE_FINAL", "measured_first_segment bytes=$segmentBytes audioBytes=${(audioEstimate * firstDuration / duration).toLong()} firstSegmentSeconds=$firstDuration durationSeconds=$duration videoEstimate=$videoEstimate audioEstimate=$audioEstimate estimateBytes=$estimate formatted=${estimate?.let(::formatFileSize)}")
         return estimate
     }
 
