@@ -242,7 +242,13 @@ object QualityProbe {
                     hasSeparateAudio = hasSeparateAudio,
                     videoBandwidthIsAverage = true,
                 )
-                val estimate = bandwidthEstimate ?: measuredSizeBytes
+                val estimate = when {
+                    averageBandwidth != null && bandwidthEstimate != null -> bandwidthEstimate
+                    measuredSizeBytes != null && bandwidthEstimate != null ->
+                        (measuredSizeBytes.toDouble() * 0.65 + bandwidthEstimate.toDouble() * 0.35).toLong()
+                    bandwidthEstimate != null -> (bandwidthEstimate.toDouble() / 1.3).toLong()
+                    else -> measuredSizeBytes
+                }
                 results += ProbedQuality(
                     width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                     variantUrl, heightToQualityLabel(height), estimate,
