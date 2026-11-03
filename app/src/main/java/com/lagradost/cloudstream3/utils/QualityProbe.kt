@@ -235,13 +235,14 @@ object QualityProbe {
                 val measuredSizeBytes = variantInfo?.let { info ->
                     measureFirstSegmentEstimate(info, headers, audioFirstSegmentUrls, headers)
                 }
-                val estimate = measuredSizeBytes ?: calculateEstimatedSize(
+                val bandwidthEstimate = calculateEstimatedSize(
                     effectiveVideoBandwidth,
                     audioBandwidth,
                     durationSeconds = variantInfo?.durationSeconds,
                     hasSeparateAudio = hasSeparateAudio,
-                    videoBandwidthIsAverage = averageBandwidth != null,
+                    videoBandwidthIsAverage = true,
                 )
+                val estimate = bandwidthEstimate ?: measuredSizeBytes
                 results += ProbedQuality(
                     width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
                     variantUrl, heightToQualityLabel(height), estimate,

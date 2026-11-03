@@ -933,7 +933,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 val videoTotal = videoBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
                 val audioTotal = audioBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
                 val measuredTotalBytes = (videoTotal + audioTotal).toLong().coerceAtLeast(1L)
-                updateItem(downloadId) { current -> current.copy(totalBytes = maxOf(measuredTotalBytes, current.downloadedBytes)) }
+                updateItem(downloadId) { current ->
+                    val best = if (current.totalBytes > 0) current.totalBytes else measuredTotalBytes
+                    current.copy(totalBytes = maxOf(best, current.downloadedBytes))
+                }
                 Log.e("SIZE_FINAL", "measured_at_start videoSamples=${videoSampleBytes.size} audioSamples=${audioSampleBytes.size} videoBytesPerSegment=$videoBytesPerSegment audioBytesPerSegment=$audioBytesPerSegment firstExtinfSeconds=$firstExtinfSeconds durationSeconds=$mediaDurationSeconds videoTotal=$videoTotal audioTotal=$audioTotal measuredTotalBytes=$measuredTotalBytes")
             }
             // Derive the extrapolation scale from the averaged measured bytes so it
