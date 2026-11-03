@@ -12,9 +12,9 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.lagradost.cloudstream3.R
-import com.lagradost.cloudstream3.ui.player.BasicLink
+import com.lagradost.cloudstream3.ui.player.DownloadFileGenerator
+import com.lagradost.cloudstream3.ui.player.ExtractorUri
 import com.lagradost.cloudstream3.ui.player.GeneratorPlayer
-import com.lagradost.cloudstream3.ui.player.LinkGenerator
 import com.lagradost.cloudstream3.ui.result.ResultFragment
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
@@ -88,16 +88,23 @@ class KinoLibraryFragment : Fragment() {
             return
         }
 
-        // Use a non-extracting generator so the file URI is handed to the player
-        // exactly as-is; the original remote URL is intentionally never used here.
-        val linkGenerator = LinkGenerator(
-            listOf(BasicLink(uri.toString(), media.name)),
-            extract = false,
-            id = media.id ?: media.episodeId ?: media.name.hashCode(),
+        // Use DownloadFileGenerator (not LinkGenerator) so generateLinks runs the
+        // sidecar subtitle scan: it reads the .srt/.vtt next to the video file and
+        // hands it to the player via subtitleCallback. LinkGenerator only emits the
+        // file URI and never scans for subtitles, so the .srt the download wrote was
+        // being ignored. Mirrors OfflinePlaybackHelper.playUri.
+        val generator = DownloadFileGenerator(
+            listOf(
+                ExtractorUri(
+                    uri = uri,
+                    name = media.name,
+                    id = media.id ?: media.episodeId ?: media.name.hashCode(),
+                )
+            )
         )
         findNavController().navigate(
             R.id.global_to_navigation_player,
-            GeneratorPlayer.newInstance(linkGenerator, 0)
+            GeneratorPlayer.newInstance(generator, 0)
         )
     }
 

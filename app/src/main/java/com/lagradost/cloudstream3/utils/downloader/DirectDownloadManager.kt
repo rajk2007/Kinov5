@@ -895,11 +895,19 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .find(playlist)?.groupValues?.get(1)?.toDoubleOrNull() ?: 5.0
             val audioFirstBytes = selectedAudio?.let { audioRendition ->
                 runCatching {
+                    // Mirror the audio download phase: merge the video download's
+                    // headers (Referer/User-Agent the CDN requires) with the
+                    // rendition's headers. Using audioRendition.headers alone
+                    // (emptyMap() for renditions from parseHlsAudioRenditions)
+                    // makes the CDN reject the request and audioFirstBytes silently
+                    // becomes 0, dropping the audio share from the start-of-download
+                    // total (25 MB video-only instead of ~34 MB).
+                    val audioHeaders = headers + audioRendition.headers
                     val audioPlaylistUrl = URI(playlistUrl).resolve(audioRendition.uri).toString()
-                    val audioPlaylistText = String(requestHls(audioPlaylistUrl, audioRendition.headers).body, Charsets.UTF_8)
+                    val audioPlaylistText = String(requestHls(audioPlaylistUrl, audioHeaders).body, Charsets.UTF_8)
                     val audioSegment = audioPlaylistText.lineSequence().map(String::trim)
                         .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
-                    audioSegment?.let { requestHls(URI(audioPlaylistUrl).resolve(it).toString(), audioRendition.headers).body }
+                    audioSegment?.let { requestHls(URI(audioPlaylistUrl).resolve(it).toString(), audioHeaders).body }
                 }.getOrNull()
             }
             val audioBytesPerSegment = audioFirstBytes?.size?.toLong()?.takeIf { it > 0L } ?: 0L
