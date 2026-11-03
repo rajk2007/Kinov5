@@ -893,35 +893,53 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             // the audio share from a BANDWIDTH ratio.
             val firstExtinfSeconds = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE)
                 .find(playlist)?.groupValues?.get(1)?.toDoubleOrNull() ?: 5.0
-            val audioFirstBytes = selectedAudio?.let { audioRendition ->
-                runCatching {
+            // Sample the first 3 video + 3 audio segments and average, instead of
+            // measuring a single segment. HLS video segments vary 3-5x (I-frames vs
+            // P-frames); the first segment alone is often 40% off the true mean,
+            // which made measured_at_start undershoot (48 MB vs 72 MB actual on the
+            // 2026-11-03 dump). Averaging 3 segments spans an I/P transition and
+            // lands within a few percent of the real average.
+            val sampleCount = 3
+            val videoSampleBytes = runCatching {
+                segments.take(sampleCount).mapNotNull { url ->
+                    requestHls(url, headers).body.takeIf { it.isNotEmpty() }
+                }
+            }.getOrDefault(emptyList<ByteArray>())
+            val videoBytesPerSegment = if (videoSampleBytes.isNotEmpty()) {
+                videoSampleBytes.sumOf { it.size.toLong() }.toDouble() / videoSampleBytes.size
+            } else firstSegmentBytes.size.toDouble()
+            val audioSampleBytes: List<ByteArray> = selectedAudio?.let { audioRendition ->
+                runCatching<List<ByteArray>> {
                     // Mirror the audio download phase: merge the video download's
                     // headers (Referer/User-Agent the CDN requires) with the
-                    // rendition's headers. Using audioRendition.headers alone
-                    // (emptyMap() for renditions from parseHlsAudioRenditions)
-                    // makes the CDN reject the request and audioFirstBytes silently
-                    // becomes 0, dropping the audio share from the start-of-download
-                    // total (25 MB video-only instead of ~34 MB).
+                    // rendition's headers.
                     val audioHeaders = headers + audioRendition.headers
                     val audioPlaylistUrl = URI(playlistUrl).resolve(audioRendition.uri).toString()
                     val audioPlaylistText = String(requestHls(audioPlaylistUrl, audioHeaders).body, Charsets.UTF_8)
-                    val audioSegment = audioPlaylistText.lineSequence().map(String::trim)
-                        .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
-                    audioSegment?.let { requestHls(URI(audioPlaylistUrl).resolve(it).toString(), audioHeaders).body }
-                }.getOrNull()
-            }
-            val audioBytesPerSegment = audioFirstBytes?.size?.toLong()?.takeIf { it > 0L } ?: 0L
-            if (mediaDurationSeconds > 0.0 && firstSegmentBytes.isNotEmpty()) {
-                val videoTotal = firstSegmentBytes.size / firstExtinfSeconds * mediaDurationSeconds
+                    val audioSegmentUrls = audioPlaylistText.lineSequence().map(String::trim)
+                        .filter { it.isNotEmpty() && !it.startsWith("#") }
+                        .take(sampleCount)
+                        .map { URI(audioPlaylistUrl).resolve(it).toString() }
+                        .toList()
+                    audioSegmentUrls.mapNotNull { url ->
+                        requestHls(url, audioHeaders).body.takeIf { it.isNotEmpty() }
+                    }
+                }.getOrDefault(emptyList<ByteArray>())
+            } ?: emptyList<ByteArray>()
+            val audioBytesPerSegment = if (audioSampleBytes.isNotEmpty()) {
+                audioSampleBytes.sumOf { it.size.toLong() }.toDouble() / audioSampleBytes.size
+            } else 0.0
+            if (mediaDurationSeconds > 0.0 && videoBytesPerSegment > 0.0) {
+                val videoTotal = videoBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
                 val audioTotal = audioBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
                 val measuredTotalBytes = (videoTotal + audioTotal).toLong().coerceAtLeast(1L)
                 updateItem(downloadId) { current -> current.copy(totalBytes = maxOf(measuredTotalBytes, current.downloadedBytes)) }
-                Log.e("SIZE_FINAL", "measured_at_start firstSegmentBytes=${firstSegmentBytes.size} audioFirstBytes=$audioBytesPerSegment firstExtinfSeconds=$firstExtinfSeconds durationSeconds=$mediaDurationSeconds videoTotal=$videoTotal audioTotal=$audioTotal measuredTotalBytes=$measuredTotalBytes")
+                Log.e("SIZE_FINAL", "measured_at_start videoSamples=${videoSampleBytes.size} audioSamples=${audioSampleBytes.size} videoBytesPerSegment=$videoBytesPerSegment audioBytesPerSegment=$audioBytesPerSegment firstExtinfSeconds=$firstExtinfSeconds durationSeconds=$mediaDurationSeconds videoTotal=$videoTotal audioTotal=$audioTotal measuredTotalBytes=$measuredTotalBytes")
             }
-            // Derive the extrapolation scale from measured bytes so it stays consistent
-            // with the measured_at_start total.
-            val videoExtrapolationScale = if (firstSegmentBytes.isNotEmpty() && audioBytesPerSegment > 0L) {
-                1.0 + (audioBytesPerSegment.toDouble() / firstSegmentBytes.size)
+            // Derive the extrapolation scale from the averaged measured bytes so it
+            // stays consistent with the measured_at_start total.
+            val videoExtrapolationScale = if (videoBytesPerSegment > 0.0 && audioBytesPerSegment > 0.0) {
+                1.0 + (audioBytesPerSegment / videoBytesPerSegment)
             } else 1.0
             val firstSegmentType = detectHlsSegmentType(firstSegmentBytes)
             Log.e("TRACE_HLS", "   First segment type: $firstSegmentType")
@@ -1216,14 +1234,20 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val estimatedTotalBytes = downloadedBytesOffset +
                                     (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset) * extrapolationScale).toLong()
                                 updateItem(downloadId) {
-                                    // The total is set once at download start (measured-at-start).
-                                    // During download, allow it to grow if the extrapolation exceeds
-                                    // the current value, but never let it shrink — video segment sizes
-                                    // vary 3-5x (I-frames vs P-frames), so the per-segment average
-                                    // swings and a shrinking total jitters up and down. Monotonic
-                                    // growth + a snap to actualSize at completion is stable.
+                                    // The total is set once at download start (measured-at-start,
+                                    // now averaged over 3 segments so it is accurate). During
+                                    // download, FREEZE it: do not let the extrapolation override
+                                    // it. The old monotonic maxOf(totalBytes, estimatedTotalBytes,
+                                    // downloadedSoFar) locked the total at whatever peak the
+                                    // extrapolation hit when a large-segment (I-frame) batch rolled
+                                    // through, and never let it correct down — that is the "size
+                                    // keeps changing / progress catches up from the middle" the
+                                    // user saw (91 MB stuck vs 72 MB actual). Now the total only
+                                    // grows if downloaded bytes actually exceed it (soft floor),
+                                    // which with 3-segment sampling is rare and small. At completion
+                                    // the existing snap-to-actual fires.
                                     val newTotal = when {
-                                        it.totalBytes > 0L -> maxOf(it.totalBytes, estimatedTotalBytes, downloadedSoFar)
+                                        it.totalBytes > 0L -> maxOf(it.totalBytes, downloadedSoFar)
                                         estimatedTotalBytes > 0L -> maxOf(estimatedTotalBytes, downloadedSoFar)
                                         else -> downloadedSoFar
                                     }

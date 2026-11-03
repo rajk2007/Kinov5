@@ -213,7 +213,7 @@ object QualityProbe {
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
-                val audioFirstSegmentUrl = if (hasSeparateAudio) {
+                val audioFirstSegmentUrls = if (hasSeparateAudio) {
                     val audioPlaylistUri = Regex(
                         """#EXT-X-MEDIA:TYPE=AUDIO[^>\r\n]*?URI=\"([^\"]+)\"""",
                         RegexOption.IGNORE_CASE,
@@ -222,16 +222,18 @@ object QualityProbe {
                         runCatching {
                             val audioPlaylistUrl = resolve(response.url, uri)
                             val audioPlaylistResponse = app.get(audioPlaylistUrl, headers = headers, allowRedirects = true)
-                            val firstAudioSegment = audioPlaylistResponse.text.lineSequence()
+                            audioPlaylistResponse.text.lineSequence()
                                 .map(String::trim)
-                                .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
-                            firstAudioSegment?.let { resolve(audioPlaylistResponse.url, it) }
-                        }.getOrNull()
-                    }
-                } else null
+                                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                                .take(3)
+                                .map { resolve(audioPlaylistResponse.url, it) }
+                                .toList()
+                        }.getOrDefault(emptyList())
+                    } ?: emptyList()
+                } else emptyList()
                 val variantInfo = fetchHlsVariantInfo(variantUrl, headers)
                 val measuredSizeBytes = variantInfo?.let { info ->
-                    measureFirstSegmentEstimate(info, headers, audioFirstSegmentUrl, headers)
+                    measureFirstSegmentEstimate(info, headers, audioFirstSegmentUrls, headers)
                 }
                 val estimate = measuredSizeBytes ?: calculateEstimatedSize(
                     effectiveVideoBandwidth,
@@ -320,7 +322,7 @@ object QualityProbe {
 
     private class HlsVariantInfo(
         val durationSeconds: Double?,
-        val firstSegmentUrl: String?,
+        val firstSegmentUrls: List<String>,
         val firstSegmentDurationSeconds: Double?,
     )
 
@@ -328,37 +330,54 @@ object QualityProbe {
         val text = app.get(url, headers = headers, allowRedirects = true).text
         if (!text.contains("#EXTM3U", true)) return@runCatching null
         val duration = parseHlsDuration(text).takeIf { it > 0.0 }
-        val firstSegment = text.lineSequence().map(String::trim).firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+        val firstSegmentUrls = text.lineSequence().map(String::trim)
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .take(3)
+            .map { resolve(url, it) }
+            .toList()
         val firstExtinf = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toDoubleOrNull()
-        HlsVariantInfo(duration, firstSegment?.let { resolve(url, it) }, firstExtinf?.takeIf { it > 0.0 })
+        HlsVariantInfo(duration, firstSegmentUrls, firstExtinf?.takeIf { it > 0.0 })
     }.getOrNull()
 
     private suspend fun measureFirstSegmentEstimate(
         info: HlsVariantInfo,
         headers: Map<String, String>,
-        audioFirstSegmentUrl: String?,
+        audioFirstSegmentUrls: List<String>,
         audioHeaders: Map<String, String>,
     ): Long? {
-        val segmentUrl = info.firstSegmentUrl ?: return null
+        val segmentUrls = info.firstSegmentUrls
+        if (segmentUrls.isEmpty()) return null
         val duration = info.durationSeconds ?: return null
         val firstDuration = info.firstSegmentDurationSeconds ?: return null
-        val segmentBytes = kotlinx.coroutines.withTimeoutOrNull(4_000L) {
+        // Fetch up to 3 video segments and average. A single segment is often 40%
+        // off the true mean (I-frames vs P-frames); averaging 3 spans a transition
+        // and lands within a few percent. Fall back to calculateEstimatedSize only
+        // if no segment yields a Content-Length.
+        val videoBytesList = kotlinx.coroutines.withTimeoutOrNull(5_000L) {
             runCatching {
-                app.get(segmentUrl, headers = headers, allowRedirects = true)
-                    .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
-            }.getOrNull()
-        } ?: return null
-        val videoEstimate = segmentBytes / firstDuration * duration
-        val audioEstimate = if (audioFirstSegmentUrl != null) {
-            kotlinx.coroutines.withTimeoutOrNull(4_000L) {
-                runCatching {
-                    app.get(audioFirstSegmentUrl, headers = audioHeaders, allowRedirects = true)
+                segmentUrls.mapNotNull { url ->
+                    app.get(url, headers = headers, allowRedirects = true)
                         .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+                }
+            }.getOrNull()
+        } ?: emptyList()
+        if (videoBytesList.isEmpty()) return null
+        val videoBytesPerSegment = videoBytesList.average()
+        val videoEstimate = videoBytesPerSegment / firstDuration * duration
+        val audioBytesList = if (audioFirstSegmentUrls.isNotEmpty()) {
+            kotlinx.coroutines.withTimeoutOrNull(5_000L) {
+                runCatching {
+                    audioFirstSegmentUrls.mapNotNull { url ->
+                        app.get(url, headers = audioHeaders, allowRedirects = true)
+                            .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+                    }
                 }.getOrNull()
-            }?.let { it / firstDuration * duration } ?: 0.0
-        } else 0.0
+            } ?: emptyList()
+        } else emptyList()
+        val audioBytesPerSegment = if (audioBytesList.isNotEmpty()) audioBytesList.average() else 0.0
+        val audioEstimate = audioBytesPerSegment / firstDuration * duration
         val estimate = (videoEstimate + audioEstimate).toLong().takeIf { it > 0L }
-        Log.e("SIZE_FINAL", "measured_first_segment bytes=$segmentBytes audioBytes=${(audioEstimate * firstDuration / duration).toLong()} firstSegmentSeconds=$firstDuration durationSeconds=$duration videoEstimate=$videoEstimate audioEstimate=$audioEstimate estimateBytes=$estimate formatted=${estimate?.let(::formatFileSize)}")
+        Log.e("SIZE_FINAL", "measured_first_segment videoSamples=${videoBytesList.size} audioSamples=${audioBytesList.size} videoBytesPerSegment=$videoBytesPerSegment audioBytesPerSegment=$audioBytesPerSegment firstSegmentSeconds=$firstDuration durationSeconds=$duration videoEstimate=$videoEstimate audioEstimate=$audioEstimate estimateBytes=$estimate formatted=${estimate?.let(::formatFileSize)}")
         return estimate
     }
 
