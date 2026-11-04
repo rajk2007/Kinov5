@@ -32,6 +32,7 @@ import com.lagradost.cloudstream3.utils.getActualLinkType
 import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -165,7 +166,6 @@ fun DownloadOptionsSheet(
     var selectedLanguage by remember(languages) { mutableStateOf(languages.firstOrNull() ?: "") }
     val selectedLinks = groupedLinks[selectedLanguage].orEmpty()
     var probedQualities by remember(selectedLanguage) { mutableStateOf<Map<ExtractorLink, List<ProbedQuality>>>(emptyMap()) }
-    var actualSizes by remember(selectedLanguage) { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var isProbing by remember(selectedLanguage) { mutableStateOf(true) }
 
     LaunchedEffect(selectedLanguage, selectedLinks) {
@@ -180,17 +180,14 @@ fun DownloadOptionsSheet(
                 }
             }.awaitAll().toMap()
             probedQualities = probed
-            // Do not hold the quality chips behind optional HEAD requests.
+            // Render immediately; exact sizes are measured independently below.
             isProbing = false
-            actualSizes = selectedLinks.mapNotNull { link ->
-                async { link.url to getActualFileSize(link) }
-            }.awaitAll().mapNotNull { (url, size) -> size?.let { url to it } }.toMap()
         } finally {
             isProbing = false
         }
     }
 
-    val qualityOptions = remember(probedQualities, selectedLinks, actualSizes) {
+    val qualityOptions = remember(probedQualities, selectedLinks) {
         probedQualities.flatMap { (link, qualities) ->
             val unknownOnly = qualities.size == 1 && qualities.first().height <= 0
             val shouldOfferPresets = isMovie && unknownOnly && getActualLinkType(link) == "HLS"
@@ -199,11 +196,11 @@ fun DownloadOptionsSheet(
                     QualityOption(
                         "${link.url}|preset-$height",
                         if (height == 0) "Auto (best available)" else "${height}p",
-                        0, height, link, link.url, actualSizes[link.url],
+                        0, height, link, link.url, null,
                     )
                 }
             } else {
-                qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, actualSizes[link.url] ?: probed.estimatedSizeBytes) }
+                qualities.map { probed -> QualityOption("${link.url}|${probed.selectionKey}", probed.label, probed.width, probed.height, link, probed.variantUrl, probed.estimatedSizeBytes) }
             }
         }
             .distinctBy { it.id }.sortedByDescending { it.height }.ifEmpty {
@@ -216,7 +213,7 @@ fun DownloadOptionsSheet(
                         link.quality >= 480 -> "480p"
                         else -> "Original Quality"
                     }
-                    QualityOption("${link.url}|fallback", fallbackQuality, 0, 0, link, link.url, actualSizes[link.url])
+                    QualityOption("${link.url}|fallback", fallbackQuality, 0, 0, link, link.url, null)
                 }
             }
     }
@@ -224,6 +221,19 @@ fun DownloadOptionsSheet(
         mutableStateOf(qualityOptions.firstOrNull { it.height !in downloadedHeights }?.id.orEmpty())
     }
     val selectedOption = qualityOptions.firstOrNull { it.id == selectedId }
+    val measuredSizes = remember { mutableStateMapOf<String, Long>() }
+    LaunchedEffect(qualityOptions) {
+        qualityOptions.forEach { option ->
+            launch {
+                val size = when {
+                    getActualLinkType(option.link) == "HLS" && option.height > 0 ->
+                        QualityProbe.measureExactSizeForVariant(option.link, option.variantUrl)
+                    else -> getActualFileSize(option.link)
+                }
+                if (size != null && size > 0L) measuredSizes[option.id] = size
+            }
+        }
+    }
     LaunchedEffect(qualityOptions) {
         android.util.Log.e("QUALITY_UI", "displaying options=${qualityOptions.map { it.label }}")
     }
@@ -252,9 +262,9 @@ fun DownloadOptionsSheet(
                     val selected = option.id == selectedId
                     val downloaded = option.height in downloadedHeights
                     val qualityDisplay = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
-                    val display = option.estimatedSizeBytes?.takeIf { it > 0L }?.let {
+                    val display = (measuredSizes[option.id] ?: option.estimatedSizeBytes)?.takeIf { it > 0L }?.let {
                         "$qualityDisplay · ~${formatFileSize(it)}"
-                    } ?: qualityDisplay
+                    } ?: "$qualityDisplay · measuring size…"
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable(enabled = !downloaded) { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -272,7 +282,7 @@ fun DownloadOptionsSheet(
                 val isHls = getActualLinkType(option.link) == "HLS"
                 val realUrl = if (isHls) cleanDownloadUrl(option.link.url) else cleanDownloadUrl(option.variantUrl)
                 val downloadLink = if (realUrl != option.link.url || option.height > 0 && !isHls) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
-                onDownload(downloadLink, option.height, option.estimatedSizeBytes ?: 0L)
+                onDownload(downloadLink, option.height, measuredSizes[option.id] ?: option.estimatedSizeBytes ?: 0L)
             }
         }, enabled = selectedOption != null && selectedOption.height !in downloadedHeights && !isProbing, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
             Icon(Icons.Default.PlayArrow, null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Download", color = Color.White, fontWeight = FontWeight.Bold)

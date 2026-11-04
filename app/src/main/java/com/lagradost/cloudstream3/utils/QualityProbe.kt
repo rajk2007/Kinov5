@@ -127,6 +127,7 @@ object QualityProbe {
     // KDesa movie manifests can be slow, especially for dubbed links.
     private const val PROBE_TIMEOUT_MS = 20_000L
     private val sessionCache = ConcurrentHashMap<String, List<ProbedQuality>>()
+    private val sizeCache = ConcurrentHashMap<String, Long>()
     private val hlsHeadSemaphore = Semaphore(32)
 
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
@@ -221,43 +222,16 @@ object QualityProbe {
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
                 async {
-                    val audioSegmentUrls = if (hasSeparateAudio) {
-                        val audioPlaylistUri = Regex(
-                            """#EXT-X-MEDIA:TYPE=AUDIO[^>\r\n]*?URI=\"([^\"]+)\"""",
-                            RegexOption.IGNORE_CASE,
-                        ).find(content)?.groupValues?.get(1)
-                        audioPlaylistUri?.let { uri ->
-                            runCatching {
-                                val audioPlaylistUrl = resolve(response.url, uri)
-                                val audioPlaylistResponse = app.get(audioPlaylistUrl, headers = headers, allowRedirects = true)
-                                audioPlaylistResponse.text.lineSequence()
-                                    .map(String::trim)
-                                    .filter { it.isNotEmpty() && !it.startsWith("#") }
-                                    .map { resolve(audioPlaylistResponse.url, it) }
-                                    .toList()
-                            }.getOrDefault(emptyList())
-                        } ?: emptyList()
-                    } else emptyList()
-                    val variantInfo = withTimeoutOrNull(10_000L) { fetchHlsVariantInfo(variantUrl, headers) }
-                    val exactSizeBytes = variantInfo?.let { info ->
-                        measureExactSize(info.segmentUrls, headers, audioSegmentUrls, headers)
-                    }
-                    val bandwidthEstimate = calculateEstimatedSize(
-                        effectiveVideoBandwidth,
+                    val instantEstimate = if (averageBandwidth != null) calculateEstimatedSize(
+                        averageBandwidth,
                         audioBandwidth,
-                        durationSeconds = variantInfo?.durationSeconds,
+                        durationSeconds = null,
                         hasSeparateAudio = hasSeparateAudio,
                         videoBandwidthIsAverage = true,
-                    )
-                    val estimate = when {
-                        averageBandwidth != null && bandwidthEstimate != null -> bandwidthEstimate
-                        exactSizeBytes != null -> exactSizeBytes
-                        bandwidthEstimate != null -> (bandwidthEstimate.toDouble() / 1.3).toLong()
-                        else -> null
-                    }
+                    ) else null
                     ProbedQuality(
                         width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
-                        variantUrl, heightToQualityLabel(height), estimate,
+                        variantUrl, heightToQualityLabel(height), instantEstimate,
                         "hls-${height}-${variantUrl.hashCode()}",
                     )
                 }
@@ -340,6 +314,30 @@ object QualityProbe {
         val firstSegmentDurationSeconds: Double?,
     )
 
+    /** Measures one already-parsed HLS variant without delaying the quality list. */
+    suspend fun measureExactSizeForVariant(link: ExtractorLink, variantUrl: String): Long? = withContext(Dispatchers.IO) {
+        sizeCache[variantUrl]?.let { return@withContext it }
+        val headers = requestHeaders(link)
+        val measured = runCatching {
+            withTimeout(15_000L) {
+                val info = fetchHlsVariantInfo(variantUrl, headers) ?: return@withTimeout null
+                val masterText = app.get(link.url, headers = headers, allowRedirects = true).text
+                val audioUrls = Regex("""#EXT-X-MEDIA:TYPE=AUDIO[^>\r\n]*?URI=\"([^\"]+)\"""", RegexOption.IGNORE_CASE)
+                    .find(masterText)?.groupValues?.get(1)?.let { uri ->
+                        runCatching {
+                            val audioPlaylistUrl = resolve(link.url, uri)
+                            val audioPlaylistResponse = app.get(audioPlaylistUrl, headers = headers, allowRedirects = true)
+                            audioPlaylistResponse.text.lineSequence().map(String::trim)
+                                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                                .map { resolve(audioPlaylistResponse.url, it) }.toList()
+                        }.getOrDefault(emptyList())
+                    } ?: emptyList()
+                measureExactSize(info.segmentUrls, headers, audioUrls, headers)
+            }
+        }.getOrNull()
+        measured?.let { sizeCache[variantUrl] = it }
+        measured
+    }
     private suspend fun fetchHlsVariantInfo(url: String, headers: Map<String, String>): HlsVariantInfo? = runCatching {
         val text = app.get(url, headers = headers, allowRedirects = true).text
         if (!text.contains("#EXTM3U", true)) return@runCatching null
