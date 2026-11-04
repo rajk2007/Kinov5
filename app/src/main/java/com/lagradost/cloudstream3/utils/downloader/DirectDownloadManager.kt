@@ -991,6 +991,17 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 bytes.size.toLong()
             } ?: 0L
             DownloadLog.phase("video-start: segments=${segments.size} url=${playlistUrl.take(240)}")
+            val audioSegmentCount = if (selectedAudio != null) {
+                runCatching {
+                    val rendition = selectedAudio!!
+                    val audioHeaders = headers + rendition.headers
+                    val audioResp = requestHls(rendition.uri, audioHeaders)
+                    String(audioResp.body, Charsets.UTF_8).lineSequence()
+                        .map(String::trim)
+                        .filter { it.isNotEmpty() && !it.startsWith("#") }
+                        .count()
+                }.getOrDefault(0)
+            } else 0
             val totalDownloadedBytes = try {
                 initializationBytes + downloadSegmentsParallel(
                     downloadId,
@@ -1001,6 +1012,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     keepSegments = true,
                     segmentExtension = segmentExtension,
                     extrapolationScale = videoExtrapolationScale,
+                    progressOffset = 0,
+                    progressTotal = segments.size + audioSegmentCount,
                 ).also {
                     if (!currentCoroutineContext().isActive) throw CancellationException()
                     require(segments.indices.all { index ->

@@ -6,8 +6,14 @@ import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.app
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.net.URI
@@ -121,6 +127,7 @@ object QualityProbe {
     // KDesa movie manifests can be slow, especially for dubbed links.
     private const val PROBE_TIMEOUT_MS = 20_000L
     private val sessionCache = ConcurrentHashMap<String, List<ProbedQuality>>()
+    private val hlsHeadSemaphore = Semaphore(32)
 
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
         sessionCache[link.url]?.let {
@@ -198,63 +205,63 @@ object QualityProbe {
                 0L
             }
         val hasSeparateAudio = content.contains("#EXT-X-MEDIA:TYPE=AUDIO", ignoreCase = true)
-        val results = mutableListOf<ProbedQuality>()
-        lines.forEachIndexed { index, line ->
-            if (!line.startsWith("#EXT-X-STREAM-INF:", true)) return@forEachIndexed
-            val resolution = Regex("RESOLUTION=(\\d+)x(\\d+)", RegexOption.IGNORE_CASE).find(line)
-            val (averageBandwidth, peakBandwidth) = parseHlsBandwidth(line)
-            val effectiveVideoBandwidth = averageBandwidth ?: peakBandwidth
-            Log.e("BW_SOURCE", "averageBandwidth: $averageBandwidth")
-            Log.e("BW_SOURCE", "peakBandwidth: $peakBandwidth")
-            Log.e("BW_SOURCE", "effectiveVideoBandwidth: $effectiveVideoBandwidth")
-            Log.e("BW_SOURCE", "audioBandwidth: $audioBandwidth")
-            val next = lines.drop(index + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") }
-            if (resolution != null && next != null) {
+        val results = coroutineScope {
+            lines.mapIndexedNotNull { index, line ->
+                if (!line.startsWith("#EXT-X-STREAM-INF:", true)) return@mapIndexedNotNull null
+                val resolution = Regex("RESOLUTION=(\\d+)x(\\d+)", RegexOption.IGNORE_CASE).find(line)
+                val (averageBandwidth, peakBandwidth) = parseHlsBandwidth(line)
+                val effectiveVideoBandwidth = averageBandwidth ?: peakBandwidth
+                Log.e("BW_SOURCE", "averageBandwidth: $averageBandwidth")
+                Log.e("BW_SOURCE", "peakBandwidth: $peakBandwidth")
+                Log.e("BW_SOURCE", "effectiveVideoBandwidth: $effectiveVideoBandwidth")
+                Log.e("BW_SOURCE", "audioBandwidth: $audioBandwidth")
+                val next = lines.drop(index + 1).firstOrNull { it.isNotBlank() && !it.startsWith("#") }
+                if (resolution == null || next == null) return@mapIndexedNotNull null
                 val width = resolution.groupValues[1].toInt()
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
-                val audioFirstSegmentUrls = if (hasSeparateAudio) {
-                    val audioPlaylistUri = Regex(
-                        """#EXT-X-MEDIA:TYPE=AUDIO[^>\r\n]*?URI=\"([^\"]+)\"""",
-                        RegexOption.IGNORE_CASE,
-                    ).find(content)?.groupValues?.get(1)
-                    audioPlaylistUri?.let { uri ->
-                        runCatching {
-                            val audioPlaylistUrl = resolve(response.url, uri)
-                            val audioPlaylistResponse = app.get(audioPlaylistUrl, headers = headers, allowRedirects = true)
-                            audioPlaylistResponse.text.lineSequence()
-                                .map(String::trim)
-                                .filter { it.isNotEmpty() && !it.startsWith("#") }
-                                .take(3)
-                                .map { resolve(audioPlaylistResponse.url, it) }
-                                .toList()
-                        }.getOrDefault(emptyList())
-                    } ?: emptyList()
-                } else emptyList()
-                val variantInfo = fetchHlsVariantInfo(variantUrl, headers)
-                val measuredSizeBytes = variantInfo?.let { info ->
-                    measureFirstSegmentEstimate(info, headers, audioFirstSegmentUrls, headers)
+                async {
+                    val audioSegmentUrls = if (hasSeparateAudio) {
+                        val audioPlaylistUri = Regex(
+                            """#EXT-X-MEDIA:TYPE=AUDIO[^>\r\n]*?URI=\"([^\"]+)\"""",
+                            RegexOption.IGNORE_CASE,
+                        ).find(content)?.groupValues?.get(1)
+                        audioPlaylistUri?.let { uri ->
+                            runCatching {
+                                val audioPlaylistUrl = resolve(response.url, uri)
+                                val audioPlaylistResponse = app.get(audioPlaylistUrl, headers = headers, allowRedirects = true)
+                                audioPlaylistResponse.text.lineSequence()
+                                    .map(String::trim)
+                                    .filter { it.isNotEmpty() && !it.startsWith("#") }
+                                    .map { resolve(audioPlaylistResponse.url, it) }
+                                    .toList()
+                            }.getOrDefault(emptyList())
+                        } ?: emptyList()
+                    } else emptyList()
+                    val variantInfo = withTimeoutOrNull(10_000L) { fetchHlsVariantInfo(variantUrl, headers) }
+                    val exactSizeBytes = variantInfo?.let { info ->
+                        measureExactSize(info.segmentUrls, headers, audioSegmentUrls, headers)
+                    }
+                    val bandwidthEstimate = calculateEstimatedSize(
+                        effectiveVideoBandwidth,
+                        audioBandwidth,
+                        durationSeconds = variantInfo?.durationSeconds,
+                        hasSeparateAudio = hasSeparateAudio,
+                        videoBandwidthIsAverage = true,
+                    )
+                    val estimate = when {
+                        averageBandwidth != null && bandwidthEstimate != null -> bandwidthEstimate
+                        exactSizeBytes != null -> exactSizeBytes
+                        bandwidthEstimate != null -> (bandwidthEstimate.toDouble() / 1.3).toLong()
+                        else -> null
+                    }
+                    ProbedQuality(
+                        width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
+                        variantUrl, heightToQualityLabel(height), estimate,
+                        "hls-${height}-${variantUrl.hashCode()}",
+                    )
                 }
-                val bandwidthEstimate = calculateEstimatedSize(
-                    effectiveVideoBandwidth,
-                    audioBandwidth,
-                    durationSeconds = variantInfo?.durationSeconds,
-                    hasSeparateAudio = hasSeparateAudio,
-                    videoBandwidthIsAverage = true,
-                )
-                val estimate = when {
-                    averageBandwidth != null && bandwidthEstimate != null -> bandwidthEstimate
-                    measuredSizeBytes != null && bandwidthEstimate != null ->
-                        (measuredSizeBytes.toDouble() * 0.65 + bandwidthEstimate.toDouble() * 0.35).toLong()
-                    bandwidthEstimate != null -> (bandwidthEstimate.toDouble() / 1.3).toLong()
-                    else -> measuredSizeBytes
-                }
-                results += ProbedQuality(
-                    width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
-                    variantUrl, heightToQualityLabel(height), estimate,
-                    "hls-${height}-${variantUrl.hashCode()}",
-                )
-            }
+            }.awaitAll()
         }
         val parsed = results.distinctBy { it.selectionKey }.sortedByDescending { it.height }
         Log.e(TAG, "found variants=${parsed.size} heights=${parsed.map { it.height }}")
@@ -329,7 +336,7 @@ object QualityProbe {
 
     private class HlsVariantInfo(
         val durationSeconds: Double?,
-        val firstSegmentUrls: List<String>,
+        val segmentUrls: List<String>,
         val firstSegmentDurationSeconds: Double?,
     )
 
@@ -337,55 +344,46 @@ object QualityProbe {
         val text = app.get(url, headers = headers, allowRedirects = true).text
         if (!text.contains("#EXTM3U", true)) return@runCatching null
         val duration = parseHlsDuration(text).takeIf { it > 0.0 }
-        val firstSegmentUrls = text.lineSequence().map(String::trim)
+        val segmentUrls = text.lineSequence().map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .take(3)
             .map { resolve(url, it) }
             .toList()
         val firstExtinf = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toDoubleOrNull()
-        HlsVariantInfo(duration, firstSegmentUrls, firstExtinf?.takeIf { it > 0.0 })
+        HlsVariantInfo(duration, segmentUrls, firstExtinf?.takeIf { it > 0.0 })
     }.getOrNull()
 
-    private suspend fun measureFirstSegmentEstimate(
-        info: HlsVariantInfo,
-        headers: Map<String, String>,
-        audioFirstSegmentUrls: List<String>,
+    private suspend fun measureExactSize(
+        videoSegmentUrls: List<String>,
+        videoHeaders: Map<String, String>,
+        audioSegmentUrls: List<String>,
         audioHeaders: Map<String, String>,
     ): Long? {
-        val segmentUrls = info.firstSegmentUrls
-        if (segmentUrls.isEmpty()) return null
-        val duration = info.durationSeconds ?: return null
-        val firstDuration = info.firstSegmentDurationSeconds ?: return null
-        // Fetch up to 3 video segments and average. A single segment is often 40%
-        // off the true mean (I-frames vs P-frames); averaging 3 spans a transition
-        // and lands within a few percent. Fall back to calculateEstimatedSize only
-        // if no segment yields a Content-Length.
-        val videoBytesList = kotlinx.coroutines.withTimeoutOrNull(5_000L) {
-            runCatching {
-                segmentUrls.mapNotNull { url ->
-                    app.get(url, headers = headers, allowRedirects = true)
-                        .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
-                }
-            }.getOrNull()
-        } ?: emptyList()
-        if (videoBytesList.isEmpty()) return null
-        val videoBytesPerSegment = videoBytesList.average()
-        val videoEstimate = videoBytesPerSegment / firstDuration * duration
-        val audioBytesList = if (audioFirstSegmentUrls.isNotEmpty()) {
-            kotlinx.coroutines.withTimeoutOrNull(5_000L) {
-                runCatching {
-                    audioFirstSegmentUrls.mapNotNull { url ->
-                        app.get(url, headers = audioHeaders, allowRedirects = true)
-                            .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+        if (videoSegmentUrls.isEmpty()) return null
+        val videoTotal = sumContentLengths(videoSegmentUrls, videoHeaders) ?: return null
+        val audioTotal = if (audioSegmentUrls.isNotEmpty())
+            sumContentLengths(audioSegmentUrls, audioHeaders) ?: 0L else 0L
+        val total = videoTotal + audioTotal
+        Log.e("SIZE_FINAL", "measureExactSize videoSegs=${videoSegmentUrls.size} audioSegs=${audioSegmentUrls.size} videoTotal=$videoTotal audioTotal=$audioTotal total=$total formatted=${total.let(::formatFileSize)}")
+        return total.takeIf { it > 0L }
+    }
+
+    private suspend fun sumContentLengths(urls: List<String>, headers: Map<String, String>): Long? {
+        val results = withTimeoutOrNull(10_000L) {
+            coroutineScope {
+                urls.map { url ->
+                    async(Dispatchers.IO) {
+                        runCatching {
+                            hlsHeadSemaphore.withPermit {
+                                app.head(url, headers = headers, timeout = 8)
+                                    .headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+                            }
+                        }.getOrNull()
                     }
-                }.getOrNull()
-            } ?: emptyList()
-        } else emptyList()
-        val audioBytesPerSegment = if (audioBytesList.isNotEmpty()) audioBytesList.average() else 0.0
-        val audioEstimate = audioBytesPerSegment / firstDuration * duration
-        val estimate = (videoEstimate + audioEstimate).toLong().takeIf { it > 0L }
-        Log.e("SIZE_FINAL", "measured_first_segment videoSamples=${videoBytesList.size} audioSamples=${audioBytesList.size} videoBytesPerSegment=$videoBytesPerSegment audioBytesPerSegment=$audioBytesPerSegment firstSegmentSeconds=$firstDuration durationSeconds=$duration videoEstimate=$videoEstimate audioEstimate=$audioEstimate estimateBytes=$estimate formatted=${estimate?.let(::formatFileSize)}")
-        return estimate
+                }.awaitAll()
+            }
+        } ?: emptyList()
+        val sum = results.filterNotNull().sum()
+        return sum.takeIf { it > 0L }
     }
 
     private suspend fun probeProgressiveSafe(link: ExtractorLink): List<ProbedQuality> {
