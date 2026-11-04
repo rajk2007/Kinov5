@@ -45,7 +45,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -79,9 +78,11 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import androidx.compose.ui.res.painterResource
 import java.io.File
 import java.io.FileInputStream
 
+import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadItem
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
@@ -579,7 +580,7 @@ private fun DownloadDetailRow(item: DirectDownloadItem, groupPosterUrl: String?,
             Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(Icons.Outlined.Schedule, contentDescription = null, tint = KinoMuted, modifier = Modifier.size(14.dp))
+                Icon(painterResource(R.drawable.hourglass_24), contentDescription = null, tint = KinoMuted, modifier = Modifier.size(14.dp))
                 Text(formatBytes(item.totalBytes), color = KinoMuted, fontSize = 13.sp)
             }
         }
