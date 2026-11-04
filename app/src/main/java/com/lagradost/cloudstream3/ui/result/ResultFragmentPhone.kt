@@ -304,6 +304,24 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             return
         }
         fun renderLinks(links: List<ExtractorLink>) {
+            val downloadedHeights = if (downloadEpisodes.size == 1) {
+                val isMovie = loadedResponse is MovieLoadResponse
+                val season = ep.season ?: 1
+                DirectDownloadManager.activeDownloads.value.values
+                    .filter {
+                        it.parentTitle == loadedResponse.name &&
+                            it.status == com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus.COMPLETED &&
+                            if (isMovie) {
+                                it.season == null && it.episode == null
+                            } else {
+                                it.season == season && it.episode == ep.episode
+                            }
+                    }
+                    .map { it.selectedHeight }
+                    .toSet()
+            } else {
+                emptySet()
+            }
             composeView.setContent {
                 androidx.compose.material3.MaterialTheme {
                     if (links.isEmpty()) {
@@ -317,6 +335,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             title = loadedResponse.name,
                             apiName = apiName,
                             isMovie = loadedResponse is MovieLoadResponse,
+                            downloadedHeights = downloadedHeights,
                             onDownload = { selectedLink, selectedHeight, estimatedSizeBytes ->
                                 dialog.dismiss()
                                 lifecycleScope.launch(Dispatchers.IO) {
@@ -363,6 +382,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 posterUrl = response.posterUrl,
                                                 apiName = apiName,
                                                 selectedHeight = selectedHeight,
+                                                parentTitle = response.name,
+                                                season = if (isMovie) null else season,
+                                                episode = if (isMovie) null else episode.episode,
                                                 estimatedSizeBytes = estimatedSizeBytes,
                                                 dataUrl = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl,
                                             )

@@ -74,6 +74,9 @@ data class DirectDownloadItem(
     val eta: String = "",
     val error: String? = null,
     val selectedHeight: Int = 0,
+    val parentTitle: String? = null,
+    val season: Int? = null,
+    val episode: Int? = null,
     val referer: String = "",
     val headers: Map<String, String> = emptyMap(),
 )
@@ -163,6 +166,9 @@ object DirectDownloadManager {
         posterUrl: String? = null,
         apiName: String = "Unknown",
         selectedHeight: Int = 0,
+        parentTitle: String? = null,
+        season: Int? = null,
+        episode: Int? = null,
         estimatedSizeBytes: Long = 0L,
         dataUrl: String? = null,
         reResolveLink: (suspend () -> ExtractorLink?)? = null,
@@ -234,6 +240,9 @@ object DirectDownloadManager {
             posterUrl = posterUrl,
             apiName = apiName,
             selectedHeight = selectedHeight,
+            parentTitle = parentTitle,
+            season = season,
+            episode = episode,
             totalBytes = estimatedSizeBytes,
             referer = downloadLink.referer,
             headers = downloadLink.headers,
@@ -1874,6 +1883,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 put("speed", item.speed)
                 put("eta", item.eta)
                 put("selectedHeight", item.selectedHeight)
+                put("parentTitle", item.parentTitle ?: JSONObject.NULL)
+                item.season?.let { put("season", it) } ?: put("season", JSONObject.NULL)
+                item.episode?.let { put("episode", it) } ?: put("episode", JSONObject.NULL)
                 put("referer", item.referer)
                 put("headers", JSONObject().apply { item.headers.forEach { (key, value) -> put(key, value) } })
                 put("error", item.error ?: JSONObject.NULL)
@@ -1917,6 +1929,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         eta = json.optString("eta", ""),
                         error = json.optString("error").takeUnless { it.isBlank() || it == "null" },
                         selectedHeight = json.optInt("selectedHeight", 0),
+                        parentTitle = json.optString("parentTitle").takeUnless { it.isBlank() || it == "null" },
+                        season = if (json.isNull("season")) null else json.optInt("season"),
+                        episode = if (json.isNull("episode")) null else json.optInt("episode"),
                         referer = json.optString("referer", ""),
                         headers = json.optJSONObject("headers")?.let { headersJson ->
                             headersJson.keys().asSequence().associateWith { key -> headersJson.optString(key) }

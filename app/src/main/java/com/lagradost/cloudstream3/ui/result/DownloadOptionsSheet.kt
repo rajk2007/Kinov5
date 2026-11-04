@@ -151,6 +151,7 @@ fun DownloadOptionsSheet(
     title: String = "",
     apiName: String = "",
     isMovie: Boolean = false,
+    downloadedHeights: Set<Int> = emptySet(),
     onDownload: (ExtractorLink, Int, Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -219,7 +220,9 @@ fun DownloadOptionsSheet(
                 }
             }
     }
-    var selectedId by remember(selectedLanguage, qualityOptions) { mutableStateOf(qualityOptions.firstOrNull()?.id.orEmpty()) }
+    var selectedId by remember(selectedLanguage, qualityOptions, downloadedHeights) {
+        mutableStateOf(qualityOptions.firstOrNull { it.height !in downloadedHeights }?.id.orEmpty())
+    }
     val selectedOption = qualityOptions.firstOrNull { it.id == selectedId }
     LaunchedEffect(qualityOptions) {
         android.util.Log.e("QUALITY_UI", "displaying options=${qualityOptions.map { it.label }}")
@@ -247,13 +250,15 @@ fun DownloadOptionsSheet(
             ) {
                 items(qualityOptions, key = { it.id }) { option ->
                     val selected = option.id == selectedId
+                    val downloaded = option.height in downloadedHeights
                     val qualityDisplay = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
                     val display = option.estimatedSizeBytes?.takeIf { it > 0L }?.let {
                         "$qualityDisplay · ~${formatFileSize(it)}"
                     } ?: qualityDisplay
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable(enabled = !downloaded) { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            if (downloaded) Text("Downloaded", color = Color(0xFFE50914), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                         Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (selected) Color(0xFFE50914) else Color.Gray, CircleShape).padding(3.dp)) { if (selected) Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFE50914))) }
                     }
@@ -269,7 +274,7 @@ fun DownloadOptionsSheet(
                 val downloadLink = if (realUrl != option.link.url || option.height > 0 && !isHls) ExtractorLink(option.link.source, option.link.name, realUrl, option.link.referer, heightToQualitiesInt(option.height), option.link.headers, option.link.extractorData, option.link.type, option.link.audioTracks) else option.link
                 onDownload(downloadLink, option.height, option.estimatedSizeBytes ?: 0L)
             }
-        }, enabled = selectedOption != null && !isProbing, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
+        }, enabled = selectedOption != null && selectedOption.height !in downloadedHeights && !isProbing, modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))) {
             Icon(Icons.Default.PlayArrow, null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Download", color = Color.White, fontWeight = FontWeight.Bold)
         }
     }

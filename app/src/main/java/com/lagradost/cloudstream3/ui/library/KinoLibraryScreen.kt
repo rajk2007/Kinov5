@@ -38,6 +38,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -105,6 +107,7 @@ fun KinoLibraryScreen(
     var selectedTab by remember { mutableIntStateOf(if (initialTab == "downloaded") 1 else 0) }
     var showRemoveDialog by remember { mutableStateOf(false) }
     var itemToRemove by remember { mutableStateOf<KinoLibraryItem?>(null) }
+    var openGroup by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { viewModel.loadData(context) }
 
@@ -127,6 +130,7 @@ fun KinoLibraryScreen(
                     (it.downloadStatus == null && it.localUri != null)
             }
     }
+    val downloadedGroups = remember(downloaded) { groupDownloads(downloaded) }
     val availableBytes = remember(context) {
         runCatching { StatFs(context.filesDir.path).availableBytes }.getOrDefault(0L)
     }
@@ -202,10 +206,10 @@ fun KinoLibraryScreen(
             if (downloaded.isEmpty()) {
                 item { EmptyMessage("No downloads yet. Your offline library will appear here.") }
             } else {
-                items(groupDownloads(downloaded)) { group ->
+                items(downloadedGroups) { group ->
                     DownloadedCard(
                         group = group,
-                        onPlay = { group.items.firstOrNull()?.let(onMediaClick) },
+                        onPlay = { openGroup = group.title },
                         onDelete = { group.directIds.forEach(DirectDownloadManager::cancelDownload) },
                     )
                 }
@@ -245,6 +249,14 @@ fun KinoLibraryScreen(
                     Text("Cancel")
                 }
             },
+        )
+    }
+
+    downloadedGroups.firstOrNull { it.title == openGroup }?.let { group ->
+        DownloadGroupDetail(
+            group = group,
+            onBack = { openGroup = null },
+            onMediaClick = onMediaClick,
         )
     }
 }
@@ -430,7 +442,7 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit, onDelete: (
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(group.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (group.items.size > 1) "Series • ${group.items.size} Episodes" else downloadInfo(group.items.first()), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
+            Text(downloadGroupSubtitle(group), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
             Spacer(Modifier.height(7.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(Icons.Default.CheckCircle, contentDescription = "Downloaded", tint = KinoRed, modifier = Modifier.size(14.dp))
@@ -455,6 +467,78 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit, onDelete: (
                     group.items.firstOrNull()?.localUri?.let { saveDownloadToGallery(context, it, group.title) }
                 })
             }
+        }
+    }
+}
+
+@Composable
+private fun DownloadGroupDetail(
+    group: DownloadGroup,
+    onBack: () -> Unit,
+    onMediaClick: (KinoLibraryItem) -> Unit,
+) {
+    val sortedDirectItems = remember(group.directItems) {
+        if (group.directItems.any { it.season != null }) {
+            group.directItems.sortedWith(compareBy<DirectDownloadItem> { it.season ?: 0 }.thenBy { it.episode ?: 0 })
+        } else {
+            group.directItems.sortedByDescending { it.selectedHeight }
+        }
+    }
+    Column(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(KinoBackgroundTop, KinoBackgroundBottom)))
+            .windowInsetsPadding(WindowInsets.statusBars),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text(group.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+            items(sortedDirectItems, key = { it.id }) { item ->
+                DownloadDetailRow(
+                    label = if (item.season != null && item.episode != null) {
+                        "S${item.season} · E${item.episode} · ${item.title}"
+                    } else {
+                        downloadQuality(item)
+                    },
+                    size = formatBytes(item.totalBytes),
+                    onPlay = { onMediaClick(item.toLibraryItem()) },
+                    onDelete = { DirectDownloadManager.cancelDownload(item.id) },
+                )
+            }
+            items(if (group.directItems.isEmpty()) group.items else emptyList()) { item ->
+                DownloadDetailRow(
+                    label = item.name,
+                    size = formatBytes(item.totalBytes),
+                    onPlay = { onMediaClick(item) },
+                    onDelete = {},
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadDetailRow(label: String, size: String, onPlay: () -> Unit, onDelete: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp)
+            .clip(RoundedCornerShape(12.dp)).background(KinoSurface)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = Color.White, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(size, color = KinoMuted, fontSize = 12.sp)
+        }
+        IconButton(onClick = onPlay) {
+            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White)
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = KinoRed)
         }
     }
 }
@@ -561,16 +645,28 @@ private fun saveDownloadToGallery(context: Context, path: String, title: String)
     }
 }
 
-private data class DownloadGroup(val title: String, val posterUrl: String?, val items: List<KinoLibraryItem>, val directIds: List<String> = emptyList())
+private data class DownloadGroup(
+    val title: String,
+    val posterUrl: String?,
+    val items: List<KinoLibraryItem>,
+    val directIds: List<String> = emptyList(),
+    val directItems: List<DirectDownloadItem> = emptyList(),
+)
 
 private fun groupDownloads(items: List<Any>): List<DownloadGroup> = items.mapNotNull { item ->
     when (item) {
         is KinoLibraryItem -> DownloadGroup(item.name, item.posterUrl, listOf(item))
-        is DirectDownloadItem -> DownloadGroup(item.title, item.posterUrl, listOf(item.toLibraryItem()), listOf(item.id))
+        is DirectDownloadItem -> DownloadGroup(item.parentTitle ?: item.title, item.posterUrl, listOf(item.toLibraryItem()), listOf(item.id), listOf(item))
         else -> null
     }
 }.groupBy { it.title }.map { (title, groups) ->
-    DownloadGroup(title, groups.first().posterUrl, groups.flatMap { it.items }, groups.flatMap { it.directIds })
+    DownloadGroup(
+        title = title,
+        posterUrl = groups.firstOrNull { it.posterUrl != null }?.posterUrl,
+        items = groups.flatMap { it.items },
+        directIds = groups.flatMap { it.directIds },
+        directItems = groups.flatMap { it.directItems },
+    )
 }
 
 private fun DirectDownloadItem.toLibraryItem() = KinoLibraryItem(name = title, url = url, apiName = apiName, posterUrl = posterUrl, downloadedBytes = downloadedBytes, totalBytes = totalBytes, progress = progress / 100f, localUri = filePath, downloadStatus = status)
@@ -588,6 +684,15 @@ private fun downloadQuality(item: DirectDownloadItem): String {
 private fun downloadInfo(item: KinoLibraryItem): String {
     val availability = if (item.localUri != null) "Offline" else "Downloaded"
     return "${formatBytes(item.totalBytes)} · $availability"
+}
+private fun downloadGroupSubtitle(group: DownloadGroup): String {
+    val totalBytes = group.items.sumOf { it.totalBytes }.coerceAtLeast(0L)
+    return when {
+        group.directItems.size > 1 && group.directItems.any { it.season != null } -> "${group.directItems.size} episodes · ${formatBytes(totalBytes)}"
+        group.directItems.size > 1 -> "${group.directItems.size} qualities · ${formatBytes(totalBytes)}"
+        group.items.size == 1 -> formatBytes(totalBytes)
+        else -> "${group.items.size} items · ${formatBytes(totalBytes)}"
+    }
 }
 private fun downloadStatusText(status: DirectDownloadStatus): String = when (status) {
     DirectDownloadStatus.DOWNLOADING -> "Downloading..."
