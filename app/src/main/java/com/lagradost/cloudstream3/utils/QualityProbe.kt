@@ -121,6 +121,7 @@ fun formatFileSize(bytes: Long): String = when {
     bytes >= 1_000 -> String.format(Locale.US, "%.1f KB", bytes / 1_000.0)
     else -> "$bytes B"
 }
+private fun resolve(base: String, child: String): String = runCatching { URI(base).resolve(child).toString() }.getOrDefault(child)
 
 /** Exact byte total for byte-range addressed HLS media, including an init MAP range. */
 fun parseByteRangeTotal(playlist: String): Long? {
@@ -494,8 +495,6 @@ object QualityProbe {
     private fun fallback(link: ExtractorLink): List<ProbedQuality> = listOf(
         ProbedQuality(0, 0, null, link.url, "Auto (best available)", selectionKey = "fallback-${link.url.hashCode()}"),
     )
-
-    private fun resolve(base: String, child: String): String = runCatching { URI(base).resolve(child).toString() }.getOrDefault(child)
 
     private fun parseIsoDurationSeconds(value: String?): Double? {
         if (value.isNullOrBlank()) return null
