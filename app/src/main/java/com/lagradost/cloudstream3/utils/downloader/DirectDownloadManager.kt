@@ -902,7 +902,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             // The sheet normally primes this exact variant key. If it did not, do one
             // bounded, polite sampler pass; never sum every segment here.
             val cachedTotal = QualityProbe.getCachedSize(playlistUrl)
-                ?: withTimeoutOrNull(1_500L) { QualityProbe.sampleVariantSize(link, playlistUrl) }
+                ?: withTimeoutOrNull(4_000L) { QualityProbe.sampleVariantSize(link, playlistUrl) }
             cachedTotal?.takeIf { it > 0L }?.let { total ->
                 updateItem(downloadId) { current ->
                     if (current.totalBytes == 0L) current.copy(totalBytes = total) else current
@@ -1217,7 +1217,14 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 updateItem(downloadId) {
                                     // The total is initialized once before segments begin and
                                     // remains frozen; completion is the only later authority.
-                                    val newTotal = it.totalBytes
+                                    val newTotal = when {
+                                        it.totalBytes > 0L -> it.totalBytes
+                                        finished >= 3 -> {
+                                            val avgBytesPerSegment = downloadedSoFar / finished
+                                            (avgBytesPerSegment * progressTotal).toLong().coerceAtLeast(1L)
+                                        }
+                                        else -> 0L
+                                    }
                                     Log.e("SIZE", "progress downloadId=$downloadId downloaded=$downloadedSoFar totalBytes=$newTotal")
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,

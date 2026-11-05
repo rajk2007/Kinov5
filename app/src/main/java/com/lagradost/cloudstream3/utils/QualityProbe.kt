@@ -146,6 +146,7 @@ object QualityProbe {
     private const val PROBE_TIMEOUT_MS = 20_000L
     private val sessionCache = ConcurrentHashMap<String, List<ProbedQuality>>()
     private val sizeCache = ConcurrentHashMap<String, Long>()
+    private val playlistTextCache = ConcurrentHashMap<String, String>()
     private val hlsHeadSemaphore = Semaphore(32)
 
     suspend fun probeVideoQualities(link: ExtractorLink): List<ProbedQuality> = withContext(Dispatchers.IO) {
@@ -206,6 +207,8 @@ object QualityProbe {
             return probeProgressiveSafe(link)
         }
         val content = response.text
+        playlistTextCache[link.url] = content
+        playlistTextCache[response.url] = content
         Log.e(TAG, "content first200=${content.take(200)}")
 
         if (content.contains("<MPD", true) || content.contains("<?xml", true) && content.contains("MPD", true)) {
@@ -227,7 +230,12 @@ object QualityProbe {
         val results = coroutineScope {
             val audioPlaylistDeferred = if (hasSeparateAudio) async {
                 parseHlsAudioRenditionUris(content, response.url).firstOrNull()?.let { audioUrl ->
-                    runCatching { app.get(audioUrl, headers = headers, allowRedirects = true).text }.getOrNull()
+                    playlistTextCache[audioUrl] ?: runCatching {
+                        app.get(audioUrl, headers = headers, allowRedirects = true).also { audioResponse ->
+                            playlistTextCache[audioUrl] = audioResponse.text
+                            playlistTextCache[audioResponse.url] = audioResponse.text
+                        }.text
+                    }.getOrNull()
                 }
             } else null
             lines.mapIndexedNotNull { index, line ->
@@ -241,15 +249,23 @@ object QualityProbe {
                 val height = resolution.groupValues[2].toInt()
                 val variantUrl = resolve(response.url, next)
                 async {
-                    val variantText = runCatching { app.get(variantUrl, headers = headers, allowRedirects = true).text }.getOrNull().orEmpty()
+                    val variantText = playlistTextCache[variantUrl] ?: runCatching {
+                        app.get(variantUrl, headers = headers, allowRedirects = true).also { variantResponse ->
+                            playlistTextCache[variantUrl] = variantResponse.text
+                            playlistTextCache[variantResponse.url] = variantResponse.text
+                        }.text
+                    }.getOrNull().orEmpty()
                     val audioText = audioPlaylistDeferred?.await()
                     val byteRangeEstimate = parseByteRangeTotal(variantText)?.let { video ->
                         video + if (hasSeparateAudio) parseByteRangeTotal(audioText.orEmpty()) ?: 0L else 0L
                     }?.takeIf { it > 0L }
                     val duration = parseHlsDuration(variantText)
-                    val instantEstimate = byteRangeEstimate ?: if (averageBandwidth != null && duration > 0.0) {
+                    val bandwidthEstimate = if (averageBandwidth != null && duration > 0.0) {
                         calculateEstimatedSize(averageBandwidth, audioBandwidth, duration, hasSeparateAudio, videoBandwidthIsAverage = true)
                     } else null
+                    val instantEstimate = byteRangeEstimate
+                        ?: bandwidthEstimate
+                        ?: sampleFromText(link, variantUrl, variantText, audioText, headers)
                     instantEstimate?.let { sizeCache[variantUrl] = it }
                     ProbedQuality(
                         width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
@@ -343,34 +359,62 @@ object QualityProbe {
         sizeCache[variantUrl]?.let { return@withContext it }
         val headers = requestHeaders(link)
         val result = runCatching {
-            withTimeout(1_500L) {
-                val variant = app.get(variantUrl, headers = headers, allowRedirects = true)
-                val videoText = variant.text
-                val videoSegments = videoSegmentEntries(videoText, variant.url)
-                if (videoSegments.size < 3) return@withTimeout null
-                val indices = listOf(0, videoSegments.size / 4, videoSegments.size / 2, videoSegments.size * 3 / 4, videoSegments.lastIndex).distinct().take(6)
-                val sampled = coroutineScope { indices.map { i -> async { headOrRange(videoSegments[i].second, headers) } }.awaitAll().filter { it > 0L } }
-                if (sampled.size < 3) return@withTimeout null
-                val videoTotal = if (durationsVary(videoSegments.map { it.first })) median(sampled) * videoSegments.size else {
-                    val bytesPerSecond = sampled.mapIndexed { n, bytes -> bytes.toDouble() / videoSegments[indices[n]].first }.sorted().let { it[it.size / 2] }
-                    (bytesPerSecond * videoSegments.sumOf { it.first }).toLong()
-                }
-                val master = app.get(link.url, headers = headers, allowRedirects = true).text
-                val audioUrl = parseHlsAudioRenditionUris(master, link.url).firstOrNull()
-                val audioTotal = audioUrl?.let { audioPlaylist ->
-                    val audioResponse = app.get(audioPlaylist, headers = headers, allowRedirects = true)
-                    val audioSegments = videoSegmentEntries(audioResponse.text, audioResponse.url)
-                    if (audioSegments.size < 3) 0L else {
-                        val audioIndices = listOf(0, audioSegments.size / 2, audioSegments.lastIndex).distinct()
-                        val audioSampled = coroutineScope { audioIndices.map { i -> async { headOrRange(audioSegments[i].second, headers) } }.awaitAll().filter { it > 0L } }
-                        if (audioSampled.size < 3) 0L else median(audioSampled) * audioSegments.size
+            withTimeout(4_000L) {
+                val variantResponse = if (playlistTextCache[variantUrl] == null) {
+                    app.get(variantUrl, headers = headers, allowRedirects = true).also { response ->
+                        playlistTextCache[variantUrl] = response.text
+                        playlistTextCache[response.url] = response.text
                     }
-                } ?: 0L
-                (videoTotal + audioTotal).takeIf { it > 0L }
+                } else null
+                val videoText = playlistTextCache[variantUrl] ?: variantResponse?.text.orEmpty()
+                val masterText = playlistTextCache[link.url] ?: run {
+                    app.get(link.url, headers = headers, allowRedirects = true).also { response ->
+                        playlistTextCache[link.url] = response.text
+                        playlistTextCache[response.url] = response.text
+                    }.text
+                }
+                val audioUrl = parseHlsAudioRenditionUris(masterText, link.url).firstOrNull()
+                val audioText = audioUrl?.let { url -> playlistTextCache[url] ?: run {
+                    app.get(url, headers = headers, allowRedirects = true).also { response ->
+                        playlistTextCache[url] = response.text
+                        playlistTextCache[response.url] = response.text
+                    }.text
+                } }
+                sampleFromText(link, variantUrl, videoText, audioText, headers)
             }
         }.getOrNull()
-        result?.let { sizeCache[variantUrl] = it }
         result
+    }
+
+    private suspend fun sampleFromText(
+        link: ExtractorLink,
+        variantUrl: String,
+        variantText: String,
+        audioText: String?,
+        headers: Map<String, String>,
+    ): Long? {
+        sizeCache[variantUrl]?.let { return it }
+        val videoSegments = videoSegmentEntries(variantText, variantUrl)
+        if (videoSegments.size < 3) return null
+        suspend fun sample(entries: List<Pair<Double, String>>, count: Int): Long? {
+            if (entries.size < 3) return null
+            val indices = if (count == 3) {
+                listOf(0, entries.size / 2, entries.lastIndex)
+            } else {
+                listOf(0, entries.size / 4, entries.size / 2, entries.size * 3 / 4, entries.lastIndex).distinct().take(6)
+            }
+            val sampled = coroutineScope {
+                indices.map { index -> async { index to headOrRange(entries[index].second, headers) } }.awaitAll()
+            }.filter { it.second > 0L }
+            if (sampled.size < 3) return null
+            return if (durationsVary(entries.map { it.first })) {
+                (sampled.map { (index, bytes) -> bytes.toDouble() / entries[index].first }.sorted().let { it[it.size / 2] } * entries.sumOf { it.first }).toLong()
+            } else median(sampled.map { it.second }) * entries.size
+        }
+        val videoTotal = sample(videoSegments, 5) ?: return null
+        val audioBaseUrl = parseHlsAudioRenditionUris(playlistTextCache[link.url].orEmpty(), link.url).firstOrNull() ?: link.url
+        val audioTotal = audioText?.let { sample(videoSegmentEntries(it, audioBaseUrl), 3) } ?: 0L
+        return (videoTotal + audioTotal).takeIf { it > 0L }?.also { sizeCache[variantUrl] = it }
     }
 
     private fun videoSegmentEntries(text: String, baseUrl: String): List<Pair<Double, String>> {

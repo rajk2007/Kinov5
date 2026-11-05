@@ -493,7 +493,6 @@ private fun DownloadGroupDetail(
     val seasons = sortedDirectItems.mapNotNull { it.season }.distinct().sorted()
     val firstSeason = seasons.firstOrNull() ?: 1
     var selectedSeason by remember(group) { mutableStateOf(firstSeason) }
-    var selectedDetailTab by remember { mutableIntStateOf(0) }
     var seasonMenuExpanded by remember { mutableStateOf(false) }
     val filteredItems = if (isSeries && seasons.size > 1) {
         sortedDirectItems.filter { it.season == selectedSeason }
@@ -514,64 +513,47 @@ private fun DownloadGroupDetail(
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .35f), Color.Transparent))))
             IconButton(
                 onClick = onBack,
-                modifier = Modifier.padding(top = 8.dp, start = 12.dp).size(40.dp).clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = .45f)),
+                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars).padding(top = 8.dp, start = 12.dp).size(40.dp).clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = .45f)),
             ) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White) }
             Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = 16.dp)) {
                 Text(group.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(metadata, color = Color(0xFFB0B0B0), fontSize = 14.sp)
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            DetailTab(if (isSeries) "Episodes" else "Qualities", selectedDetailTab == 0, Modifier.weight(1f)) { selectedDetailTab = 0 }
-            DetailTab("About", selectedDetailTab == 1, Modifier.weight(1f)) { selectedDetailTab = 1 }
-        }
-        if (selectedDetailTab == 0) {
-            if (isSeries && seasons.size > 1) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box {
-                        Row(Modifier.clickable { seasonMenuExpanded = true }, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Season $selectedSeason", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Select season", tint = Color.White)
-                        }
-                        DropdownMenu(expanded = seasonMenuExpanded, onDismissRequest = { seasonMenuExpanded = false }) {
-                            seasons.forEach { season ->
-                                DropdownMenuItem(text = { Text("Season $season") }, onClick = { selectedSeason = season; seasonMenuExpanded = false })
-                            }
+        if (isSeries && seasons.size > 1) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    Row(Modifier.clickable { seasonMenuExpanded = true }, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Season $selectedSeason", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Select season", tint = Color.White)
+                    }
+                    DropdownMenu(expanded = seasonMenuExpanded, onDismissRequest = { seasonMenuExpanded = false }) {
+                        seasons.forEach { season ->
+                            DropdownMenuItem(text = { Text("Season $season") }, onClick = { selectedSeason = season; seasonMenuExpanded = false })
                         }
                     }
-                    Spacer(Modifier.weight(1f))
-                    Text("${filteredItems.size} Episodes", color = KinoMuted, fontSize = 14.sp)
                 }
+                Spacer(Modifier.weight(1f))
+                Text("${filteredItems.size} Episodes", color = KinoMuted, fontSize = 14.sp)
             }
-            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(filteredItems, key = { it.id }) { item ->
-                    DownloadDetailRow(
-                        item = item,
-                        groupPosterUrl = group.posterUrl,
-                        onPlay = { onMediaClick(item.toLibraryItem()) },
-                        onDelete = { DirectDownloadManager.cancelDownload(item.id) },
-                        onSaveToGallery = { item.filePath?.let { saveDownloadToGallery(context, it, item.title) } },
-                        onSend = { item.filePath?.let { sendDownload(context, it, item.title) } },
-                    )
-                }
-                if (group.directItems.isEmpty()) {
-                    items(group.items, key = { "legacy-${it.id}" }) { item ->
-                        LegacyDownloadDetailRow(item, onPlay = { onMediaClick(item) })
-                    }
-                }
-            }
-        } else {
-            DownloadGroupAbout(group = group, isSeries = isSeries, totalBytes = totalBytes, itemCount = itemCount)
         }
-    }
-}
-
-@Composable
-private fun DetailTab(text: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.clickable(onClick = onClick).padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text, color = if (selected) Color.White else KinoMuted, fontSize = 16.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-        Spacer(Modifier.height(8.dp))
-        Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(if (selected) KinoRed else Color.Transparent))
+        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(filteredItems, key = { it.id }) { item ->
+                DownloadDetailRow(
+                    item = item,
+                    groupPosterUrl = group.posterUrl,
+                    onPlay = { onMediaClick(item.toLibraryItem()) },
+                    onDelete = { DirectDownloadManager.cancelDownload(item.id) },
+                    onSaveToGallery = { item.filePath?.let { saveDownloadToGallery(context, it, item.title) } },
+                    onSend = { item.filePath?.let { sendDownload(context, it, item.title) } },
+                )
+            }
+            if (group.directItems.isEmpty()) {
+                items(group.items, key = { "legacy-${it.id}" }) { item ->
+                    LegacyDownloadDetailRow(item, onPlay = { onMediaClick(item) })
+                }
+            }
+        }
     }
 }
 
@@ -589,19 +571,16 @@ private fun DownloadDetailRow(
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp)).background(KinoSurface).border(1.dp, Color.White.copy(alpha = .08f), RoundedCornerShape(16.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(4.dp).height(72.dp).clip(RoundedCornerShape(10.dp)).background(KinoRed))
         Spacer(Modifier.width(8.dp))
-        AsyncImage(model = item.posterUrl ?: groupPosterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(84.dp, 72.dp).clip(RoundedCornerShape(10.dp)))
+        AsyncImage(model = item.posterUrl ?: groupPosterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(84.dp, 72.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onPlay))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(episodeLabel, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(item.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(item.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable(onClick = onPlay))
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(painterResource(R.drawable.hourglass_24), contentDescription = null, tint = KinoMuted, modifier = Modifier.size(14.dp))
                 Text(formatBytes(item.totalBytes), color = KinoMuted, fontSize = 13.sp)
             }
-        }
-        IconButton(onClick = onPlay, modifier = Modifier.size(48.dp).border(2.dp, KinoRed, androidx.compose.foundation.shape.CircleShape)) {
-            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(26.dp))
         }
         Box {
             IconButton(onClick = { showMenu = true }, modifier = Modifier.size(30.dp)) {
@@ -625,29 +604,6 @@ private fun LegacyDownloadDetailRow(item: KinoLibraryItem, onPlay: () -> Unit) {
     }
 }
 
-@Composable
-private fun DownloadGroupAbout(group: DownloadGroup, isSeries: Boolean, totalBytes: Long, itemCount: Int) {
-    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(model = group.posterUrl ?: "", contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.size(70.dp, 92.dp).clip(RoundedCornerShape(10.dp)))
-            Spacer(Modifier.width(14.dp))
-            Text(group.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.height(6.dp))
-        AboutRow("Source", group.directItems.firstOrNull()?.apiName ?: group.items.firstOrNull()?.apiName.orEmpty())
-        AboutRow("Type", if (isSeries) "Series" else "Movie")
-        AboutRow("Total size", formatBytes(totalBytes))
-        AboutRow(if (isSeries) "Episodes" else "Qualities", itemCount.toString())
-    }
-}
-
-@Composable
-private fun AboutRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("$label:", color = KinoMuted, fontSize = 14.sp)
-        Text(value, color = KinoMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
 
 @Composable
 private fun DownloadCardShell(onClick: (() -> Unit)? = null, content: @Composable RowScope.() -> Unit) {
