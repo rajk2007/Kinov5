@@ -28,6 +28,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.parseHlsAudioBandwidth
 import com.lagradost.cloudstream3.utils.parseHlsDuration
+import com.lagradost.cloudstream3.utils.QualityProbe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -897,62 +899,18 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             // URL suffixes are unreliable on signed Kdesa URLs. Probe the first real segment so
             // that a TS stream cannot accidentally be written and advertised as fMP4 (or vice versa).
             val firstSegmentBytes = requestHls(segments.first(), headers).body
-            // Measure the real first segment. For separate-audio HLS, also fetch and
-            // measure the first AUDIO segment and add its real bytes, instead of guessing
-            // the audio share from a BANDWIDTH ratio.
-            val firstExtinfSeconds = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE)
-                .find(playlist)?.groupValues?.get(1)?.toDoubleOrNull() ?: 5.0
-            // Sample the first 3 video + 3 audio segments and average, instead of
-            // measuring a single segment. HLS video segments vary 3-5x (I-frames vs
-            // P-frames); the first segment alone is often 40% off the true mean,
-            // which made measured_at_start undershoot (48 MB vs 72 MB actual on the
-            // 2026-11-03 dump). Averaging 3 segments spans an I/P transition and
-            // lands within a few percent of the real average.
-            val sampleCount = 3
-            val videoSampleBytes = runCatching {
-                segments.take(sampleCount).mapNotNull { url ->
-                    requestHls(url, headers).body.takeIf { it.isNotEmpty() }
-                }
-            }.getOrDefault(emptyList<ByteArray>())
-            val videoBytesPerSegment = if (videoSampleBytes.isNotEmpty()) {
-                videoSampleBytes.sumOf { it.size.toLong() }.toDouble() / videoSampleBytes.size
-            } else firstSegmentBytes.size.toDouble()
-            val audioSampleBytes: List<ByteArray> = selectedAudio?.let { audioRendition ->
-                runCatching<List<ByteArray>> {
-                    // Mirror the audio download phase: merge the video download's
-                    // headers (Referer/User-Agent the CDN requires) with the
-                    // rendition's headers.
-                    val audioHeaders = headers + audioRendition.headers
-                    val audioPlaylistUrl = URI(playlistUrl).resolve(audioRendition.uri).toString()
-                    val audioPlaylistText = String(requestHls(audioPlaylistUrl, audioHeaders).body, Charsets.UTF_8)
-                    val audioSegmentUrls = audioPlaylistText.lineSequence().map(String::trim)
-                        .filter { it.isNotEmpty() && !it.startsWith("#") }
-                        .take(sampleCount)
-                        .map { URI(audioPlaylistUrl).resolve(it).toString() }
-                        .toList()
-                    audioSegmentUrls.mapNotNull { url ->
-                        requestHls(url, audioHeaders).body.takeIf { it.isNotEmpty() }
-                    }
-                }.getOrDefault(emptyList<ByteArray>())
-            } ?: emptyList<ByteArray>()
-            val audioBytesPerSegment = if (audioSampleBytes.isNotEmpty()) {
-                audioSampleBytes.sumOf { it.size.toLong() }.toDouble() / audioSampleBytes.size
-            } else 0.0
-            if (mediaDurationSeconds > 0.0 && videoBytesPerSegment > 0.0) {
-                val videoTotal = videoBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
-                val audioTotal = audioBytesPerSegment / firstExtinfSeconds * mediaDurationSeconds
-                val measuredTotalBytes = (videoTotal + audioTotal).toLong().coerceAtLeast(1L)
+            // The sheet normally primes this exact variant key. If it did not, do one
+            // bounded, polite sampler pass; never sum every segment here.
+            val cachedTotal = QualityProbe.getCachedSize(playlistUrl)
+                ?: withTimeoutOrNull(1_500L) { QualityProbe.sampleVariantSize(link, playlistUrl) }
+            cachedTotal?.takeIf { it > 0L }?.let { total ->
                 updateItem(downloadId) { current ->
-                    val best = if (current.totalBytes > 0) current.totalBytes else measuredTotalBytes
-                    current.copy(totalBytes = maxOf(best, current.downloadedBytes))
+                    if (current.totalBytes == 0L) current.copy(totalBytes = total) else current
                 }
-                Log.e("SIZE_FINAL", "measured_at_start videoSamples=${videoSampleBytes.size} audioSamples=${audioSampleBytes.size} videoBytesPerSegment=$videoBytesPerSegment audioBytesPerSegment=$audioBytesPerSegment firstExtinfSeconds=$firstExtinfSeconds durationSeconds=$mediaDurationSeconds videoTotal=$videoTotal audioTotal=$audioTotal measuredTotalBytes=$measuredTotalBytes")
+                Log.e("SIZE_FINAL", "hls_total_at_start=$cachedTotal variant=$playlistUrl")
             }
-            // Derive the extrapolation scale from the averaged measured bytes so it
-            // stays consistent with the measured_at_start total.
-            val videoExtrapolationScale = if (videoBytesPerSegment > 0.0 && audioBytesPerSegment > 0.0) {
-                1.0 + (audioBytesPerSegment / videoBytesPerSegment)
-            } else 1.0
+            // The total is supplied by the probe/sampler and is frozen during download.
+            val videoExtrapolationScale = 1.0
             val firstSegmentType = detectHlsSegmentType(firstSegmentBytes)
             Log.e("TRACE_HLS", "   First segment type: $firstSegmentType")
             Log.e("HLS_PHASE", "first_segment_type=$firstSegmentType")
@@ -1256,26 +1214,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val elapsedSeconds = (now - startedAt).coerceAtLeast(1L) / 1_000.0
                                 val speedBps = downloaded / elapsedSeconds
                                 val downloadedSoFar = downloadedBytesOffset + downloaded
-                                val estimatedTotalBytes = downloadedBytesOffset +
-                                    (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset) * extrapolationScale).toLong()
                                 updateItem(downloadId) {
-                                    // The total is set once at download start (measured-at-start,
-                                    // now averaged over 3 segments so it is accurate). During
-                                    // download, FREEZE it: do not let the extrapolation override
-                                    // it. The old monotonic maxOf(totalBytes, estimatedTotalBytes,
-                                    // downloadedSoFar) locked the total at whatever peak the
-                                    // extrapolation hit when a large-segment (I-frame) batch rolled
-                                    // through, and never let it correct down — that is the "size
-                                    // keeps changing / progress catches up from the middle" the
-                                    // user saw (91 MB stuck vs 72 MB actual). Now the total only
-                                    // grows if downloaded bytes actually exceed it (soft floor),
-                                    // which with 3-segment sampling is rare and small. At completion
-                                    // the existing snap-to-actual fires.
-                                    val newTotal = when {
-                                        it.totalBytes > 0L -> maxOf(it.totalBytes, downloadedSoFar)
-                                        estimatedTotalBytes > 0L -> maxOf(estimatedTotalBytes, downloadedSoFar)
-                                        else -> downloadedSoFar
-                                    }
+                                    // The total is initialized once before segments begin and
+                                    // remains frozen; completion is the only later authority.
+                                    val newTotal = it.totalBytes
                                     Log.e("SIZE", "progress downloadId=$downloadId downloaded=$downloadedSoFar totalBytes=$newTotal")
                                     it.copy(
                                         status = DirectDownloadStatus.DOWNLOADING,
@@ -1320,7 +1262,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             it.copy(
                 progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                 downloadedBytes = downloadedBytesOffset + totalBytes.get(),
-                totalBytes = it.totalBytes.coerceAtLeast(downloadedBytesOffset + totalBytes.get()),
+                totalBytes = it.totalBytes,
             )
         }
         // Keep the segment directory for local HLS playback; other callers clean up

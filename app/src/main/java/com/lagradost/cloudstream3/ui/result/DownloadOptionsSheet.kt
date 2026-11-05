@@ -227,7 +227,7 @@ fun DownloadOptionsSheet(
             launch {
                 val size = when {
                     getActualLinkType(option.link) == "HLS" && option.height > 0 ->
-                        QualityProbe.measureExactSizeForVariant(option.link, option.variantUrl)
+                        QualityProbe.sampleVariantSize(option.link, option.variantUrl)
                     else -> getActualFileSize(option.link)
                 }
                 if (size != null && size > 0L) measuredSizes[option.id] = size
@@ -263,7 +263,7 @@ fun DownloadOptionsSheet(
                     val downloaded = option.height in downloadedHeights
                     val qualityDisplay = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
                     val display = (measuredSizes[option.id] ?: option.estimatedSizeBytes)?.takeIf { it > 0L }?.let {
-                        "$qualityDisplay · ~${formatFileSize(it)}"
+                        "$qualityDisplay · ${formatFileSize(it)}"
                     } ?: "$qualityDisplay · measuring size…"
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable(enabled = !downloaded) { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {

@@ -488,6 +488,7 @@ private fun DownloadGroupDetail(
             group.directItems.sortedByDescending { it.selectedHeight }
         }
     }
+    val context = LocalContext.current
     val isSeries = sortedDirectItems.any { it.season != null }
     val seasons = sortedDirectItems.mapNotNull { it.season }.distinct().sorted()
     val firstSeason = seasons.firstOrNull() ?: 1
@@ -544,7 +545,14 @@ private fun DownloadGroupDetail(
             }
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(filteredItems, key = { it.id }) { item ->
-                    DownloadDetailRow(item = item, groupPosterUrl = group.posterUrl, onPlay = { onMediaClick(item.toLibraryItem()) }, onDelete = { DirectDownloadManager.cancelDownload(item.id) })
+                    DownloadDetailRow(
+                        item = item,
+                        groupPosterUrl = group.posterUrl,
+                        onPlay = { onMediaClick(item.toLibraryItem()) },
+                        onDelete = { DirectDownloadManager.cancelDownload(item.id) },
+                        onSaveToGallery = { item.filePath?.let { saveDownloadToGallery(context, it, item.title) } },
+                        onSend = { item.filePath?.let { sendDownload(context, it, item.title) } },
+                    )
                 }
                 if (group.directItems.isEmpty()) {
                     items(group.items, key = { "legacy-${it.id}" }) { item ->
@@ -568,16 +576,24 @@ private fun DetailTab(text: String, selected: Boolean, modifier: Modifier, onCli
 }
 
 @Composable
-private fun DownloadDetailRow(item: DirectDownloadItem, groupPosterUrl: String?, onPlay: () -> Unit, onDelete: () -> Unit) {
+private fun DownloadDetailRow(
+    item: DirectDownloadItem,
+    groupPosterUrl: String?,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit,
+    onSaveToGallery: () -> Unit,
+    onSend: () -> Unit,
+) {
+    var showMenu by remember { mutableStateOf(false) }
     val episodeLabel = if (item.season != null && item.episode != null) "S${item.season} · E${item.episode}" else downloadQuality(item).substringBefore(" ·")
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp)).background(KinoSurface).border(1.dp, Color.White.copy(alpha = .08f), RoundedCornerShape(16.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(4.dp).height(96.dp).clip(RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)).background(KinoRed))
+        Box(Modifier.width(4.dp).height(72.dp).clip(RoundedCornerShape(10.dp)).background(KinoRed))
         Spacer(Modifier.width(8.dp))
-        AsyncImage(model = item.posterUrl ?: groupPosterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(110.dp, 96.dp).clip(RoundedCornerShape(12.dp)))
+        AsyncImage(model = item.posterUrl ?: groupPosterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(84.dp, 72.dp).clip(RoundedCornerShape(10.dp)))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(episodeLabel, color = KinoMuted, fontSize = 13.sp, maxLines = 1)
-            Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(episodeLabel, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(item.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(painterResource(R.drawable.hourglass_24), contentDescription = null, tint = KinoMuted, modifier = Modifier.size(14.dp))
@@ -587,10 +603,18 @@ private fun DownloadDetailRow(item: DirectDownloadItem, groupPosterUrl: String?,
         IconButton(onClick = onPlay, modifier = Modifier.size(48.dp).border(2.dp, KinoRed, androidx.compose.foundation.shape.CircleShape)) {
             Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(26.dp))
         }
-        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) { Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = Color.White.copy(alpha = .7f), modifier = Modifier.size(20.dp)) }
+        Box {
+            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White.copy(alpha = .7f), modifier = Modifier.size(20.dp))
+            }
+            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete() })
+                DropdownMenuItem(text = { Text("Save to Gallery") }, onClick = { showMenu = false; onSaveToGallery() })
+                DropdownMenuItem(text = { Text("Send to other device") }, onClick = { showMenu = false; onSend() })
+            }
+        }
     }
 }
-
 @Composable
 private fun LegacyDownloadDetailRow(item: KinoLibraryItem, onPlay: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp)).background(KinoSurface).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
