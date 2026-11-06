@@ -190,7 +190,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         val cacheKey = downloadCacheKey(pageUrl, episode)
 
         lifecycleScope.launch(Dispatchers.IO) {
-            if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return@launch
+            if (!getCachedDownloadLinks(cacheKey).isNullOrEmpty() || !prefetchingDownloadLinks.add(cacheKey)) return@launch
             try {
                 val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
                 android.util.Log.d("BG_PREFETCH", "Fetching download links for $data")

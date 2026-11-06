@@ -31,7 +31,7 @@ import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.getActualLinkType
 import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -172,17 +172,25 @@ fun DownloadOptionsSheet(
         isProbing = true
         android.util.Log.e("QUALITY_UI", "title=$title type=${if (isMovie) "Movie" else "Episode"} api=$apiName")
         android.util.Log.e("QUALITY_UI", "links count=${selectedLinks.size}")
+        val results = Channel<Pair<ExtractorLink, List<ProbedQuality>>>(Channel.UNLIMITED)
         try {
-            val probed = selectedLinks.map { link ->
+            val pending = selectedLinks.map { link ->
                 async {
                     android.util.Log.e("QUALITY_UI", "probing url=${link.url} type=${getActualLinkType(link)}")
-                    link to QualityProbe.probeVideoQualities(link)
+                    results.send(link to QualityProbe.probeVideoQualities(link))
                 }
-            }.awaitAll().toMap()
-            probedQualities = probed
-            // Render immediately; exact sizes are measured independently below.
-            isProbing = false
+            }
+            val probed = linkedMapOf<ExtractorLink, List<ProbedQuality>>()
+            repeat(pending.size) { index ->
+                val (link, qualities) = results.receive()
+                probed[link] = qualities
+                probedQualities = probed.toMap()
+                // Show rows as soon as the first probe resolves; remaining probes continue
+                // concurrently and append their rows as they complete.
+                if (index == 0) isProbing = false
+            }
         } finally {
+            results.close()
             isProbing = false
         }
     }
