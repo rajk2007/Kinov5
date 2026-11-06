@@ -144,7 +144,10 @@ object QualityProbe {
     private const val TAG = "QualityProbe"
     // KDesa movie manifests can be slow, especially for dubbed links.
     private const val PROBE_TIMEOUT_MS = 20_000L
+    private data class CachedProbe(val at: Long, val qualities: List<ProbedQuality>)
+    private const val PROBE_CACHE_TTL_MS = 10 * 60_000L
     private val sessionCache = ConcurrentHashMap<String, List<ProbedQuality>>()
+    private val probeResultCache = ConcurrentHashMap<String, CachedProbe>()
     private val sizeCache = ConcurrentHashMap<String, Long>()
     private val playlistTextCache = ConcurrentHashMap<String, String>()
     private val hlsHeadSemaphore = Semaphore(32)
@@ -263,9 +266,9 @@ object QualityProbe {
                     val bandwidthEstimate = if (averageBandwidth != null && duration > 0.0) {
                         calculateEstimatedSize(averageBandwidth, audioBandwidth, duration, hasSeparateAudio, videoBandwidthIsAverage = true)
                     } else null
-                    val instantEstimate = byteRangeEstimate
-                        ?: bandwidthEstimate
-                        ?: sampleFromText(link, variantUrl, variantText, audioText, headers)
+                    // Phase 1 is playlist-text only. HEAD sampling runs in the background
+                    // from sampleVariantSize after these rows have rendered.
+                    val instantEstimate = byteRangeEstimate ?: bandwidthEstimate
                     instantEstimate?.let { sizeCache[variantUrl] = it }
                     ProbedQuality(
                         width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
@@ -277,11 +280,17 @@ object QualityProbe {
         }
         val parsed = results.distinctBy { it.selectionKey }.sortedByDescending { it.height }
         Log.e(TAG, "found variants=${parsed.size} heights=${parsed.map { it.height }}")
-        return parsed.ifEmpty { fallback(link) }
+        return parsed.ifEmpty { fallback(link) }.also { qualities ->
+            probeResultCache[link.url] = CachedProbe(System.currentTimeMillis(), qualities)
+        }
     }
 
     /** Parse the MPD with an XML pull parser, including attributes inherited from AdaptationSet. */
     private suspend fun probeDashQualities(link: ExtractorLink): List<ProbedQuality> {
+        probeResultCache[link.url]?.takeIf { System.currentTimeMillis() - it.at < PROBE_CACHE_TTL_MS }?.let {
+            Log.d(TAG, "Using cached DASH probe for ${link.url.take(120)}")
+            return it.qualities
+        }
         val response = app.get(link.url, headers = requestHeaders(link), allowRedirects = true)
         Log.e(TAG, "DASH response: code=${response.code}, contentType=${response.headers["Content-Type"]}, finalUrl=${response.url}")
         return parseDashQualities(link, response.text)
@@ -373,13 +382,14 @@ object QualityProbe {
                         playlistTextCache[response.url] = response.text
                     }.text
                 }
-                val audioUrl = parseHlsAudioRenditionUris(masterText, link.url).firstOrNull()
-                val audioText = audioUrl?.let { url -> playlistTextCache[url] ?: run {
+                val audioUrls = parseHlsAudioRenditionUris(masterText, link.url)
+                val audioUrl = audioUrls.firstOrNull()
+                val audioText = audioUrl?.let { url -> playlistTextCache[url] ?: runCatching {
                     app.get(url, headers = headers, allowRedirects = true).also { response ->
                         playlistTextCache[url] = response.text
                         playlistTextCache[response.url] = response.text
                     }.text
-                } }
+                }.getOrNull() }
                 sampleFromText(link, variantUrl, videoText, audioText, headers)
             }
         }.getOrNull()
@@ -412,8 +422,18 @@ object QualityProbe {
             } else median(sampled.map { it.second }) * entries.size
         }
         val videoTotal = sample(videoSegments, 5) ?: return null
-        val audioBaseUrl = parseHlsAudioRenditionUris(playlistTextCache[link.url].orEmpty(), link.url).firstOrNull() ?: link.url
-        val audioTotal = audioText?.let { sample(videoSegmentEntries(it, audioBaseUrl), 3) } ?: 0L
+        val masterText = playlistTextCache[link.url].orEmpty()
+        val audioUrls = parseHlsAudioRenditionUris(masterText, link.url)
+        val hasSeparateAudio = audioUrls.isNotEmpty() || masterText.contains("#EXT-X-MEDIA:TYPE=AUDIO", true)
+        val audioBaseUrl = audioUrls.firstOrNull() ?: link.url
+        val audioEntries = audioText?.let { videoSegmentEntries(it, audioBaseUrl) }.orEmpty()
+        val sampledAudio = if (hasSeparateAudio) sample(audioEntries, 3) else 0L
+        val duration = videoSegments.sumOf { it.first }
+        val audioTotal = if (!hasSeparateAudio) {
+            0L
+        } else {
+            sampledAudio ?: ((parseHlsAudioBandwidth(masterText) ?: 128_000L) * duration / 8.0).toLong()
+        }
         return (videoTotal + audioTotal).takeIf { it > 0L }?.also { sizeCache[variantUrl] = it }
     }
 

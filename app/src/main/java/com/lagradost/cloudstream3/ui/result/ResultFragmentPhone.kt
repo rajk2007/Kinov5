@@ -304,6 +304,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             return
         }
         fun renderLinks(links: List<ExtractorLink>) {
+            val selectedLang = links.firstOrNull()?.languageKey().orEmpty()
             val downloadedHeights = if (downloadEpisodes.size == 1) {
                 val isMovie = loadedResponse is MovieLoadResponse
                 val season = ep.season ?: 1
@@ -311,6 +312,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     .filter {
                         it.parentTitle == loadedResponse.name &&
                             it.status == com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus.COMPLETED &&
+                            (it.language == null || it.language.equals(selectedLang, ignoreCase = true)) &&
                             if (isMovie) {
                                 it.season == null && it.episode == null
                             } else {
@@ -372,7 +374,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
                                             val season = episode.season ?: 1
                                             val title = if (isMovie) response.name else "${response.name} - S${season}E${episode.episode}"
-                                            val fileName = if (isMovie) response.name else "${response.name}_S${season}E${episode.episode}"
+                                            val langTag = selectedLanguage.replace(Regex("[^A-Za-z0-9]"), "").take(12).ifEmpty { "default" }
+                                            val fileName = if (isMovie) "${response.name}_${langTag}_${selectedHeight}p"
+                                            else "${response.name}_S${season}E${episode.episode}_${langTag}_${selectedHeight}p"
                                             ensureDownloadPath(activityContext)
                                             val started = DirectDownloadManager.startDownload(
                                                 context = activityContext,
@@ -383,6 +387,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 apiName = apiName,
                                                 selectedHeight = selectedHeight,
                                                 parentTitle = response.name,
+                                                language = selectedLanguage,
                                                 season = if (isMovie) null else season,
                                                 episode = if (isMovie) null else episode.episode,
                                                 estimatedSizeBytes = estimatedSizeBytes,

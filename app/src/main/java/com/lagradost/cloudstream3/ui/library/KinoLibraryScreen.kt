@@ -124,7 +124,8 @@ fun KinoLibraryScreen(
         directItems.filter {
             it.status == DirectDownloadStatus.DOWNLOADING ||
                 it.status == DirectDownloadStatus.PENDING ||
-                it.status == DirectDownloadStatus.PAUSED
+                it.status == DirectDownloadStatus.PAUSED ||
+                it.status == DirectDownloadStatus.FAILED
         } + legacyOnly.filter { it.downloadStatus != DirectDownloadStatus.COMPLETED }
     }
     val downloaded: List<Any> = remember(directItems, legacyOnly) {
@@ -380,7 +381,7 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
     DownloadCardShell(onClick = {
         when (item.status) {
             DirectDownloadStatus.DOWNLOADING -> DirectDownloadManager.pauseDownload(item.id)
-            DirectDownloadStatus.PAUSED -> DirectDownloadManager.resumeDownload(item.id)
+            DirectDownloadStatus.PAUSED, DirectDownloadStatus.FAILED -> DirectDownloadManager.resumeDownload(item.id)
             else -> Unit
         }
     }) {
@@ -403,6 +404,9 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
                 color = KinoMuted,
                 fontSize = 11.sp,
             )
+            if (item.status == DirectDownloadStatus.FAILED || (item.status == DirectDownloadStatus.PAUSED && item.error != null)) {
+                Text(item.error.orEmpty(), color = Color.Red, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
         IconButton(
             onClick = { DirectDownloadManager.cancelDownload(item.id) },
@@ -760,7 +764,7 @@ private fun downloadStatusText(status: DirectDownloadStatus): String = when (sta
     DirectDownloadStatus.DOWNLOADING -> "Downloading..."
     DirectDownloadStatus.PAUSED -> "Paused"
     DirectDownloadStatus.PENDING -> "Waiting in queue"
-    DirectDownloadStatus.FAILED -> "Download failed"
+    DirectDownloadStatus.FAILED -> "Retry"
     DirectDownloadStatus.COMPLETED -> "Completed"
 }
 private fun formatDuration(milliseconds: Long): String {

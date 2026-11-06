@@ -56,6 +56,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -77,6 +78,7 @@ data class DirectDownloadItem(
     val error: String? = null,
     val selectedHeight: Int = 0,
     val parentTitle: String? = null,
+    val language: String? = null,
     val season: Int? = null,
     val episode: Int? = null,
     val referer: String = "",
@@ -90,6 +92,13 @@ fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Bo
 
 /** Removes probe-only URL fragments before a URL is used for an HTTP request. */
 fun cleanDownloadUrl(url: String): String = url.substringBefore("#")
+
+private fun isNetworkError(error: Throwable): Boolean {
+    val t = error::class.qualifiedName.orEmpty().lowercase()
+    return error is java.net.UnknownHostException || error is java.net.ConnectException ||
+        error is java.net.SocketTimeoutException || error is java.io.IOException && "network" in (error.message ?: "").lowercase() ||
+        "econnreset" in t || "ssl" in t || "timeout" in t
+}
 
 private fun isDirectFileUrl(url: String): Boolean {
     val normalized = url.lowercase()
@@ -169,6 +178,7 @@ object DirectDownloadManager {
         apiName: String = "Unknown",
         selectedHeight: Int = 0,
         parentTitle: String? = null,
+        language: String? = null,
         season: Int? = null,
         episode: Int? = null,
         estimatedSizeBytes: Long = 0L,
@@ -243,6 +253,7 @@ object DirectDownloadManager {
             apiName = apiName,
             selectedHeight = selectedHeight,
             parentTitle = parentTitle,
+            language = language,
             season = season,
             episode = episode,
             totalBytes = estimatedSizeBytes,
@@ -517,8 +528,8 @@ object DirectDownloadManager {
             return
         }
         Log.e(TAG, "Resume item='${item.title}', status=${item.status}, url=${item.url.take(120)}, downloaded=${item.downloadedBytes}, total=${item.totalBytes}")
-        if (item.status != DirectDownloadStatus.PAUSED) {
-            Log.e(TAG, "Resume aborted: expected PAUSED, got ${item.status}")
+        if (item.status !in setOf(DirectDownloadStatus.PAUSED, DirectDownloadStatus.FAILED)) {
+            Log.e(TAG, "Resume aborted: expected PAUSED or FAILED, got ${item.status}")
             return
         }
         if (item.url.isBlank()) {
@@ -570,13 +581,30 @@ object DirectDownloadManager {
     }
 
     fun cancelDownload(downloadId: String) {
-        val item = _activeDownloads.value[downloadId]
+        val item = _activeDownloads.value[downloadId] ?: return
         downloadJobs.remove(downloadId)?.cancel()
-        item?.filePath?.let { File(it).delete() }
-        item?.let { File(getDownloadDir(appContext ?: return), outputName(it.fileName) + ".part").delete() }
+        val context = appContext ?: return
+        val dir = getDownloadDir(context)
+        val base = sanitizeFileName(item.fileName.substringBeforeLast('.'))
+        val suffixes = listOf(
+            "", ".mp4", ".ts", ".part", ".m3u8", ".master.m3u8", ".audio.m3u8",
+            ".audio.part", ".video.part", ".muxed.part", ".mp4.part", ".ts.part",
+            ".srt", ".raw.sub",
+        )
+        suffixes.forEach { suffix ->
+            val file = File(dir, "$base$suffix")
+            if (file.isFile) file.delete()
+        }
+        File(dir, "$base.segments").deleteRecursively()
+        File(dir, "$base.mp4.part.segments").deleteRecursively()
+        File(dir, "$base.ts.part.segments").deleteRecursively()
+        File(dir, "$base.audio.part.segments").deleteRecursively()
+        File(dir, "$base.mp4.audio.part.segments").deleteRecursively()
+        File(dir, "$base.ts.audio.part.segments").deleteRecursively()
+        item.filePath?.let { File(it).delete() }
         _activeDownloads.value = _activeDownloads.value - downloadId
         persistDownloads(force = true)
-        appContext?.let { cancelNotification(downloadId, it) }
+        cancelNotification(downloadId, context)
     }
 
     private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink): Boolean {
@@ -1121,6 +1149,11 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             return true
         } catch (error: Exception) {
             tempFile?.delete()
+            if (isNetworkError(error)) {
+                updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "", error = "Network connection lost — download paused. Tap resume when you’re back online.") }
+                persistDownloads(force = true)
+                return true
+            }
             segmentDir?.deleteRecursively()
             localPlaylistFile?.delete()
             audioPlaylistFile?.delete()
@@ -1169,6 +1202,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             }
         }
         val lastUpdate = AtomicLong(0L)
+        val networkFailure = AtomicReference<Throwable?>(null)
         val startedAt = System.currentTimeMillis()
         coroutineScope {
                 segmentUrls.withIndex()
@@ -1181,9 +1215,22 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         async(Dispatchers.IO) {
                             if (!currentCoroutineContext().isActive) throw CancellationException()
                             val bytes = try {
-                                requestHls(indexed.value, headers).body
+                                var lastError: Exception? = null
+                                var result: ByteArray? = null
+                                repeat(3) { attempt ->
+                                    try {
+                                        result = requestHls(indexed.value, headers).body
+                                        return@repeat
+                                    } catch (e: Exception) {
+                                        if (e is CancellationException) throw e
+                                        lastError = e
+                                        if (attempt < 2) delay(if (attempt == 0) 2_000L else 5_000L)
+                                    }
+                                }
+                                result ?: throw (lastError ?: IOException("Segment request failed"))
                             } catch (e: Exception) {
                                 if (e is CancellationException) throw e
+                                if (isNetworkError(e)) networkFailure.compareAndSet(null, e)
                                 Log.e(TAG, "HLS_STEP=segment_fetch_failed index=${indexed.index + 1}/${segmentUrls.size} ${e::class.simpleName}: ${e.message}")
                                 return@async
                             }
@@ -1337,6 +1384,11 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             markPausedIfNoReplacement(downloadId)
             return true
         } catch (error: Exception) {
+            if (isNetworkError(error)) {
+                updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "", error = "Network connection lost — download paused. Tap resume when you’re back online.") }
+                persistDownloads(force = true)
+                return true
+            }
             videoFile.delete()
             audioFile.delete()
             muxedFile.delete()
@@ -1833,6 +1885,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 put("eta", item.eta)
                 put("selectedHeight", item.selectedHeight)
                 put("parentTitle", item.parentTitle ?: JSONObject.NULL)
+                put("language", item.language ?: JSONObject.NULL)
                 item.season?.let { put("season", it) } ?: put("season", JSONObject.NULL)
                 item.episode?.let { put("episode", it) } ?: put("episode", JSONObject.NULL)
                 put("referer", item.referer)
@@ -1879,6 +1932,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         error = json.optString("error").takeUnless { it.isBlank() || it == "null" },
                         selectedHeight = json.optInt("selectedHeight", 0),
                         parentTitle = json.optString("parentTitle").takeUnless { it.isBlank() || it == "null" },
+                        language = json.optString("language").takeUnless { it.isBlank() || it == "null" },
                         season = if (json.isNull("season")) null else json.optInt("season"),
                         episode = if (json.isNull("episode")) null else json.optInt("episode"),
                         referer = json.optString("referer", ""),
