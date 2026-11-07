@@ -1162,7 +1162,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                                 ?: currentQualityProfile
             }
             playerBinding?.apply {
-                playerSpeedBtt.isVisible = playBackSpeedEnabled
+                playerSpeedBtt.isVisible = true
                 playerResizeBtt.isVisible = playerResizeEnabled
                 playerRotateBtt.isVisible =
                     if (isLayout(TV or EMULATOR)) false else playerRotateEnabled

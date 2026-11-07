@@ -324,6 +324,7 @@
     <string name="video_lock">Lock</string>
     <string name="video_aspect_ratio_resize">Resize</string>
     <string name="video_source">Source</string>
+    <string name="video_audio">Audio</string>
     <string name="video_skip_op">Skip OP</string>
     <string name="dont_show_again">Don\'t show again</string>
     <string name="skip_update">Skip this Update</string>

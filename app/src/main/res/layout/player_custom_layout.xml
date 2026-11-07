@@ -210,8 +210,9 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="80dp"
-                    android:layout_marginEnd="80dp"
+                    android:layout_marginStart="64dp"
+                    android:layout_marginEnd="16dp"
+                    android:gravity="start"
                     android:clipToPadding="false"
                     android:orientation="vertical"
                     android:paddingTop="20dp"
@@ -223,8 +224,9 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="2.5dp"
-                        android:gravity="center"
+                        android:gravity="start"
                         android:textColor="@color/white"
+                        android:visibility="gone"
                         tools:text="1920x1080" />
 
 
@@ -232,7 +234,7 @@
                         android:id="@+id/player_video_info"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center"
+                        android:gravity="start"
                         android:layout_marginBottom="2.5dp"
                         android:textColor="@color/white"
                         android:visibility="gone"
@@ -242,13 +244,14 @@
                         android:id="@+id/player_video_title_holder"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center">
+                        android:gravity="start">
                         <TextView
-                            android:maxLines="2"
+                            android:maxLines="1"
+                            android:ellipsize="end"
                             android:id="@+id/player_video_title"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:gravity="center"
+                            android:gravity="start"
                             android:textColor="@color/white"
                             android:textStyle="bold"
                             android:visibility="visible"
@@ -453,8 +456,8 @@
 
                     <ImageButton
                         android:id="@+id/player_rew"
-                        android:layout_width="70dp"
-                        android:layout_height="70dp"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
                         android:layout_gravity="center"
 
                         android:background="@drawable/video_tap_button_skip"
@@ -481,8 +484,8 @@
 
                     <ImageView
                         android:id="@+id/player_pause_play"
-                        android:layout_width="70dp"
-                        android:layout_height="70dp"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
                         android:layout_gravity="center"
                         android:background="@drawable/video_tap_button"
                         android:nextFocusLeft="@id/player_rew"
@@ -521,8 +524,8 @@
 
                     <ImageButton
                         android:id="@+id/player_ffwd"
-                        android:layout_width="70dp"
-                        android:layout_height="70dp"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
                         android:layout_gravity="center"
 
                         android:background="@drawable/video_tap_button_skip"
@@ -726,7 +729,7 @@
                         android:paddingLeft="4dp"
                         android:paddingRight="4dp"
                         android:textColor="@android:color/white"
-                        android:textSize="14sp"
+                        android:textSize="12sp"
                         android:textStyle="normal"
                         app:layout_constraintBottom_toBottomOf="parent"
                         app:layout_constraintStart_toStartOf="parent"
@@ -762,17 +765,17 @@
                     <com.lagradost.cloudstream3.ui.player.live.LivePreviewTimeBar
                         android:id="@id/exo_progress"
                         android:layout_width="0dp"
-                        android:layout_height="30dp"
+                        android:layout_height="24dp"
                         android:layout_weight="1"
-                        app:bar_height="2dp"
+                        app:bar_height="1dp"
                         app:layout_constraintBottom_toBottomOf="@id/exo_position"
                         app:layout_constraintEnd_toStartOf="@id/exo_duration"
                         app:layout_constraintStart_toEndOf="@+id/exo_position"
                         app:played_color="?attr/colorPrimary"
 
                         app:scrubber_color="?attr/colorPrimary"
-                        app:scrubber_dragged_size="26dp"
-                        app:scrubber_enabled_size="24dp"
+                        app:scrubber_dragged_size="20dp"
+                        app:scrubber_enabled_size="18dp"
                         app:unplayed_color="@color/videoProgress" />
 
                     <TextView
@@ -787,7 +790,7 @@
                         android:paddingLeft="4dp"
                         android:paddingRight="4dp"
                         android:textColor="@android:color/white"
-                        android:textSize="14sp"
+                        android:textSize="12sp"
                         android:textStyle="normal"
                         app:layout_constraintBaseline_toBaselineOf="@id/exo_position"
                         app:layout_constraintEnd_toEndOf="parent"
@@ -840,11 +843,11 @@
 
                     <LinearLayout
                         android:layout_width="wrap_content"
-                        android:layout_height="60dp"
+                        android:layout_height="48dp"
                         android:gravity="center"
                         android:orientation="horizontal"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp">
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/player_lock"
@@ -854,7 +857,7 @@
                             android:text="@string/video_lock"
                             app:icon="@drawable/video_locked"
 
-                            app:iconSize="30dp" />
+                            app:iconSize="18dp" />
 
                         <LinearLayout
                             android:id="@+id/player_lock_holder"
@@ -903,23 +906,19 @@
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/player_sources_btt"
                                 style="@style/VideoButton"
-                                android:layout_height="40dp"
-
                                 android:nextFocusLeft="@id/player_subtitle_offset_btt"
                                 android:nextFocusRight="@id/player_tracks_btt"
-                                android:text="@string/video_source"
-                                app:icon="@drawable/ic_baseline_playlist_play_24" />
+                                android:text="@string/video_audio"
+                                app:icon="@drawable/ic_baseline_audiotrack_24" />
 
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/player_tracks_btt"
                                 style="@style/VideoButton"
-                                android:layout_height="40dp"
-
                                 android:nextFocusLeft="@id/player_sources_btt"
                                 android:nextFocusRight="@id/player_skip_op"
-                                android:text="@string/tracks"
-                                app:icon="@drawable/ic_baseline_equalizer_24" />
+                                android:text="Auto"
+                                app:icon="@drawable/ic_baseline_hd_24" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/player_skip_op"

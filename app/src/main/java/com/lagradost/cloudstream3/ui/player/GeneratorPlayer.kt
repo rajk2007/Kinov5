@@ -234,8 +234,19 @@ class GeneratorPlayer : FullScreenPlayer() {
 
     override fun onTracksInfoChanged() {
         val tracks = player.getVideoTracks()
-        playerBinding?.playerTracksBtt?.isVisible =
-            tracks.allVideoTracks.size > 1 || tracks.allAudioTracks.size > 1
+        val currentVideoTrack = tracks.currentVideoTrack
+        val height = currentVideoTrack?.height ?: 0
+        val width = currentVideoTrack?.width ?: 0
+        val quality = when {
+            height >= 2160 || width >= 3840 -> "2160p"
+            height >= 1080 || width >= 1920 -> "1080p"
+            height >= 720 || width >= 1280 -> "720p"
+            height >= 480 || width >= 854 -> "480p"
+            height > 0 -> "${height}p"
+            else -> "Auto"
+        }
+        playerBinding?.playerTracksBtt?.text = quality
+        playerBinding?.playerTracksBtt?.isVisible = true
         // Only set the preferred language if it is available.
         // Otherwise, it may give some users audio track init failed!
         if (tracks.allAudioTracks.any { it.language == preferredAudioTrackLanguage }) {
@@ -1902,10 +1913,7 @@ class GeneratorPlayer : FullScreenPlayer() {
             resolution?.takeIf { showResolution && it.isNotBlank() },
         ).joinToString(" - ")
 
-        playerBinding?.playerVideoTitleRez?.apply {
-            text = result
-            isVisible = result.isNotBlank()
-        }
+        playerBinding?.playerVideoTitleRez?.text = result
     }
 
 

@@ -100,6 +100,7 @@ import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.QualityProbe
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialog
@@ -181,37 +182,53 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             .distinctBy { it.url }
             .toList()
 
-    /** Resolve the first playable item as soon as the result page has its media data. */
+    /** Resolve links and warm quality/size probes for the first episodes as soon as the result page has media data. */
     private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
-        val episode = episodes.sortedBy { it.episode }.firstOrNull() ?: return
-        val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-        val cacheKey = downloadCacheKey(pageUrl, episode)
-
+        val candidates = episodes.sortedBy { it.episode }.take(20)
+        if (candidates.isEmpty()) return
         lifecycleScope.launch(Dispatchers.IO) {
-            if (!getCachedDownloadLinks(cacheKey).isNullOrEmpty() || !prefetchingDownloadLinks.add(cacheKey)) return@launch
-            try {
-                val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                android.util.Log.d("BG_PREFETCH", "Fetching download links for $data")
-                val links = mutableListOf<ExtractorLink>()
-                APIRepository(api).loadLinks(
-                    data = data,
-                    isCasting = false,
-                    subtitleCallback = { },
-                    callback = { link -> links += link },
-                )
-                val filteredLinks = filterDownloadLinks(links)
-                cacheDownloadLinks(cacheKey, filteredLinks)
-                android.util.Log.d("BG_PREFETCH", "Cached ${filteredLinks.size} links for $data")
-            } catch (error: Exception) {
-                android.util.Log.d("BG_PREFETCH", "Prefetch failed for $data", error)
-            } finally {
-                prefetchingDownloadLinks.remove(cacheKey)
+            for (episode in candidates) {
+                val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                val cacheKey = downloadCacheKey(pageUrl, episode)
+                if (!getCachedDownloadLinks(cacheKey).isNullOrEmpty() ||
+                    !prefetchingDownloadLinks.add(cacheKey)
+                ) continue
+                try {
+                    val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                    android.util.Log.d("BG_PREFETCH", "Fetching download links for $data")
+                    val links = mutableListOf<ExtractorLink>()
+                    APIRepository(api).loadLinks(
+                        data = data,
+                        isCasting = false,
+                        subtitleCallback = { },
+                        callback = { link -> links += link },
+                    )
+                    val filteredLinks = filterDownloadLinks(links)
+                    cacheDownloadLinks(cacheKey, filteredLinks)
+                    android.util.Log.d("BG_PREFETCH", "Cached ${filteredLinks.size} links for $data")
+                    android.util.Log.d("BG_PREFETCH_PROBE", "Probing up to 6 links for $data")
+                    filteredLinks.take(6).map { link ->
+                        async(Dispatchers.IO) {
+                            runCatching { QualityProbe.probeVideoQualities(link) }
+                                .onFailure {
+                                    android.util.Log.d(
+                                        "BG_PREFETCH_PROBE",
+                                        "Probe failed for ${link.url.take(80)}",
+                                        it,
+                                    )
+                                }
+                        }
+                    }.awaitAll()
+                } catch (error: Exception) {
+                    android.util.Log.d("BG_PREFETCH", "Prefetch failed for $data", error)
+                } finally {
+                    prefetchingDownloadLinks.remove(cacheKey)
+                }
             }
         }
     }
-
     private val gestureRegionsListener =
         object : PanelsChildGestureRegionObserver.GestureRegionsListener {
             override fun onGestureRegionsUpdate(gestureRegions: List<Rect>) {
