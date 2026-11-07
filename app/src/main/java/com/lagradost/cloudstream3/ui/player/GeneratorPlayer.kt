@@ -1903,17 +1903,7 @@ class GeneratorPlayer : FullScreenPlayer() {
     }
 
     fun setPlayerDimen(widthHeight: Pair<Int, Int>?) {
-        val resolution = widthHeight?.let { "${it.first}x${it.second}" }
-        val name = currentSelectedLink?.first?.name ?: currentSelectedLink?.second?.name
-        val title = getHeaderName()
-
-        val result = listOfNotNull(
-            title?.takeIf { showTitle && it.isNotBlank() },
-            name?.takeIf { showName && it.isNotBlank() },
-            resolution?.takeIf { showResolution && it.isNotBlank() },
-        ).joinToString(" - ")
-
-        playerBinding?.playerVideoTitleRez?.text = result
+        // Resolution/provider metadata is intentionally hidden from the phone player UI.
     }
 
 

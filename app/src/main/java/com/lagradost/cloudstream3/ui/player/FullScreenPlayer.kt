@@ -495,7 +495,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             DataStoreHelper.playBackSpeed = speed
             playerBinding?.playerSpeedBtt?.text =
                 getString(R.string.player_speed_text_format).format(speed)
-                    .replace(".0x", "x")
+                    .replace(Regex("\\.?0+x$"), "x")
         } catch (e: Exception) {
             // the format string was wrong
             logError(e)
@@ -773,7 +773,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             playerEpisodesButtonRoot.isVisible = showPlayerEpisodes
             playerEpisodesButton.isVisible = showPlayerEpisodes
             playerVideoTitleHolder.isGone = togglePlayerTitleGone
-            playerVideoTitleRez.isGone = isGone || playerVideoTitleRez.text.isBlank()
+            playerVideoTitleRez.isGone = true
             playerEpisodeFiller.isGone = isGone
             playerCenterMenu.isGone = isGone
             playerLock.isGone = !isShowing
