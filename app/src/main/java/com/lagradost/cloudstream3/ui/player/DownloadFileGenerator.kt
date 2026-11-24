@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.ui.player.PlayerSubtitleHelper.Companion.toSubtitleMimeType
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToEnglishLanguageName
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromLanguageToTagIETF
 import com.lagradost.cloudstream3.utils.SubtitleUtils.cleanDisplayName
 import com.lagradost.cloudstream3.utils.SubtitleUtils.isMatchingSubtitle
@@ -109,6 +110,19 @@ class DownloadFileGenerator(
         }
     }
 
+    private fun extractLangFromSubtitleName(fileName: String, videoBase: String): Pair<String?, String> {
+        val subtitleBase = fileName.substringBeforeLast('.')
+        val suffix = subtitleBase.removePrefix(videoBase).trim('.', '_', '-')
+        val languageCode = suffix.split(Regex("[._-]+"))
+            .asSequence()
+            .mapNotNull { token -> fromLanguageToTagIETF(token) }
+            .firstOrNull()
+        val originalName = languageCode?.let { fromTagToEnglishLanguageName(it) }
+            ?: subtitleBase
+        Log.i("SUBS", "derived language file=$fileName suffix=$suffix language=$languageCode original=$originalName")
+        return languageCode to originalName
+    }
+
     override suspend fun generateLinks(
         clearCache: Boolean,
         sourceTypes: Set<ExtractorLinkType>,
@@ -123,10 +137,6 @@ class DownloadFileGenerator(
             Log.w("DownloadFileGenerator", "No valid local file found for: ${meta.name}; aborting playback")
             return false
         }
-        DownloadLog.play("hand-off: opening=${localUri.path ?: localUri} player=GeneratorPlayer")
-        callback(null to meta.copy(uri = localUri))
-
-        val ctx = context ?: return true
         val localFile = localUri.path?.let { java.io.File(it) }
         val registeredSubtitlePaths = mutableSetOf<String>()
         localFile?.parentFile?.let { folder ->
@@ -142,17 +152,26 @@ class DownloadFileGenerator(
                 .orEmpty()
             Log.e("SUBS", "offline scan found=${directSubtitles.size} folder=${folder.absolutePath} videoBase=$videoBase")
             directSubtitles.forEach { file ->
+                val (languageCode, originalName) = extractLangFromSubtitleName(file.name, videoBase)
                 Log.e("SUBS", "Registered sidecar ${file.absolutePath}")
                 registeredSubtitlePaths += file.absolutePath
                 subtitleCallback(
-                    SubtitleData("English", "", Uri.fromFile(file).toString(), SubtitleOrigin.DOWNLOADED_FILE,
-                        file.name.toSubtitleMimeType(), emptyMap(), "en")
+                    SubtitleData(
+                        originalName,
+                        "",
+                        Uri.fromFile(file).toString(),
+                        SubtitleOrigin.DOWNLOADED_FILE,
+                        file.name.toSubtitleMimeType(),
+                        emptyMap(),
+                        languageCode
+                    )
                 )
             }
         }
         val relative = meta.relativePath
         val display = meta.displayName
-        if (relative != null && display != null) {
+        val ctx = context
+        if (ctx != null && relative != null && display != null) {
             val cleanDisplay = cleanDisplayName(display)
             getFolder(ctx, relative, meta.basePath)?.forEach { (name, uri) ->
                 val alreadyRegistered = runCatching { Uri.parse(uri.toString()).path }
@@ -162,20 +181,27 @@ class DownloadFileGenerator(
                     val lastNum = Regex(" ([0-9]+)$")
                     val nameSuffix = lastNum.find(cleanName)?.groupValues?.get(1) ?: ""
                     val originalName = cleanName.removePrefix(cleanDisplay).replace(lastNum, "").trim()
+                    val (derivedLanguage, derivedOriginalName) = extractLangFromSubtitleName(name, cleanDisplay)
+                    val languageCode = derivedLanguage ?: fromLanguageToTagIETF(originalName, true)
                     subtitleCallback(
                         SubtitleData(
-                            originalName.ifBlank { ctx.getString(R.string.default_subtitles) },
+                            derivedOriginalName.ifBlank { ctx.getString(R.string.default_subtitles) },
                             nameSuffix,
                             uri.toString(),
                             SubtitleOrigin.DOWNLOADED_FILE,
                             name.toSubtitleMimeType(),
                             emptyMap(),
-                            fromLanguageToTagIETF(originalName, true)
+                            languageCode
                         )
                     )
+                    Log.i("SUBS", "Registered downloaded subtitle name=$name language=$languageCode")
                 }
             }
         }
+
+        Log.i("SUBS", "offline subtitles registered=${registeredSubtitlePaths.size}; emitting video callback")
+        DownloadLog.play("hand-off: opening=${localUri.path ?: localUri} player=GeneratorPlayer")
+        callback(null to meta.copy(uri = localUri))
 
         return true
     }

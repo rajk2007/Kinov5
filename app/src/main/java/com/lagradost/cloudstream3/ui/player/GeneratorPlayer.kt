@@ -1776,46 +1776,61 @@ class GeneratorPlayer : FullScreenPlayer() {
         // auto select subtitle based on settings
         val langCode = preferredAutoSelectSubtitles
         val current = player.getCurrentPreferredSubtitle()
-        Log.i(TAG, "autoSelectFromSettings = $current")
+        val isDownloadedFile = viewModel.generator is DownloadFileGenerator
+        val currentMatches = current?.let { langCode == null || it.matchesLanguageCode(langCode) } == true
+        Log.i(TAG, "autoSelectFromSettings current=$current preferred=$langCode downloadedFile=$isDownloadedFile")
         context?.let { ctx ->
+            if (isDownloadedFile && current?.origin == SubtitleOrigin.URL) {
+                Log.i(TAG, "Skipping URL-origin subtitle for local downloaded video")
+            }
             // Only use the player preferred subtitle if it matches the available language
-            if (current != null && (langCode == null || current.matchesLanguageCode(langCode))) {
+            if (currentMatches && (!isDownloadedFile || current?.origin == SubtitleOrigin.DOWNLOADED_FILE)) {
                 if (setSubtitles(current, false)) {
                     player.saveData()
                     player.reloadPlayer(ctx)
                     player.handleEvent(CSPlayerEvent.Play)
+                    Log.i(TAG, "Auto-selected current subtitle and reloaded player")
                     return true
                 }
             } else if (!langCode.isNullOrEmpty()) {
                 getAutoSelectSubtitle(
-                    viewModel.state.subtitles, settings = true, downloads = false
+                    viewModel.state.subtitles,
+                    settings = !isDownloadedFile,
+                    downloads = isDownloadedFile
                 )?.let { sub ->
                     if (setSubtitles(sub, false)) {
                         player.saveData()
                         player.reloadPlayer(ctx)
                         player.handleEvent(CSPlayerEvent.Play)
+                        Log.i(TAG, "Auto-selected subtitle=${sub.name} origin=${sub.origin} and reloaded player")
                         return true
                     }
                 }
             }
         }
+        Log.i(TAG, "No settings subtitle auto-selected")
         return false
     }
 
     private fun autoSelectFromDownloads() {
-        if (player.getCurrentPreferredSubtitle() != null) {
+        val current = player.getCurrentPreferredSubtitle()
+        if (current?.origin == SubtitleOrigin.DOWNLOADED_FILE) {
+            Log.i(TAG, "Keeping currently selected downloaded subtitle=${current.name}")
             return
         }
         val sub =
             getAutoSelectSubtitle(viewModel.state.subtitles, settings = false, downloads = true)
+                ?: viewModel.state.subtitles.firstOrNull { it.origin == SubtitleOrigin.DOWNLOADED_FILE }
                 ?: return
         val ctx = context ?: return
         if (!setSubtitles(sub, false)) {
+            Log.i(TAG, "Downloaded subtitle=${sub.name} could not be selected")
             return
         }
         player.saveData()
         player.reloadPlayer(ctx)
         player.handleEvent(CSPlayerEvent.Play)
+        Log.i(TAG, "Auto-selected downloaded subtitle=${sub.name} and reloaded player")
     }
 
     private fun autoSelectSubtitles() {
@@ -2264,14 +2279,8 @@ class GeneratorPlayer : FullScreenPlayer() {
         observe(viewModel.currentSubtitles) { (subtitles, instance) ->
             if (instance != viewModel.state.instance) return@observe // Outdated observe
             player.setActiveSubtitles(subtitles)
-
-            // If the file is downloaded then do not select auto select the subtitles
-            // Downloaded subtitles cannot be selected immediately after loading since
-            // player.getCurrentPreferredSubtitle() cannot fetch data from non-loaded subtitles
-            // Resulting in unselecting the downloaded subtitle
-            if (subtitles.lastOrNull()?.origin != SubtitleOrigin.DOWNLOADED_FILE) {
-                autoSelectSubtitles()
-            }
+            Log.i(TAG, "Subtitle list updated count=${subtitles.size} downloaded=${subtitles.count { it.origin == SubtitleOrigin.DOWNLOADED_FILE }}")
+            autoSelectSubtitles()
         }
         observe(viewModel.loadingLinks) { (loading, instance) ->
             if (instance != viewModel.state.instance) return@observe // Outdated observe
