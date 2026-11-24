@@ -59,7 +59,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:textColor="#B3FFFFFF"
+                android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 android:maxLines="2"
                 tools:text="Animation • Action • Adventure • 2025 • ⭐ 7.6"/>
@@ -70,7 +70,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:textColor="#E6FFFFFF"
+                android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:lineSpacingExtra="8dp"
                 android:maxLines="5"
@@ -177,7 +177,7 @@
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/baseline_fullscreen_24"
             android:visibility="gone"
-            app:tint="@color/white" />
+            app:tint="#FFFFFF" />
 
         <FrameLayout
             android:id="@+id/player_intro_play"
@@ -225,7 +225,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="2.5dp"
                         android:gravity="start"
-                        android:textColor="@color/white"
+                        android:textColor="#FFFFFF"
                         android:visibility="gone"
                         tools:text="1920x1080" />
 
@@ -236,7 +236,7 @@
                         android:layout_height="wrap_content"
                         android:gravity="start"
                         android:layout_marginBottom="2.5dp"
-                        android:textColor="@color/white"
+                        android:textColor="#FFFFFF"
                         android:visibility="gone"
                         tools:text="HEVC" />
 
@@ -252,7 +252,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:gravity="start"
-                            android:textColor="@color/white"
+                            android:textColor="#FFFFFF"
                             android:textSize="18sp"
                             android:textStyle="bold"
                             android:visibility="visible"
@@ -447,7 +447,7 @@
                         android:layout_gravity="center"
 
                         android:gravity="center"
-                        android:textColor="@color/white"
+                        android:textColor="#FFFFFF"
                         android:textSize="19sp"
 
                         android:textStyle="bold"
@@ -468,7 +468,7 @@
                         android:scaleX="-1"
                         android:src="@drawable/netflix_skip_forward"
                         android:tintMode="src_in"
-                        app:tint="@color/white"
+                        app:tint="#FFFFFF"
                         tools:ignore="ContentDescription" />
                 </FrameLayout>
 
@@ -495,7 +495,7 @@
                         android:nextFocusDown="@id/player_lock"
 
                         android:src="@drawable/netflix_pause"
-                        app:tint="@color/white"
+                        app:tint="#FFFFFF"
                         tools:ignore="ContentDescription" />
                 </FrameLayout>
 
@@ -514,7 +514,7 @@
                         android:layout_height="40dp"
                         android:layout_gravity="center"
                         android:gravity="center"
-                        android:textColor="@color/white"
+                        android:textColor="#FFFFFF"
                         android:textSize="19sp"
                         android:textStyle="bold"
                         tools:text="10" />
@@ -533,7 +533,7 @@
                         android:scaleType="fitCenter"
                         android:src="@drawable/netflix_skip_forward"
                         android:tintMode="src_in"
-                        app:tint="@color/white"
+                        app:tint="#FFFFFF"
                         tools:ignore="ContentDescription" />
                 </FrameLayout>
 
@@ -555,7 +555,7 @@
                             android:background="@drawable/video_tap_button_always_white"
                             android:padding="10dp"
                             android:src="@drawable/baseline_downloading_24"
-                            app:tint="@color/white">
+                            app:tint="#FFFFFF">
 
                         </ImageView>
 
@@ -587,14 +587,14 @@
                                     android:id="@+id/downloaded_progress_text"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:textColor="@color/white"
+                                    android:textColor="#FFFFFF"
                                     tools:text="10MB / 20MB" />
 
                                 <TextView
                                     android:id="@+id/downloaded_progress_speed_text"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:textColor="@color/white"
+                                    android:textColor="#FFFFFF"
                                     tools:text="10MB/s - 12 seeders" />
 
                                 <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -627,7 +627,7 @@
                 android:backgroundTint="@color/skipOpTransparent"
                 android:maxLines="1"
                 android:padding="10dp"
-                android:textColor="@color/white"
+                android:textColor="#FFFFFF"
                 android:visibility="gone"
                 app:cornerRadius="@dimen/rounded_button_radius"
                 app:layout_constraintEnd_toEndOf="parent"
@@ -768,12 +768,12 @@
                         app:layout_constraintBottom_toBottomOf="@id/exo_position"
                         app:layout_constraintEnd_toStartOf="@id/exo_duration"
                         app:layout_constraintStart_toEndOf="@+id/exo_position"
-                        app:played_color="?attr/colorPrimary"
+                        app:played_color="#FFFFFF"
 
-                        app:scrubber_color="?attr/colorPrimary"
+                        app:scrubber_color="#FFFFFF"
                         app:scrubber_dragged_size="22dp"
                         app:scrubber_enabled_size="20dp"
-                        app:unplayed_color="@color/videoProgress" />
+                        app:unplayed_color="#66FFFFFF" />
 
                     <TextView
                         android:id="@id/exo_duration"
@@ -982,7 +982,7 @@
                     android:max="100"
                     android:progress="100"
                     android:progressDrawable="@drawable/progress_drawable_vertical"
-                    android:progressTint="@color/white"
+                    android:progressTint="#FFFFFF"
                     android:progressTintMode="src_in"
                     tools:progress="30"
                     style="@android:style/Widget.Material.ProgressBar.Horizontal" />
@@ -1044,7 +1044,7 @@
                     android:max="100"
                     android:progress="100"
                     android:progressDrawable="@drawable/progress_drawable_vertical"
-                    android:progressTint="@color/white"
+                    android:progressTint="#FFFFFF"
                     android:progressTintMode="src_in" />
 
                 <ProgressBar
