@@ -76,6 +76,14 @@ class KinoTrackSheetDialog(
         binding.sheetPanel.alpha = 0f
         binding.sheetPanel.translationX = dp(18).toFloat()
         binding.sheetPanel.animate().alpha(1f).translationX(0f).setDuration(200L).start()
+        binding.sheetScroll.post {
+            val maxHeight = (context.resources.displayMetrics.heightPixels * .65f).roundToInt()
+            if (binding.sheetContent.height > maxHeight) {
+                binding.sheetScroll.layoutParams = binding.sheetScroll.layoutParams.apply {
+                    height = maxHeight
+                }
+            }
+        }
     }
 
     private fun build() {
@@ -102,16 +110,44 @@ class KinoTrackSheetDialog(
         binding.subtitleToggleRow.visibility = View.GONE
         binding.subtitleActions.visibility = View.GONE
         binding.sheetContent.removeAllViews()
-        if (audioTracks.isEmpty()) {
+
+        if (sources.isEmpty() && audioTracks.size <= 1) {
             addRow("Default audio", R.drawable.ic_baseline_audiotrack_24, true) {}
-            return
         }
-        audioTracks.forEach { track ->
-            val selected = track.id == selectedAudio?.id && track.formatIndex == selectedAudio?.formatIndex
-            addRow(audioLabel(track), R.drawable.ic_baseline_audiotrack_24, selected) {
+
+        val selectedSourceKey = selectedSource?.let { it.first?.url ?: it.second?.uri?.toString() }
+        sources.forEach { source ->
+            val link = source.first
+            val name = link?.name ?: source.second?.name ?: context.getString(R.string.video_source)
+            val quality = link?.quality?.let(Qualities::getStringByInt).orEmpty()
+            val label = listOf(displayLinkName(name), quality).filter { it.isNotBlank() }.joinToString(" • ")
+            val sourceKey = source.first?.url ?: source.second?.uri?.toString()
+            addRow(label, R.drawable.ic_baseline_audiotrack_24, sourceKey == selectedSourceKey) {
                 it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
-                onAudioSelected(track)
-                renderAudio(audioTab, subTab)
+                onSourceSelected(source)
+                dismiss()
+            }
+        }
+
+        if (audioTracks.size > 1) {
+            val divider = View(context).apply { setBackgroundColor(0x33FFFFFF) }
+            binding.sheetContent.addView(divider, LinearLayout.LayoutParams(-1, dp(1)).apply {
+                topMargin = dp(12); bottomMargin = dp(12)
+            })
+            val heading = TextView(context).apply {
+                text = "Audio tracks"
+                setTextColor(gray)
+                textSize = 12f
+                setPadding(dp(8), 0, dp(8), dp(6))
+            }
+            binding.sheetContent.addView(heading)
+            audioTracks.forEach { track ->
+                val selected = track.id == selectedAudio?.id && track.formatIndex == selectedAudio?.formatIndex
+                addRow(audioLabel(track), R.drawable.ic_baseline_audiotrack_24, selected) {
+                    it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                    onAudioSelected(track)
+                    renderAudio(audioTab, subTab)
+                }
             }
         }
     }
@@ -183,30 +219,6 @@ class KinoTrackSheetDialog(
                 it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
                 onVideoSelected(track)
                 renderQuality()
-            }
-        }
-        if (sources.size > 1) {
-            val divider = View(context).apply { setBackgroundColor(0x33FFFFFF) }
-            binding.sheetContent.addView(divider, LinearLayout.LayoutParams(-1, dp(1)).apply {
-                topMargin = dp(12); bottomMargin = dp(12)
-            })
-            val heading = TextView(context).apply {
-                text = context.getString(R.string.video_source)
-                setTextColor(gray)
-                textSize = 12f
-                setPadding(dp(8), 0, dp(8), dp(6))
-            }
-            binding.sheetContent.addView(heading)
-            sources.forEach { source ->
-                val link = source.first
-                val name = link?.name ?: source.second?.name ?: context.getString(R.string.video_source)
-                val quality = link?.quality?.let(Qualities::getStringByInt).orEmpty()
-                val label = listOf(displayLinkName(name).orEmpty(), quality).filter { it.isNotBlank() }.joinToString(" • ")
-                addRow(label, R.drawable.ic_baseline_audiotrack_24, source == selectedSource) {
-                    it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
-                    onSourceSelected(source)
-                    dismiss()
-                }
             }
         }
     }

@@ -1027,13 +1027,23 @@ class GeneratorPlayer : FullScreenPlayer() {
             currentSelectedSubtitles = player.getCurrentPreferredSubtitle()
             var subtitleSelection = currentSelectedSubtitles
             val availableSubtitles = sortSubs(viewModel.state.subtitles)
-                .filter { it.origin != SubtitleOrigin.URL }
+                .filterNot {
+                    it.origin == SubtitleOrigin.URL &&
+                            it.nameSuffix.isBlank() &&
+                            it.originalName.isBlank()
+                }
+                .distinctBy {
+                    it.originalName + it.nameSuffix.takeIf { suffix -> suffix.isNotBlank() }.orEmpty()
+                }
             val tracks = player.getVideoTracks()
+            val links = filterKdesaSourceLinks(viewModel.state.sortLinks(currentQualityProfile))
             lateinit var sheet: KinoTrackSheetDialog
             sheet = KinoTrackSheetDialog(
                 context = ctx,
                 mode = KinoTrackSheetDialog.Mode.AUDIO_SUBTITLES,
                 audioTracks = tracks.allAudioTracks,
+                sources = links,
+                selectedSource = currentSelectedLink,
                 subtitles = availableSubtitles,
                 selectedAudio = tracks.currentAudioTrack,
                 selectedSubtitle = subtitleSelection,
@@ -1041,6 +1051,9 @@ class GeneratorPlayer : FullScreenPlayer() {
                 initialSubtitles = initialSubtitles,
                 onAudioSelected = { track ->
                     player.setPreferredAudioTrack(track.language, track.id, track.formatIndex)
+                },
+                onSourceSelected = { link ->
+                    loadLink(link, true)
                 },
                 onSubtitleSelected = { subtitle ->
                     setSubtitles(subtitle, true)
@@ -1095,24 +1108,18 @@ class GeneratorPlayer : FullScreenPlayer() {
         try {
             val tracks = player.getVideoTracks()
             val videoTracks = tracks.allVideoTracks.sortedBy { it.height?.let { height -> -height } ?: 0 }
-            val links = filterKdesaSourceLinks(viewModel.state.sortLinks(currentQualityProfile))
             lateinit var sheet: KinoTrackSheetDialog
             sheet = KinoTrackSheetDialog(
                 context = ctx,
                 mode = KinoTrackSheetDialog.Mode.QUALITY,
                 videoTracks = videoTracks,
                 selectedVideo = tracks.currentVideoTrack,
-                sources = links,
-                selectedSource = currentSelectedLink,
                 onVideoSelected = { track ->
                     val width = track.width ?: NO_VALUE
                     val height = track.height ?: NO_VALUE
                     if (width != NO_VALUE && height != NO_VALUE) {
                         player.setMaxVideoSize(width, height, track.id)
                     }
-                },
-                onSourceSelected = { link ->
-                    loadLink(link, true)
                 },
             )
             selectTrackDialog = sheet
