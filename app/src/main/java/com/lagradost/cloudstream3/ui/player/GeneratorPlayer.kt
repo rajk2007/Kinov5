@@ -247,6 +247,7 @@ class GeneratorPlayer : FullScreenPlayer() {
         }
         playerBinding?.playerTracksBtt?.text = quality
         playerBinding?.playerTracksBtt?.isVisible = true
+        (selectTrackDialog as? KinoTrackSheetDialog)?.refreshSelection(currentVideoTrack)
         // Only set the preferred language if it is available.
         // Otherwise, it may give some users audio track init failed!
         if (tracks.allAudioTracks.any { it.language == preferredAudioTrackLanguage }) {

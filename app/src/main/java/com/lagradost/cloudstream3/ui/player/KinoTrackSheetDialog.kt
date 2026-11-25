@@ -20,6 +20,7 @@ import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.databinding.PlayerSheetTracksBinding
 import com.lagradost.cloudstream3.ui.result.displayLinkName
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToEnglishLanguageName
 import kotlin.math.roundToInt
 
 /** Small, non-blocking player selector shared by the phone audio/subtitle and quality sheets. */
@@ -50,6 +51,7 @@ class KinoTrackSheetDialog(
     private val red = ContextCompat.getColor(context, R.color.colorPrimary)
     private val white = ContextCompat.getColor(context, R.color.white)
     private val gray = ContextCompat.getColor(context, R.color.grayTextColor)
+    private var currentVideo: VideoTrack? = selectedVideo
     private val panelWidth = (context.resources.displayMetrics.widthPixels * .42f).roundToInt()
         .coerceAtLeast(dp(300)).coerceAtMost(dp(480))
 
@@ -88,6 +90,12 @@ class KinoTrackSheetDialog(
 
     private fun build() {
         binding.sheetPanel.background = rounded(0xD90A0A0C.toInt(), 24)
+        binding.sheetTabs.setPadding(
+            binding.sheetTabs.paddingLeft,
+            binding.sheetTabs.paddingTop,
+            binding.sheetTabs.paddingRight,
+            dp(16),
+        )
         if (mode == Mode.AUDIO_SUBTITLES) {
             binding.sheetTabs.visibility = View.VISIBLE
             val audioTab = tab("♫  Audio", true)
@@ -99,6 +107,10 @@ class KinoTrackSheetDialog(
             if (initialSubtitles) renderSubtitles(audioTab, subTab) else renderAudio(audioTab, subTab)
         } else {
             binding.sheetTitle.text = "Quality"
+            (binding.sheetTitle.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.topMargin = dp(12)
+                binding.sheetTitle.layoutParams = it
+            }
             renderQuality()
         }
     }
@@ -110,6 +122,8 @@ class KinoTrackSheetDialog(
         binding.subtitleToggleRow.visibility = View.GONE
         binding.subtitleActions.visibility = View.GONE
         binding.sheetContent.removeAllViews()
+
+        binding.sheetContent.addView(sectionLabel("Audio languages"))
 
         if (sources.isEmpty() && audioTracks.size <= 1) {
             addRow("Default audio", R.drawable.ic_baseline_audiotrack_24, true) {}
@@ -164,7 +178,7 @@ class KinoTrackSheetDialog(
         val label = TextView(context).apply {
             text = "Subtitles"
             setTextColor(white)
-            textSize = 14f
+            textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f)
         }
@@ -185,9 +199,16 @@ class KinoTrackSheetDialog(
         if (subtitles.isEmpty()) {
             addRow(context.getString(R.string.no_subtitles_loaded), R.drawable.ic_baseline_closed_caption_24, false) {}
         } else {
-            subtitles.forEach { subtitle ->
+            val displayNames = subtitles.map(::subtitleDisplayName)
+            val duplicateNames = displayNames.groupingBy { it }.eachCount()
+            subtitles.forEachIndexed { index, subtitle ->
                 val selected = subtitle == selectedSubtitle
-                addRow(subtitleLabel(subtitle), R.drawable.ic_baseline_closed_caption_24, selected) {
+                val displayName = displayNames[index]
+                val label = if (duplicateNames[displayName] == 1) displayName else {
+                    val tag = subtitle.languageCode?.takeIf { it.isNotBlank() } ?: subtitle.originalName
+                    "$displayName ($tag)"
+                }
+                addRow(subtitleLabel(subtitle, label), R.drawable.ic_baseline_closed_caption_24, selected) {
                     if (!subtitlesEnabled) return@addRow
                     it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
                     onSubtitleSelected(subtitle)
@@ -214,13 +235,28 @@ class KinoTrackSheetDialog(
         binding.subtitleActions.visibility = View.GONE
         binding.sheetContent.removeAllViews()
         videoTracks.forEach { track ->
-            val selected = track.id == selectedVideo?.id && track.width == selectedVideo?.width && track.height == selectedVideo?.height
+            val selected = track.id == currentVideo?.id && track.width == currentVideo?.width && track.height == currentVideo?.height
             addRow(videoLabel(track), R.drawable.ic_baseline_audiotrack_24, selected) {
                 it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                currentVideo = track
                 onVideoSelected(track)
                 renderQuality()
             }
         }
+    }
+
+    fun refreshSelection(track: VideoTrack?) {
+        if (!isShowing) return
+        currentVideo = track
+        renderQuality()
+    }
+
+    private fun sectionLabel(text: String) = TextView(context).apply {
+        this.text = text
+        setTextColor(white)
+        textSize = 13f
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setPadding(dp(14), 0, dp(14), dp(6))
     }
 
     private fun addRow(label: String, icon: Int, selected: Boolean, click: (View) -> Unit) {
@@ -299,7 +335,12 @@ class KinoTrackSheetDialog(
     }
 
     private fun videoLabel(track: VideoTrack): String = track.label ?: track.height?.takeIf { it > 0 }?.let { "${it}p" } ?: "Auto"
-    private fun subtitleLabel(subtitle: SubtitleData): String = subtitle.originalName + subtitle.nameSuffix.takeIf { it.isNotBlank() }?.let { " • $it" }.orEmpty()
+    private fun subtitleDisplayName(subtitle: SubtitleData): String =
+        fromTagToEnglishLanguageName(subtitle.languageCode)?.takeIf { it.isNotBlank() }
+            ?: subtitle.originalName
+
+    private fun subtitleLabel(subtitle: SubtitleData, displayName: String = subtitleDisplayName(subtitle)): String =
+        displayName + subtitle.nameSuffix.takeIf { it.isNotBlank() }?.let { " • $it" }.orEmpty()
     private fun weightParams() = LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(6) }
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density).roundToInt()
 }

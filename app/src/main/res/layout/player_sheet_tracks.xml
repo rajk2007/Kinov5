@@ -39,7 +39,8 @@
             android:id="@+id/sheet_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:paddingTop="4dp" />
     </ScrollView>
 
     <LinearLayout

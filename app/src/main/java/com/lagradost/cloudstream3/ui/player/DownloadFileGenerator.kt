@@ -145,9 +145,13 @@ class DownloadFileGenerator(
             val directSubtitles = folder.listFiles()
                 ?.filter { file ->
                     val lower = file.name.lowercase()
+                    val subtitleBase = file.name.substringBeforeLast('.')
+                    val suffix = subtitleBase.drop(videoBase.length)
+                    val hasVideoBase = subtitleBase.equals(videoBase, ignoreCase = true) ||
+                        (subtitleBase.startsWith(videoBase, ignoreCase = true) &&
+                            suffix.firstOrNull()?.let { it == '.' || it == '-' || it == '_' || it.isWhitespace() } == true)
                     (lower.endsWith(".srt") || lower.endsWith(".vtt") || lower.endsWith(".ass")) &&
-                        file.name.substringBeforeLast('.').removeSuffix(".master").removeSuffix(".audio")
-                            .equals(videoBase, ignoreCase = true)
+                        hasVideoBase
                 }
                 .orEmpty()
             Log.e("SUBS", "offline scan found=${directSubtitles.size} folder=${folder.absolutePath} videoBase=$videoBase")
