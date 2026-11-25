@@ -844,6 +844,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("HLS_DEBUG", "Is encrypted: ${playlist.contains("#EXT-X-KEY", ignoreCase = true)}")
             require(playlist.contains("#EXTM3U")) { "The server did not return an HLS playlist." }
             var selectedVariantBandwidth: Long? = null
+            var selectedVariantWidth: Int? = null
+            var selectedVariantHeight: Int? = null
             if (!inputIsMaster) {
                 val extractorMasterUrl = link.extractorData?.trim()?.let { data ->
                     Regex("https?://[^\\s\\\"'}]+", RegexOption.IGNORE_CASE).find(data)?.value
@@ -887,6 +889,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         ?: variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 }
                 } else variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 }
                 selectedVariantBandwidth = selected?.bandwidth?.toLong()
+                selectedVariantWidth = selected?.width
+                selectedVariantHeight = selected?.height
                 playlistResponse = requestHls(requireNotNull(selected).url, headers, downloadId)
                 playlistUrl = playlistResponse.url
                 playlist = String(playlistResponse.body, Charsets.UTF_8)
@@ -1109,7 +1113,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         })
                         audioTempFile!!.delete()
                         audioMasterFile = File(getDownloadDir(context), "$baseName.master.m3u8")
-                        writeHlsText(audioMasterFile!!, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"${rendition.name.ifBlank { "English" }}\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"${rendition.language}\",URI=\"${audioPlaylistFile!!.name}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"audio\"\n${resolvedPlaylistFile.name}\n")
+                        val localResolution = if (selectedVariantWidth != null && selectedVariantHeight != null) {
+                            ",RESOLUTION=${selectedVariantWidth}x${selectedVariantHeight}"
+                        } else ""
+                        writeHlsText(audioMasterFile!!, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"${rendition.name.ifBlank { "English" }}\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"${rendition.language}\",URI=\"${audioPlaylistFile!!.name}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1$localResolution,AUDIO=\"audio\"\n${resolvedPlaylistFile.name}\n")
                         Log.e("HLS_AUDIO", "audio_segments=${audioSegments.size} bytes=$audioBytes")
                         Log.e("HLS_AUDIO", "master_path=${audioMasterFile!!.absolutePath}")
                         Log.e("HLS_PHASE", "local_master=${audioMasterFile!!.exists()} size=${audioMasterFile!!.length()} video_playlist=${resolvedPlaylistFile.exists()} video_size=${resolvedPlaylistFile.length()} audio_playlist=${audioPlaylistFile!!.exists()} audio_size=${audioPlaylistFile!!.length()} video_segment=${File(resolvedSegmentDir, "segment_0$segmentExtension").length()} audio_segment=${File(audioSegmentDir, "segment_0$audioExtension").length()}")

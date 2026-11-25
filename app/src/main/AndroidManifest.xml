@@ -126,6 +126,8 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.CloudStream.NoActionBar"
             android:windowSoftInputMode="adjustPan">
             <intent-filter>
@@ -141,6 +143,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.player.DownloadedPlayerActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
+            android:exported="true"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:theme="@style/Theme.CloudStream.NoActionBar" />
         <activity
             android:name=".ui.player.GeneratorPlayer"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
