@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -19,7 +20,6 @@ import androidx.core.content.ContextCompat
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.databinding.PlayerSheetTracksBinding
 import com.lagradost.cloudstream3.ui.result.displayLinkName
-import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.SubtitleHelper.fromTagToEnglishLanguageName
 import kotlin.math.roundToInt
 
@@ -52,6 +52,10 @@ class KinoTrackSheetDialog(
     private val white = ContextCompat.getColor(context, R.color.white)
     private val gray = ContextCompat.getColor(context, R.color.grayTextColor)
     private var currentVideo: VideoTrack? = selectedVideo
+    private var currentSubtitle: SubtitleData? = selectedSubtitle
+    private val qualityRows = mutableListOf<Pair<VideoTrack, View>>()
+    private val subtitleRows = mutableListOf<Pair<SubtitleData, View>>()
+    private var lastUserTapAt = 0L
     private val panelWidth = (context.resources.displayMetrics.widthPixels * .42f).roundToInt()
         .coerceAtLeast(dp(300)).coerceAtMost(dp(480))
 
@@ -133,8 +137,7 @@ class KinoTrackSheetDialog(
         sources.forEach { source ->
             val link = source.first
             val name = link?.name ?: source.second?.name ?: context.getString(R.string.video_source)
-            val quality = link?.quality?.let(Qualities::getStringByInt).orEmpty()
-            val label = listOf(displayLinkName(name), quality).filter { it.isNotBlank() }.joinToString(" • ")
+            val label = displayLinkName(name)
             val sourceKey = source.first?.url ?: source.second?.uri?.toString()
             addRow(label, R.drawable.ic_baseline_audiotrack_24, sourceKey == selectedSourceKey) {
                 it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
@@ -173,6 +176,7 @@ class KinoTrackSheetDialog(
         binding.subtitleToggleRow.visibility = View.VISIBLE
         binding.subtitleActions.visibility = View.VISIBLE
         binding.sheetContent.removeAllViews()
+        subtitleRows.clear()
 
         binding.subtitleToggleRow.removeAllViews()
         val label = TextView(context).apply {
@@ -202,18 +206,20 @@ class KinoTrackSheetDialog(
             val displayNames = subtitles.map(::subtitleDisplayName)
             val duplicateNames = displayNames.groupingBy { it }.eachCount()
             subtitles.forEachIndexed { index, subtitle ->
-                val selected = subtitle == selectedSubtitle
+                val selected = subtitle == currentSubtitle
                 val displayName = displayNames[index]
                 val label = if (duplicateNames[displayName] == 1) displayName else {
                     val tag = subtitle.languageCode?.takeIf { it.isNotBlank() } ?: subtitle.originalName
                     "$displayName ($tag)"
                 }
-                addRow(subtitleLabel(subtitle, label), R.drawable.ic_baseline_closed_caption_24, selected) {
+                val row = addRow(subtitleLabel(subtitle, label), R.drawable.ic_baseline_closed_caption_24, selected) {
                     if (!subtitlesEnabled) return@addRow
                     it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                    currentSubtitle = subtitle
+                    subtitleRows.forEach { (item, itemRow) -> updateRowSelection(itemRow, item == currentSubtitle) }
                     onSubtitleSelected(subtitle)
-                    renderSubtitles(audioTab, subTab)
                 }
+                subtitleRows += subtitle to row
             }
         }
 
@@ -234,21 +240,32 @@ class KinoTrackSheetDialog(
         binding.subtitleToggleRow.visibility = View.GONE
         binding.subtitleActions.visibility = View.GONE
         binding.sheetContent.removeAllViews()
+        qualityRows.clear()
         videoTracks.forEach { track ->
             val selected = track.id == currentVideo?.id && track.width == currentVideo?.width && track.height == currentVideo?.height
-            addRow(videoLabel(track), R.drawable.ic_baseline_audiotrack_24, selected) {
+            val row = addRow(videoLabel(track), R.drawable.ic_baseline_audiotrack_24, selected) {
                 it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
                 currentVideo = track
+                lastUserTapAt = SystemClock.uptimeMillis()
+                qualityRows.forEach { (item, itemRow) -> updateRowSelection(itemRow, item == currentVideo) }
                 onVideoSelected(track)
-                renderQuality()
             }
+            qualityRows += track to row
         }
     }
 
     fun refreshSelection(track: VideoTrack?) {
         if (!isShowing) return
+        if (track == currentVideo) return
+        if (SystemClock.uptimeMillis() - lastUserTapAt < SELECTION_REFRESH_DEBOUNCE_MS) return
         currentVideo = track
-        renderQuality()
+        qualityRows.forEach { (item, row) -> updateRowSelection(row, item == currentVideo) }
+    }
+
+    fun refreshSubtitleSelection(subtitle: SubtitleData?) {
+        if (!isShowing || subtitle == currentSubtitle) return
+        currentSubtitle = subtitle
+        subtitleRows.forEach { (item, row) -> updateRowSelection(row, item == currentSubtitle) }
     }
 
     private fun sectionLabel(text: String) = TextView(context).apply {
@@ -259,7 +276,7 @@ class KinoTrackSheetDialog(
         setPadding(dp(14), 0, dp(14), dp(6))
     }
 
-    private fun addRow(label: String, icon: Int, selected: Boolean, click: (View) -> Unit) {
+    private fun addRow(label: String, icon: Int, selected: Boolean, click: (View) -> Unit): View {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -291,6 +308,19 @@ class KinoTrackSheetDialog(
         }
         row.addView(iconView); row.addView(text); row.addView(radio)
         binding.sheetContent.addView(row, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(10) })
+        return row
+    }
+
+    private fun updateRowSelection(row: View, selected: Boolean) {
+        val container = row as? LinearLayout ?: return
+        container.background = rounded(if (selected) 0x1AE50914 else 0x0FFFFFFF, 30, if (selected) red else null)
+        (container.getChildAt(0) as? ImageView)?.imageTintList = ColorStateList.valueOf(if (selected) red else gray)
+        (container.getChildAt(1) as? TextView)?.setTextColor(if (selected) white else gray)
+        (container.getChildAt(2) as? ImageView)?.apply {
+            imageTintList = ColorStateList.valueOf(if (selected) white else gray)
+            background = radioBackground(selected)
+            visibility = if (selected) View.VISIBLE else View.INVISIBLE
+        }
     }
 
     private fun tab(text: String, active: Boolean) = TextView(context).apply {
@@ -336,11 +366,21 @@ class KinoTrackSheetDialog(
 
     private fun videoLabel(track: VideoTrack): String = track.label ?: track.height?.takeIf { it > 0 }?.let { "${it}p" } ?: "Auto"
     private fun subtitleDisplayName(subtitle: SubtitleData): String =
-        fromTagToEnglishLanguageName(subtitle.languageCode)?.takeIf { it.isNotBlank() }
+        resolveLanguageName(subtitle.languageCode)?.takeIf { it.isNotBlank() }
             ?: subtitle.originalName
+
+    private fun resolveLanguageName(code: String?): String? {
+        if (code.isNullOrBlank()) return null
+        return fromTagToEnglishLanguageName(code)
+            ?: code.substringBefore('-').takeIf { it != code }?.let(::fromTagToEnglishLanguageName)
+    }
 
     private fun subtitleLabel(subtitle: SubtitleData, displayName: String = subtitleDisplayName(subtitle)): String =
         displayName + subtitle.nameSuffix.takeIf { it.isNotBlank() }?.let { " • $it" }.orEmpty()
     private fun weightParams() = LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(6) }
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density).roundToInt()
+
+    private companion object {
+        const val SELECTION_REFRESH_DEBOUNCE_MS = 1500L
+    }
 }

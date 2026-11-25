@@ -225,7 +225,18 @@ class GeneratorPlayer : FullScreenPlayer() {
 
         currentSelectedSubtitles = subtitle
         //Log.i(TAG, "setSubtitles = $subtitle")
-        return player.setPreferredSubtitles(subtitle)
+        val requiresReload = player.setPreferredSubtitles(subtitle)
+        if (requiresReload && userInitiated && viewModel.generator is DownloadFileGenerator) {
+            context?.let { ctx ->
+                val position = player.getPosition()
+                player.saveData()
+                player.reloadPlayer(ctx)
+                player.handleEvent(CSPlayerEvent.Play)
+                position?.let { player.seekTo(it) }
+                Log.i(TAG, "Reloaded downloaded player for manually selected subtitle=${subtitle?.name} position=$position")
+            }
+        }
+        return requiresReload
     }
 
     override fun embeddedSubtitlesFetched(subtitles: List<SubtitleData>) {
@@ -1073,6 +1084,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                             setSubtitles(restored, true)
                             currentSelectedSubtitles = restored
                             subtitleSelection = restored
+                            sheet.refreshSubtitleSelection(restored)
                         }
                     }
                 },
