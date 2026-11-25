@@ -224,6 +224,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         throw NotImplementedError()
     }
 
+    open fun showSubtitlesDialogue() {
+        showMirrorsDialogue()
+    }
+
     open fun showTracksDialogue() {
         throw NotImplementedError()
     }
@@ -801,7 +805,11 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                 onClickChange()
             }
 
-            KeyEvent.KEYCODE_M, KeyEvent.KEYCODE_VOLUME_MUTE -> {
+            KeyEvent.KEYCODE_M -> {
+                showSubtitlesDialogue()
+            }
+
+            KeyEvent.KEYCODE_VOLUME_MUTE -> {
                 player.handleEvent(CSPlayerEvent.ToggleMute)
             }
 
