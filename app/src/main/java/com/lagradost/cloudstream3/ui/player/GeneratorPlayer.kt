@@ -1868,7 +1868,15 @@ class GeneratorPlayer : FullScreenPlayer() {
 
             is ExtractorUri -> {
                 headerName = meta.headerName
-                subName = meta.name
+                subName = meta.name.ifBlank { meta.displayName.orEmpty() }.ifBlank {
+                    meta.uri.lastPathSegment.orEmpty()
+                        .substringBeforeLast('.')
+                        .replace(Regex("\\.(master|audio)$", RegexOption.IGNORE_CASE), "")
+                        .replace('_', ' ')
+                        .split(' ')
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }
+                }
                 episode = meta.episode
                 season = meta.season
                 tvType = meta.tvType
@@ -1888,9 +1896,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                     )
                 }${episode}\""
                 else "") + if (subName.isNullOrBlank() || subName == headerName) "" else " - $subName"
-            } else {
-                ""
-            }
+            } else subName.orEmpty()
             return playerVideoTitle
         }
         return ""
@@ -1914,7 +1920,6 @@ class GeneratorPlayer : FullScreenPlayer() {
 
         playerBinding?.playerEpisodeFillerHolder?.isVisible = isFiller ?: false
         playerBinding?.playerVideoTitle?.text = playerVideoTitle
-        playerBinding?.offlinePin?.isVisible = viewModel.generator is DownloadFileGenerator
     }
 
     fun setPlayerDimen(widthHeight: Pair<Int, Int>?) {
