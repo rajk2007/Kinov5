@@ -25,7 +25,6 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.blue
 import androidx.core.graphics.green
 import androidx.core.graphics.red
@@ -663,10 +662,6 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
     private fun updateLockUI() {
         playerBinding?.apply {
             playerLock.setIconResource(if (isLocked) R.drawable.video_locked else R.drawable.video_unlocked)
-            playerLock.background = AppCompatResources.getDrawable(
-                requireContext(),
-                if (isLocked) R.drawable.video_lock_ring_locked else R.drawable.video_lock_ring
-            )
             val color = if (isLocked) context?.colorFromAttribute(R.attr.colorPrimary)
             else Color.WHITE
             if (color != null) {

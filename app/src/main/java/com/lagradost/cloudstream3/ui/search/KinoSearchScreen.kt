@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -30,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.lagradost.cloudstream3.TvType
 
 private val SearchBackground = Color(0xFF08090B)
@@ -168,11 +171,12 @@ private fun SectionHeading(title: String, action: String, onAction: () -> Unit) 
 
 @Composable
 private fun SearchCategoryChip(name: String, selected: Boolean, onClick: () -> Unit) {
+    val view = LocalView.current
     Box(
         Modifier
             .clip(RoundedCornerShape(50))
             .background(if (selected) SearchAccent else Color.Black)
-            .clickable(onClick = onClick)
+            .clickable { view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); onClick() }
             .padding(horizontal = 18.dp, vertical = 11.dp)
     ) {
         Text(name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
@@ -181,18 +185,20 @@ private fun SearchCategoryChip(name: String, selected: Boolean, onClick: () -> U
 
 @Composable
 private fun SearchChip(text: String, onClick: () -> Unit) {
-    Box(Modifier.clip(RoundedCornerShape(50)).background(SearchSurface).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp)) {
+    val view = LocalView.current
+    Box(Modifier.clip(RoundedCornerShape(50)).background(SearchSurface).clickable { view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); onClick() }.padding(horizontal = 16.dp, vertical = 10.dp)) {
         Text(text, color = Color.White, fontSize = 13.sp)
     }
 }
 
 @Composable
 fun ProviderResultCard(result: KinoSearchResult, onClick: () -> Unit) {
+    val view = LocalView.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(if (isPressed) 0.97f else 1f, label = "result_scale")
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).scale(scale).clickable(interactionSource = interactionSource, indication = null, onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = result.posterUrl ?: "", contentDescription = result.name, contentScale = ContentScale.Crop, modifier = Modifier.size(80.dp, 120.dp).clip(RoundedCornerShape(10.dp)).background(SearchSurface))
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).scale(scale).clickable(interactionSource = interactionSource, indication = null, onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); onClick() }), verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(result.posterUrl ?: "").crossfade(150).build(), contentDescription = result.name, contentScale = ContentScale.Crop, modifier = Modifier.size(80.dp, 120.dp).clip(RoundedCornerShape(10.dp)).background(SearchSurface))
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(result.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)

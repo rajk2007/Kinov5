@@ -156,6 +156,7 @@ object SingleSelectionHelper {
         }
 
         listView.setOnItemClickListener { _, _, which, _ ->
+            listView.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
             //  lastSelectedIndex = which
             if (realShowApply) {
                 if (!isMultiSelect) {

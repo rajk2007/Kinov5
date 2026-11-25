@@ -57,6 +57,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,6 +72,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,6 +80,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import androidx.compose.ui.res.painterResource
 import java.io.File
 import java.io.FileInputStream
@@ -300,11 +304,15 @@ private fun ContinueWatchingCard(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    val view = LocalView.current
     val progress = if (media.duration > 0L) (media.position.toFloat() / media.duration).coerceIn(0f, 1f) else 0f
-    Column(Modifier.width(165.dp).combinedClickable(onClick = onClick, onLongClick = onLongPress)) {
+    Column(Modifier.width(165.dp).combinedClickable(
+        onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
+        onLongClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onLongPress() },
+    )) {
         Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(14.dp)).background(KinoSurface)) {
             AsyncImage(
-                model = media.posterUrl ?: "",
+                model = ImageRequest.Builder(LocalContext.current).data(media.posterUrl ?: "").crossfade(150).build(),
                 contentDescription = media.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -385,7 +393,7 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
             else -> Unit
         }
     }) {
-        AsyncImage(model = item.posterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(70.dp, 92.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: "").crossfade(150).build(), contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(70.dp, 92.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
             Text(cleanLibraryTitle(item.title), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -393,7 +401,8 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
             Spacer(Modifier.height(5.dp))
             Text("${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}", color = KinoMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
-            LinearProgressIndicator(progress = { (item.progress / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = KinoRed, trackColor = KinoTrack)
+            val animatedProgress by animateFloatAsState((item.progress / 100f).coerceIn(0f, 1f), label = "downloadProgress")
+            LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = KinoRed, trackColor = KinoTrack)
             Spacer(Modifier.height(4.dp))
             Text(
                 when {
@@ -425,7 +434,7 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
 @Composable
 private fun QueueDownloadCard(item: KinoLibraryItem) {
     DownloadCardShell {
-        AsyncImage(model = item.posterUrl ?: "", contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.size(54.dp, 70.dp).clip(RoundedCornerShape(7.dp)).background(KinoSurface))
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: "").crossfade(150).build(), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.size(54.dp, 70.dp).clip(RoundedCornerShape(7.dp)).background(KinoSurface))
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
             Text(item.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -441,7 +450,7 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit, onDelete: (
     val context = LocalContext.current
     DownloadCardShell(onClick = onPlay) {
         Box {
-            AsyncImage(model = group.posterUrl ?: "", contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.size(88.dp, 112.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
+            AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(group.posterUrl ?: "").crossfade(150).build(), contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.size(88.dp, 112.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
             Row(Modifier.align(Alignment.TopStart).padding(4.dp).background(KinoRed, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Downloaded", tint = Color.White, modifier = Modifier.size(10.dp))
                 Text("Downloaded", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
@@ -512,7 +521,7 @@ private fun DownloadGroupDetail(
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().background(KinoBackgroundBottom)) {
         Box(Modifier.fillMaxWidth().height(230.dp)) {
-            AsyncImage(model = group.posterUrl ?: "", contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(group.posterUrl ?: "").crossfade(150).build(), contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .5f), Color.Transparent, KinoBackgroundBottom))))
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .35f), Color.Transparent))))
             IconButton(
@@ -575,7 +584,7 @@ private fun DownloadDetailRow(
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp)).background(KinoSurface).border(1.dp, Color.White.copy(alpha = .08f), RoundedCornerShape(16.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(4.dp).height(72.dp).clip(RoundedCornerShape(10.dp)).background(KinoRed))
         Spacer(Modifier.width(8.dp))
-        AsyncImage(model = item.posterUrl ?: groupPosterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(84.dp, 72.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onPlay))
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: groupPosterUrl ?: "").crossfade(150).build(), contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(84.dp, 72.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onPlay))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(episodeLabel, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -601,7 +610,7 @@ private fun DownloadDetailRow(
 @Composable
 private fun LegacyDownloadDetailRow(item: KinoLibraryItem, onPlay: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp)).background(KinoSurface).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = item.posterUrl ?: "", contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.size(110.dp, 96.dp).clip(RoundedCornerShape(12.dp)))
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: "").crossfade(150).build(), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.size(110.dp, 96.dp).clip(RoundedCornerShape(12.dp)))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) { Text(item.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis); Text(formatBytes(item.totalBytes), color = KinoMuted, fontSize = 13.sp) }
         IconButton(onClick = onPlay, modifier = Modifier.size(48.dp).border(2.dp, KinoRed, androidx.compose.foundation.shape.CircleShape)) { Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White) }

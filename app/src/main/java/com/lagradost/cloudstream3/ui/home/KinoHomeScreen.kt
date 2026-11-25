@@ -40,6 +40,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.lagradost.cloudstream3.api.MovieResult
 import com.lagradost.cloudstream3.ui.search.KinoSearchResult
 import kotlinx.coroutines.delay
@@ -126,6 +131,10 @@ private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) 
         if (items.size > 1) {
             while (true) {
                 delay(5_000)
+                if (pagerState.isScrollInProgress) {
+                    delay(100)
+                    continue
+                }
                 pagerState.animateScrollToPage((pagerState.currentPage + 1) % items.size)
             }
         }
@@ -141,6 +150,7 @@ private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) 
             modifier = Modifier.fillMaxSize()
         ) { page ->
             val item = items[page % items.size]
+            val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -148,10 +158,13 @@ private fun HeroBanner(items: List<HeroBannerItem>, onMovieClick: (MovieResult) 
                     .clickable { onMovieClick(item.movie) }
             ) {
                 AsyncImage(
-                    model = item.backdropUrl ?: item.movie.poster_path ?: "",
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(item.backdropUrl ?: item.movie.poster_path ?: "")
+                        .crossfade(150)
+                        .build(),
                     contentDescription = item.title,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().graphicsLayer { translationX = pageOffset * 40.dp.toPx() }
                 )
                 Box(
                     modifier = Modifier
@@ -225,12 +238,16 @@ private fun SectionShell(row: HomeRow, content: @Composable () -> Unit) {
 
 @Composable
 private fun MovieCard(movie: MovieResult, onClick: (MovieResult) -> Unit, modifier: Modifier = Modifier) {
+    val view = LocalView.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) .94f else 1f, label = "cardScale")
-    Column(modifier = modifier.width(112.dp).scale(scale).clickable(interactionSource = interaction, indication = null) { onClick(movie) }) {
+    Column(modifier = modifier.width(112.dp).scale(scale).clickable(interactionSource = interaction, indication = null) {
+        view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+        onClick(movie)
+    }) {
         AsyncImage(
-            model = movie.poster_path,
+            model = ImageRequest.Builder(LocalContext.current).data(movie.poster_path).crossfade(150).build(),
             contentDescription = movie.displayTitle(),
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxWidth().height(164.dp).clip(RoundedCornerShape(10.dp)).background(KinoSurface)

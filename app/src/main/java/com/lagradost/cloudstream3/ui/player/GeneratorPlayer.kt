@@ -1868,15 +1868,28 @@ class GeneratorPlayer : FullScreenPlayer() {
 
             is ExtractorUri -> {
                 headerName = meta.headerName
-                subName = meta.name.ifBlank { meta.displayName.orEmpty() }.ifBlank {
-                    meta.uri.lastPathSegment.orEmpty()
-                        .substringBeforeLast('.')
-                        .replace(Regex("\\.(master|audio)$", RegexOption.IGNORE_CASE), "")
-                        .replace('_', ' ')
-                        .split(' ')
-                        .filter { it.isNotBlank() }
-                        .joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }
-                }
+                fun titleCaseFilename(value: String): String = value
+                    .substringBeforeLast('.')
+                    .replace(Regex("\\.(master|audio)$", RegexOption.IGNORE_CASE), "")
+                    .replace('_', ' ')
+                    .split(Regex("\\s+"))
+                    .filter(String::isNotBlank)
+                    .joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }
+                val pathName = (meta.relativePath ?: meta.basePath)
+                    ?.substringAfterLast('/')
+                    ?.substringAfterLast('\\')
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::titleCaseFilename)
+                val uriName = meta.uri
+                    .takeIf { it != android.net.Uri.EMPTY }
+                    ?.lastPathSegment
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::titleCaseFilename)
+                subName = sequenceOf(meta.name, meta.displayName, meta.headerName, pathName, uriName)
+                    .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+                    .firstOrNull()
+                    ?: context?.getString(R.string.downloaded_file)
+                    ?: "Downloaded file"
                 episode = meta.episode
                 season = meta.season
                 tvType = meta.tvType
