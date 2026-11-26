@@ -89,6 +89,16 @@
         <item name="boxItemBackground">@color/amoledModeLight</item>
     </style>
 
+    <style name="ChipOutlined" parent="@style/Widget.Material3.Chip.Filter">
+        <item name="chipBackgroundColor">@android:color/transparent</item>
+        <item name="chipStrokeColor">#66FFFFFF</item>
+        <item name="chipStrokeWidth">1dp</item>
+        <item name="textColor">@android:color/white</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="chipMinTouchTargetSize">0dp</item>
+        <item name="checkedIconVisible">false</item>
+    </style>
+
     <style name="ChipFilled" parent="@style/Widget.Material3.Chip.Filter">
         <item name="chipBackgroundColor">@color/chip_color</item>
         <item name="chipStrokeColor">@color/white_transparent_toggle</item>

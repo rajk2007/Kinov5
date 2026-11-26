@@ -703,19 +703,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     var selectEpisodeRange: String? = null
 
     private fun setUrl(url: String?) {
-        if (url == null) {
-            binding?.resultOpenInBrowser?.isVisible = false
-            return
-        }
-
-        val valid = url.startsWith("http")
-
-        binding?.resultOpenInBrowser?.apply {
-            isVisible = valid
-            setOnClickListener {
-                context?.openBrowser(url)
-            }
-        }
+        if (url == null) return
 
         resultBinding?.resultReloadConnectionOpenInBrowser?.setOnClickListener {
             view?.context?.openBrowser(url)
@@ -821,11 +809,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
         // ===== ===== =====
 
-        binding.resultSearch.isGone = storedData.name.isBlank()
-        binding.resultSearch.setOnClickListener {
-            QuickSearchFragment.pushSearch(activity, storedData.name)
-        }
-
         resultBinding?.apply {
             resultReloadConnectionerror.setOnClickListener {
                 viewModel.load(
@@ -910,9 +893,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             resultScroll.setOnScrollChangeListener(NestedScrollView.OnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
                 val dy = scrollY - oldScrollY
                 if (dy > 0) { //check for scroll down
-                    binding.resultBookmarkFab.shrink()
                 } else if (dy < -5) {
-                    binding.resultBookmarkFab.extend()
                 }
                 if (!isFullScreenPlayer && player.getIsPlaying()) {
                     if (scrollY > (resultBinding?.fragmentTrailer?.playerBackground?.height
@@ -955,7 +936,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
                 })
             */
-            resultSubscribe.setOnClickListener {
+            resultBinding?.resultSubscribeInline?.setOnClickListener {
                 viewModel.toggleSubscriptionStatus(context) { newStatus: Boolean? ->
                     if (newStatus == null) return@toggleSubscriptionStatus
 
@@ -965,25 +946,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         R.string.subscription_new
                     } else {
                         R.string.subscription_deleted
-                    }
-
-                    val name = (viewModel.page.value as? Resource.Success)?.value?.title
-                        ?: com.lagradost.cloudstream3.utils.txt(R.string.no_data)
-                            .asStringNull(context) ?: ""
-                    showToast(
-                        com.lagradost.cloudstream3.utils.txt(message, name),
-                        Toast.LENGTH_SHORT
-                    )
-                }
-            }
-            resultFavorite.setOnClickListener {
-                viewModel.toggleFavoriteStatus(context) { newStatus: Boolean? ->
-                    if (newStatus == null) return@toggleFavoriteStatus
-
-                    val message = if (newStatus) {
-                        R.string.favorite_added
-                    } else {
-                        R.string.favorite_removed
                     }
 
                     val name = (viewModel.page.value as? Resource.Success)?.value?.title
@@ -1048,18 +1010,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             }
         }
 
-
-        /*
-        result_bookmark_button?.setOnClickListener {
-            it.popupMenuNoIcons(
-                items = WatchType.values()
-                    .map { watchType -> Pair(watchType.internalId, watchType.stringRes) },
-                //.map { watchType -> Triple(watchType.internalId, watchType.iconRes, watchType.stringRes) },
-            ) {
-                viewModel.updateWatchStatus(WatchType.fromInternalId(this.itemId))
-            }
-        }*/
-
         observeNullable(viewModel.resumeWatching) { resume ->
             resultBinding?.apply {
                 if (resume == null) {
@@ -1116,7 +1066,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
 
         observeNullable(viewModel.subscribeStatus) { isSubscribed ->
-            binding.resultSubscribe.isVisible = isSubscribed != null
+            resultBinding?.resultSubscribeInline?.isVisible = isSubscribed != null
             if (isSubscribed == null) return@observeNullable
 
             val drawable = if (isSubscribed) {
@@ -1125,20 +1075,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 R.drawable.baseline_notifications_none_24
             }
 
-            binding.resultSubscribe.setImageResource(drawable)
-        }
-
-        observeNullable(viewModel.favoriteStatus) { isFavorite ->
-            binding.resultFavorite.isVisible = isFavorite != null
-            if (isFavorite == null) return@observeNullable
-
-            val drawable = if (isFavorite) {
-                R.drawable.ic_baseline_favorite_24
-            } else {
-                R.drawable.ic_baseline_favorite_border_24
-            }
-
-            binding.resultFavorite.setImageResource(drawable)
+            resultBinding?.resultSubscribeInline?.setImageResource(drawable)
         }
 
         observeNullable(viewModel.episodes) { episodes ->
@@ -1347,39 +1284,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     } else {
                         syncModel.addFromUrl(d.url)
                     }
-
-                    binding.apply {
-                        resultSearch.isGone = d.title.isBlank()
-                        resultSearch.setOnClickListener {
-                            QuickSearchFragment.pushSearch(activity, d.title)
-                        }
-
-                        resultShare.setOnClickListener {
-                            try {
-                                val i = Intent(Intent.ACTION_SEND)
-                                val nameBase64 =
-                                    base64Encode(d.apiName.toString().toByteArray(Charsets.UTF_8))
-                                val urlBase64 = base64Encode(d.url.toByteArray(Charsets.UTF_8))
-                                val encodedUri = URLEncoder.encode(
-                                    "$APP_STRING_SHARE:$nameBase64?$urlBase64",
-                                    "UTF-8"
-                                )
-                                val redirectUrl =
-                                    "https://recloudstream.github.io/csredirect?redirectto=$encodedUri"
-                                i.type = "text/plain"
-                                i.putExtra(Intent.EXTRA_SUBJECT, d.title)
-                                i.putExtra(Intent.EXTRA_TEXT, redirectUrl)
-                                startActivity(Intent.createChooser(i, d.title))
-                            } catch (e: Exception) {
-                                logError(e)
-                            }
-                        }
-                        setUrl(d.url)
-                        resultBookmarkFab.apply {
-                            isVisible = true
-                            extend()
-                        }
-                    }
+                    setUrl(d.url)
                 }
 
                 (data as? Resource.Failure)?.let { data ->
@@ -1387,7 +1292,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultErrorText.text = storedData.url.plus("\n") + data.errorString
                 }
 
-                binding.resultBookmarkFab.isVisible = data is Resource.Success
                 resultFinishLoading.isVisible = data is Resource.Success
 
                 resultLoading.isVisible = data is Resource.Loading
@@ -1544,17 +1448,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         observe(viewModel.recommendations) { recommendations ->
             setRecommendations(recommendations, null)
         }
+
         context?.let { ctx ->
             val arrayAdapter = ArrayAdapter<String>(ctx, R.layout.sort_bottom_single_choice)
-            /*
-            -1 -> None
-            0 -> Watching
-            1 -> Completed
-            2 -> OnHold
-            3 -> Dropped
-            4 -> PlanToWatch
-            5 -> ReWatching
-            */
             val items = listOf(
                 R.string.none,
                 R.string.type_watching,
@@ -1599,33 +1495,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             syncModel.publishUserData()
         }
 
-        observe(viewModel.watchStatus) { watchType ->
-            binding.resultBookmarkFab.apply {
-                setText(watchType.stringRes)
-                if (watchType == WatchType.NONE) {
-                    context?.colorFromAttribute(R.attr.white)
-                } else {
-                    context?.colorFromAttribute(R.attr.colorPrimary)
-                }?.let {
-                    val colorState = ColorStateList.valueOf(it)
-                    iconTint = colorState
-                    setTextColor(colorState)
-                }
-
-                setOnClickListener { fab ->
-                    activity?.showBottomDialog(
-                        WatchType.entries.map { fab.context.getString(it.stringRes) }.toList(),
-                        watchType.ordinal,
-                        fab.context.getString(R.string.action_add_to_bookmarks),
-                        showApply = false,
-                        {}) {
-                        viewModel.updateWatchStatus(WatchType.entries[it], context)
-                    }
-                }
-            }
-        }
-
-
         observeNullable(viewModel.loadedLinks) { load ->
             if (load == null) {
                 loadingDialog?.dismissSafe(activity)
@@ -1664,10 +1533,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         observeNullable(viewModel.selectedSeason) { text ->
             resultBinding?.apply {
                 resultSeasonButton.setText(text)
-
-                selectSeason =
-                    text?.asStringNull(resultSeasonButton.context)
-                // If the season button is visible the result season button will be next focus down
+                selectSeason = text?.asStringNull(resultSeasonButton.context)
                 if (resultSeasonButton.isVisible && resultResumeParent.isVisible) {
                     setFocusUpAndDown(resultResumeSeriesButton, resultSeasonButton)
                 }
@@ -1734,6 +1600,16 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             }
         }
 
+        resultBinding?.resultOverflow?.setOnClickListener { view ->
+            val entries = buildList {
+                if (resultBinding?.resultEpisodeSelect?.isVisible == true) add("Episodes" to { resultBinding?.resultEpisodeSelect?.performClick() })
+                if (resultBinding?.resultDubSelect?.isVisible == true) add("Dub" to { resultBinding?.resultDubSelect?.performClick() })
+                if (resultBinding?.resultSortButton?.isVisible == true) add("Sort" to { resultBinding?.resultSortButton?.performClick() })
+                if (resultBinding?.resultBatchDownloadButton?.isVisible == true) add("Download all" to { resultBinding?.resultBatchDownloadButton?.performClick() })
+            }
+            view.popupMenuNoIconsAndNoStringRes(entries.mapIndexed { index, pair -> index to pair.first }) { entries.getOrNull(itemId)?.second?.invoke() }
+        }
+
         observe(viewModel.seasonSelections) { seasonList ->
             resultBinding?.resultSeasonButton?.setOnClickListener { view ->
 
@@ -1796,23 +1672,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
 
         binding?.apply {
-            resultRecommendationsBtt.isGone = isInvalid
-            resultRecommendationsBtt.setOnClickListener {
-                val nextFocusDown = if (resultOverlappingPanels.getSelectedPanel().ordinal == 1) {
-                    resultOverlappingPanels.openEndPanel()
-                    R.id.result_recommendations
-                } else {
-                    resultOverlappingPanels.closePanels()
-                    R.id.result_description
-                }
-                resultBinding?.apply {
-                    resultRecommendationsBtt.nextFocusDownId = nextFocusDown
-                    resultSearch.nextFocusDownId = nextFocusDown
-                    resultOpenInBrowser.nextFocusDownId = nextFocusDown
-                    resultShare.nextFocusDownId = nextFocusDown
-                }
-            }
             resultOverlappingPanels.setEndPanelLockState(if (isInvalid) OverlappingPanelsLayout.LockState.CLOSE else OverlappingPanelsLayout.LockState.UNLOCKED)
+        }
 
             rec?.map { it.apiName }?.distinct()?.let { apiNames ->
                 // very dirty selection
@@ -1832,6 +1693,5 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             } ?: run {
                 recommendationBinding?.resultRecommendationsFilterButton?.isVisible = false
             }
-        }
     }
 }
