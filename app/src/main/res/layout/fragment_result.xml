@@ -348,32 +348,6 @@
                             </FrameLayout>
                         </LinearLayout>
                     </LinearLayout>
-
-
-
-                    <LinearLayout
-                        android:id="@+id/result_mlt_section"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:visibility="gone">
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="More Like This"
-                            android:textColor="?attr/textColor"
-                            android:textSize="18sp"
-                            android:textStyle="bold" />
-                        <androidx.recyclerview.widget.RecyclerView
-                            android:id="@+id/result_mlt_list"
-                            android:layout_width="match_parent"
-                            android:layout_height="250dp"
-                            android:clipToPadding="false"
-                            android:orientation="horizontal"
-                            android:paddingVertical="8dp"
-                            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
-                    </LinearLayout>
-
                     <TextView
                         android:id="@+id/result_cast_text"
                         android:layout_width="wrap_content"
@@ -621,7 +595,7 @@
                                     android:textColor="@android:color/white"
                                     android:textStyle="bold"
                                     android:visibility="visible"
-                                    android:background="@drawable/result_play_gradient"
+                                    android:background="@drawable/result_play_solid"
                                     app:backgroundTint="@null"
                                     app:icon="@drawable/ic_baseline_play_arrow_24" />
 
@@ -684,6 +658,28 @@
                                       android:layout_width="wrap_content"
                                       android:layout_height="match_parent" />-->
                         </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/result_mlt_section"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="More Like This"
+                                android:textColor="?attr/textColor"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+                            <androidx.recyclerview.widget.RecyclerView
+                                android:id="@+id/result_mlt_list"
+                                android:layout_width="match_parent"
+                                android:layout_height="250dp"
+                                android:clipToPadding="false"
+                                android:orientation="horizontal"
+                                android:paddingVertical="8dp"
+                                app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+                        </LinearLayout>
 
                         <com.google.android.material.tabs.TabLayout
                             android:id="@+id/result_tabs"
@@ -709,6 +705,7 @@
                         </HorizontalScrollView>
 
                         <LinearLayout
+                            android:id="@+id/result_episode_content"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical">

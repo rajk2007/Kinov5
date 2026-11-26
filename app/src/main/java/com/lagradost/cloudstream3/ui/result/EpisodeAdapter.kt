@@ -71,7 +71,7 @@ data class EpisodeClickEvent(val position: Int?, val action: Int, val data: Resu
 }
 
 class EpisodeAdapter(
-    private val hasDownloadSupport: Boolean,
+    private var hasDownloadSupport: Boolean,
     private val clickCallback: (EpisodeClickEvent) -> Unit,
     private val downloadClickCallback: (DownloadClickEvent) -> Unit,
 ) : NoStateAdapter<ResultEpisode>(diffCallback = BaseDiffCallback(itemSame = { a, b ->
@@ -79,6 +79,12 @@ class EpisodeAdapter(
 }, contentSame = { a, b ->
     a == b
 })) {
+    fun setHasDownloadSupport(value: Boolean) {
+        if (hasDownloadSupport == value) return
+        hasDownloadSupport = value
+        notifyDataSetChanged()
+    }
+
     companion object {
         const val HAS_POSTER: Int = 0
         const val HAS_NO_POSTER: Int = 1

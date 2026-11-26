@@ -976,7 +976,7 @@ https://developer.android.com/design/ui/tv/samples/jet-fit
                                 android:foreground="@drawable/outline_drawable"
                                 android:maxLines="7"
                                 android:nextFocusUp="@id/result_back"
-                                android:nextFocusDown="@id/result_bookmark_button"
+                                android:nextFocusDown="@id/result_play_movie_button"
                                 android:padding="5dp"
                                 android:requiresFadingEdge="vertical"
                                 android:textColor="?attr/textColor"

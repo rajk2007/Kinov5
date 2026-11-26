@@ -26,6 +26,7 @@ import androidx.core.widget.doOnTextChanged
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -43,11 +44,13 @@ import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.tabs.TabLayout
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.CommonActivity.showToast
 import com.lagradost.cloudstream3.DubStatus
 import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.isMovie
 import com.lagradost.cloudstream3.MainActivity.Companion.afterPluginsLoadedEvent
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.R
@@ -86,6 +89,7 @@ import com.lagradost.cloudstream3.ui.result.ResultFragment.getStoredData
 import com.lagradost.cloudstream3.ui.result.ResultFragment.updateUIEvent
 import com.lagradost.cloudstream3.ui.search.SearchAdapter
 import com.lagradost.cloudstream3.ui.search.SearchHelper
+import com.lagradost.cloudstream3.ui.result.MltAdapter
 import com.lagradost.cloudstream3.ui.setRecycledViewPool
 import com.lagradost.cloudstream3.ui.settings.SettingsGeneral.Companion.pickDownloadPath
 import com.lagradost.cloudstream3.ui.settings.utils.getChooseFolderLauncher
@@ -848,8 +852,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             resultCastItems.setRecycledViewPool(ActorAdaptor.sharedPool)
             resultCastItems.adapter = ActorAdaptor()
             resultEpisodes.setRecycledViewPool(EpisodeAdapter.sharedPool)
-            resultEpisodes.adapter =
-                EpisodeAdapter(
+            val episodeAdapter = EpisodeAdapter(
                     api?.hasDownloadSupport == true,
                         { episodeClick ->
                             when (episodeClick.action) {
@@ -865,6 +868,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
 
                 )
+            resultEpisodes.adapter = episodeAdapter
 
             observeNullable(viewModel.selectedSorting) {
                 resultSortButton.setText(it)
@@ -1031,7 +1035,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             )
                     }
                     if (resume.isMovie) {
-                        resultPlayParent.isGone = true
+                        resultPlayParent.isVisible = true
+                        resultPlayMovie.text = context?.getString(R.string.resume)
                         resultResumeSeriesProgressText.isVisible = true
                         resultResumeSeriesProgressText.setText(progress.progressLeft)
                     }
@@ -1087,6 +1092,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     episodes is Resource.Success && episodes.value.isNotEmpty()
 
                 if (episodes is Resource.Success) {
+                    (resultEpisodes.adapter as? EpisodeAdapter)?.setHasDownloadSupport(
+                        viewModel.currentRepo?.api?.hasDownloadSupport
+                            ?: api?.hasDownloadSupport == true
+                    )
                     prefetchDownloadLinks(episodes.value)
                     (resultEpisodes.adapter as? EpisodeAdapter)?.submitList(episodes.value)
 
@@ -1220,6 +1229,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultCastText.setText(d.actorsText)
                     resultNextAiring.setText(d.nextAiringEpisode)
                     resultNextAiringTime.setText(d.nextAiringDate)
+                    val isMovie = viewModel.getCurrentResponse()?.isMovie() == true
                     resultPoster.loadImage(d.posterImage, headers = d.posterHeaders) {
                         error {
                             getImageFromDrawable(
@@ -1228,6 +1238,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             )
                         }
                     }
+                    resultPoster.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                     resultPosterBackground.loadImage(
                         d.posterBackgroundImage,
                         headers = d.posterHeaders
@@ -1270,8 +1281,24 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         true
                     )
 
-                    resultCastItems.isGone = !showCast || d.actors.isNullOrEmpty()
+                    resultCastText.isGone = isMovie || d.actors.isNullOrEmpty()
+                    resultCastItems.isGone = isMovie || !showCast || d.actors.isNullOrEmpty()
                     (resultCastItems.adapter as? ActorAdaptor)?.submitList(if (showCast) d.actors else emptyList())
+                    resultTabs.isVisible = !isMovie
+                    resultMltSection.isVisible = isMovie && !viewModel.recommendations.value.isNullOrEmpty()
+                    if (!isMovie && resultTabs.tabCount == 0) {
+                        resultTabs.addTab(resultTabs.newTab().setText("Episodes"))
+                        resultTabs.addTab(resultTabs.newTab().setText("More Like This"))
+                        resultTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+                            override fun onTabSelected(tab: TabLayout.Tab) {
+                                val showMlt = tab.position == 1
+                                resultEpisodeContent.isVisible = !showMlt
+                                resultMltSection.isVisible = showMlt && !viewModel.recommendations.value.isNullOrEmpty()
+                            }
+                            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+                            override fun onTabReselected(tab: TabLayout.Tab) = Unit
+                        })
+                    }
 
                     if (d.contentRatingText == null) {
                         // If there is no rating to display, we don't want an empty gap
@@ -1447,6 +1474,19 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
         observe(viewModel.recommendations) { recommendations ->
             setRecommendations(recommendations, null)
+            resultBinding?.apply {
+                val isMovie = viewModel.getCurrentResponse()?.isMovie() == true
+                resultMltSection.isVisible = !recommendations.isNullOrEmpty() &&
+                    (isMovie || resultTabs.selectedTabPosition == 1)
+                if (resultMltList.adapter == null) {
+                    resultMltList.layoutManager =
+                        LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                    resultMltList.adapter = MltAdapter { callback ->
+                        SearchHelper.handleSearchClickCallback(callback)
+                    }
+                }
+                (resultMltList.adapter as? MltAdapter)?.submitList(recommendations ?: emptyList())
+            }
         }
 
         context?.let { ctx ->
