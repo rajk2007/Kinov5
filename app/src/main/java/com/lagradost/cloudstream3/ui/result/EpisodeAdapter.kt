@@ -291,7 +291,7 @@ class EpisodeAdapter(
                                 isExpanded = !isExpanded
                                 maxLines = if (isExpanded) {
                                     Integer.MAX_VALUE
-                                } else 4
+                                } else 2
                             }
                         }
                     }
@@ -323,6 +323,8 @@ class EpisodeAdapter(
                             }.format(Date(item.airDate))
 
                             episodeDate.setText(txt(formattedAirDate))
+                            // V33: a row recycled from an episode without an air date kept the date hidden
+                            episodeDate.isVisible = true
                         }
                     } else {
                         episodeUpcomingIcon.isVisible = false

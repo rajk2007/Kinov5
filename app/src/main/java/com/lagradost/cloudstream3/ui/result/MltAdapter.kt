@@ -28,12 +28,13 @@ class MltAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val density = parent.resources.displayMetrics.density
-        val width = (97 * density).toInt()
-        val imageHeight = (145 * density).toInt()
+        // V33: reference design posters
+        val width = (124 * density).toInt()
+        val imageHeight = (182 * density).toInt()
         val root = LinearLayout(parent.context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = RecyclerView.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                marginEnd = (10 * density).toInt()
+                marginEnd = (12 * density).toInt()
             }
             setPadding(0, 0, 0, (8 * density).toInt())
             isClickable = true
@@ -48,11 +49,11 @@ class MltAdapter(
         }
         val title = TextView(parent.context).apply {
             layoutParams = LinearLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = (5 * density).toInt()
+                topMargin = (10 * density).toInt()
             }
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            maxLines = 2
+            setTextColor(Color.rgb(228, 228, 231))
+            textSize = 13f
+            maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
         val year = TextView(parent.context).apply {
@@ -62,7 +63,7 @@ class MltAdapter(
         }
         root.addView(image)
         root.addView(title)
-        root.addView(year)
+        // V33: the reference design shows titles only, the year line is not attached
         return Holder(root, image, title, year)
     }
 

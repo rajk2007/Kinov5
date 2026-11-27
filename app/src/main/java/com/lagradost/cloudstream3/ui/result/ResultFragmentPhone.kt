@@ -875,6 +875,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             }
 
             observe(viewModel.sortSelections) { sort ->
+                // V33: selectors are only shown when there is something to choose
+                resultBinding?.resultSortButton?.isVisible = sort.size > 1
                 resultBinding?.resultSortButton?.setOnClickListener { view ->
                     view?.context?.let { ctx ->
                         val names = sort
@@ -1020,6 +1022,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultResumeParent.isVisible = false
                     resultPlayParent.isVisible = true
                     resultResumeProgressHolder.isVisible = false
+                    updateSeriesPlayRow()
                     return@observeNullable
                 }
                 resultResumeParent.isVisible = true
@@ -1061,6 +1064,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultResumeSeriesProgressText.isVisible = false
                 }
 
+                updateSeriesPlayRow()
                 resultResumeSeriesButton.setOnClickListener {
                     resumeAction(storedData, resume)
                 }
@@ -1071,7 +1075,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
 
         observeNullable(viewModel.subscribeStatus) { isSubscribed ->
-            resultBinding?.resultSubscribeInline?.isVisible = isSubscribed != null
+            // V33: the Subscribe bell is always offered on series pages (it used to be hidden until you were subscribed)
+            resultBinding?.resultSubscribeInline?.isVisible =
+                viewModel.getCurrentResponse()?.isMovie() != true
             if (isSubscribed == null) return@observeNullable
 
             val drawable = if (isSubscribed) {
@@ -1089,13 +1095,16 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 resultEpisodeLoading.isVisible = episodes is Resource.Loading
                 resultEpisodes.isVisible = episodes is Resource.Success
                 resultBatchDownloadButton.isVisible =
-                    episodes is Resource.Success && episodes.value.isNotEmpty()
+                    episodes is Resource.Success && episodes.value.isNotEmpty() &&
+                        viewModel.currentRepo?.api?.hasDownloadSupport == true
 
                 if (episodes is Resource.Success) {
                     (resultEpisodes.adapter as? EpisodeAdapter)?.setHasDownloadSupport(
                         viewModel.currentRepo?.api?.hasDownloadSupport
                             ?: api?.hasDownloadSupport == true
                     )
+                    // V33: series pages have no viewModel.movie entry, the Play row is driven from the episode list
+                    updateSeriesPlayRow()
                     prefetchDownloadLinks(episodes.value)
                     (resultEpisodes.adapter as? EpisodeAdapter)?.submitList(episodes.value)
 
@@ -1154,10 +1163,15 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 resultPlayMovie.isVisible = data is Resource.Success
                 downloadButton.isVisible =
                     data is Resource.Success && viewModel.currentRepo?.api?.hasDownloadSupport == true
+                if (data !is Resource.Success) {
+                    // V33: on series pages viewModel.movie is null, so the Play row is driven by the episode list
+                    updateSeriesPlayRow()
+                }
 
                 (data as? Resource.Success)?.value?.let { (text, ep) ->
                     prefetchDownloadLinks(listOf(ep))
-                    resultPlayMovie.setText(text)
+                    // V33: the reference design labels the button just "Play"
+                    resultPlayMovie.setText(R.string.kino_play)
                     resultPlayMovie.setOnClickListener {
                         viewModel.handleAction(
                             EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)
@@ -1226,6 +1240,13 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultMetaRating.setText(d.ratingText)
                     resultMetaStatus.setText(d.onGoingText)
                     resultMetaContentRating.setText(d.contentRatingText)
+                    // V33: empty meta pills must not leave gaps
+                    resultMetaSite.isGone = d.apiName.asStringNull(root.context).isNullOrBlank()
+                    resultMetaType.isGone = d.typeText.asStringNull(root.context).isNullOrBlank()
+                    resultMetaYear.isGone = d.yearText == null
+                    resultMetaRating.isGone = d.ratingText == null
+                    resultMetaStatus.isGone = d.onGoingText == null
+                    resultMetaDuration.isGone = d.durationText == null
                     resultCastText.setText(d.actorsText)
                     resultNextAiring.setText(d.nextAiringEpisode)
                     resultNextAiringTime.setText(d.nextAiringDate)
@@ -1239,6 +1260,13 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         }
                     }
                     resultPoster.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    // V33: a portrait poster is shown whole instead of centre-cropped; the bottom fade is only
+                    // drawn under a landscape backdrop
+                    val heroIsBackdrop = !d.backgroundPosterUrl.isNullOrBlank()
+                    resultPosterBackground.scaleType =
+                        if (heroIsBackdrop) android.widget.ImageView.ScaleType.CENTER_CROP
+                        else android.widget.ImageView.ScaleType.FIT_CENTER
+                    resultHeroFade.isVisible = heroIsBackdrop
                     resultPosterBackground.loadImage(
                         d.posterBackgroundImage,
                         headers = d.posterHeaders
@@ -1265,11 +1293,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             isExpanded = !isExpanded
                             maxLines = if (isExpanded) {
                                 Integer.MAX_VALUE
-                            } else 10
+                            } else 3
                         }
                     }
 
-                    populateChips(resultTag, d.tags)
+                    populateChips(resultTag, d.tags, style = R.style.ChipOutlined)
 
                     resultComingSoon.isVisible = d.comingSoon
                     resultDataHolder.isGone = d.comingSoon
@@ -1281,10 +1309,16 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         true
                     )
 
-                    resultCastText.isGone = isMovie || d.actors.isNullOrEmpty()
-                    resultCastItems.isGone = isMovie || !showCast || d.actors.isNullOrEmpty()
+                    // V33: "Cast" is a section header below More Like This, also on movies
+                    resultCastText.isGone = d.actors.isNullOrEmpty()
+                    resultCastText.text = root.context.getString(R.string.kino_cast)
+                    resultCastItems.isGone = !showCast || d.actors.isNullOrEmpty()
                     (resultCastItems.adapter as? ActorAdaptor)?.submitList(if (showCast) d.actors else emptyList())
                     resultTabs.isVisible = !isMovie
+                    // V33: movies have no tabs, season pills or episode list
+                    resultEpisodeContent.isVisible = !isMovie
+                    resultSubscribeInline.isVisible = !isMovie
+                    resultNextAiringHolder.isGone = d.nextAiringEpisode == null && d.nextAiringDate == null
                     resultMltSection.isVisible = isMovie && !viewModel.recommendations.value.isNullOrEmpty()
                     if (!isMovie && resultTabs.tabCount == 0) {
                         resultTabs.addTab(resultTabs.newTab().setText("Episodes"))
@@ -1293,6 +1327,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             override fun onTabSelected(tab: TabLayout.Tab) {
                                 val showMlt = tab.position == 1
                                 resultEpisodeContent.isVisible = !showMlt
+                                // V33: the season pills belong to the Episodes tab
+                                resultSeasonChipsScroll.isVisible =
+                                    !showMlt && resultSeasonChips.childCount > 1
                                 resultMltSection.isVisible = showMlt && !viewModel.recommendations.value.isNullOrEmpty()
                             }
                             override fun onTabUnselected(tab: TabLayout.Tab) = Unit
@@ -1300,10 +1337,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         })
                     }
 
-                    if (d.contentRatingText == null) {
-                        // If there is no rating to display, we don't want an empty gap
-                        resultMetaContentRating.width = 0
-                    }
+                    // V33: the age rating pill is not part of the new design, hide it when there is nothing to show
+                    resultMetaContentRating.isGone = true
 
                     if (syncModel.addSyncs(d.syncData)) {
                         syncModel.updateMetaAndUser()
@@ -1573,6 +1608,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         observeNullable(viewModel.selectedSeason) { text ->
             resultBinding?.apply {
                 resultSeasonButton.setText(text)
+                // V33: keep the season pills in sync
+                updateSeasonChipSelection()
                 selectSeason = text?.asStringNull(resultSeasonButton.context)
                 if (resultSeasonButton.isVisible && resultResumeParent.isVisible) {
                     setFocusUpAndDown(resultResumeSeriesButton, resultSeasonButton)
@@ -1604,6 +1641,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 //        val preferDub = context?.getApiDubstatusSettings()?.all { it == DubStatus.Dubbed } == true
 
         observe(viewModel.dubSubSelections) { range ->
+            // V33: selectors are only shown when there is something to choose
+            resultBinding?.resultDubSelect?.isVisible = range.size > 1
             resultBinding?.resultDubSelect?.setOnClickListener { view ->
                 view?.context?.let { ctx ->
                     view.popupMenuNoIconsAndNoStringRes(
@@ -1621,6 +1660,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
 
         observe(viewModel.rangeSelections) { range ->
+            resultBinding?.resultEpisodeSelect?.isVisible = range.size > 1
             resultBinding?.resultEpisodeSelect?.setOnClickListener { view ->
                 view?.context?.let { ctx ->
                     val names = range
@@ -1651,6 +1691,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
 
         observe(viewModel.seasonSelections) { seasonList ->
+            // V33: season pills
+            bindSeasonChips(seasonList)
             resultBinding?.resultSeasonButton?.setOnClickListener { view ->
 
                 view?.context?.let { ctx ->
@@ -1676,6 +1718,64 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     //}
                 }
             }
+        }
+    }
+
+    /**
+     * V33: Play row of series pages. viewModel.movie is only filled for movies, so on a series page
+     * "Play" starts the last watched episode (if it is in the visible list) or the first episode.
+     */
+    private fun updateSeriesPlayRow() {
+        val binding = resultBinding ?: return
+        // movies and other single-video pages are handled by the viewModel.movie observer
+        if (viewModel.getCurrentResponse()?.isMovie() == true) return
+        if (viewModel.movie.value is Resource.Success) return
+
+        val list =
+            (viewModel.episodes.value as? Resource.Success<List<ResultEpisode>>)?.value.orEmpty()
+        val resumeEpisode = viewModel.resumeWatching.value?.result
+        val playEpisode =
+            resumeEpisode?.takeIf { resume -> list.any { it.id == resume.id } } ?: list.firstOrNull()
+
+        binding.resultPlayMovie.isVisible = playEpisode != null
+        binding.downloadButton.isGone = true
+        if (playEpisode == null) return
+
+        binding.resultPlayMovie.setText(R.string.kino_play)
+        binding.resultPlayMovie.setOnClickListener {
+            viewModel.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode))
+        }
+        binding.resultPlayMovie.setOnLongClickListener {
+            viewModel.handleAction(EpisodeClickEvent(ACTION_SHOW_OPTIONS, playEpisode))
+            true
+        }
+    }
+
+    /** V33: season pills of the reference design, one chip per season. */
+    private fun bindSeasonChips(seasonList: List<Pair<com.lagradost.cloudstream3.UiText?, Int>>) {
+        val binding = resultBinding ?: return
+        val group = binding.resultSeasonChips
+        val selected = viewModel.selectedSeason.value?.asStringNull(binding.root.context)
+        group.removeAllViews()
+        for ((text, season) in seasonList) {
+            val label = text?.asStringNull(binding.root.context) ?: continue
+            val chip = layoutInflater.inflate(R.layout.season_chip, group, false)
+                    as? com.google.android.material.chip.Chip ?: continue
+            chip.text = label
+            chip.isChecked = label == selected
+            chip.setOnClickListener { viewModel.changeSeason(season) }
+            group.addView(chip)
+        }
+        binding.resultSeasonChipsScroll.isVisible = seasonList.size > 1
+    }
+
+    private fun updateSeasonChipSelection() {
+        val binding = resultBinding ?: return
+        val selected = viewModel.selectedSeason.value?.asStringNull(binding.root.context) ?: return
+        val group = binding.resultSeasonChips
+        for (index in 0 until group.childCount) {
+            val chip = group.getChildAt(index) as? com.google.android.material.chip.Chip ?: continue
+            chip.isChecked = chip.text?.toString() == selected
         }
     }
 
