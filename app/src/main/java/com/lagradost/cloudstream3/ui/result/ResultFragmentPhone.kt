@@ -26,6 +26,7 @@ import androidx.core.widget.doOnTextChanged
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -43,11 +44,13 @@ import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.tabs.TabLayout
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.CommonActivity.showToast
 import com.lagradost.cloudstream3.DubStatus
 import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.isMovie
 import com.lagradost.cloudstream3.MainActivity.Companion.afterPluginsLoadedEvent
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.R
@@ -86,6 +89,7 @@ import com.lagradost.cloudstream3.ui.result.ResultFragment.getStoredData
 import com.lagradost.cloudstream3.ui.result.ResultFragment.updateUIEvent
 import com.lagradost.cloudstream3.ui.search.SearchAdapter
 import com.lagradost.cloudstream3.ui.search.SearchHelper
+import com.lagradost.cloudstream3.ui.result.MltAdapter
 import com.lagradost.cloudstream3.ui.setRecycledViewPool
 import com.lagradost.cloudstream3.ui.settings.SettingsGeneral.Companion.pickDownloadPath
 import com.lagradost.cloudstream3.ui.settings.utils.getChooseFolderLauncher
@@ -100,6 +104,7 @@ import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.QualityProbe
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialog
@@ -181,37 +186,53 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             .distinctBy { it.url }
             .toList()
 
-    /** Resolve the first playable item as soon as the result page has its media data. */
+    /** Resolve links and warm quality/size probes for the first episodes as soon as the result page has media data. */
     private fun prefetchDownloadLinks(episodes: List<ResultEpisode>) {
         val pageUrl = arguments?.getString("url") ?: return
         val apiName = arguments?.getString("apiName") ?: return
-        val episode = episodes.sortedBy { it.episode }.firstOrNull() ?: return
-        val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
-        val cacheKey = downloadCacheKey(pageUrl, episode)
-
+        val candidates = episodes.sortedBy { it.episode }.take(20)
+        if (candidates.isEmpty()) return
         lifecycleScope.launch(Dispatchers.IO) {
-            if (getCachedDownloadLinks(cacheKey) != null || !prefetchingDownloadLinks.add(cacheKey)) return@launch
-            try {
-                val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
-                android.util.Log.d("BG_PREFETCH", "Fetching download links for $data")
-                val links = mutableListOf<ExtractorLink>()
-                APIRepository(api).loadLinks(
-                    data = data,
-                    isCasting = false,
-                    subtitleCallback = { },
-                    callback = { link -> links += link },
-                )
-                val filteredLinks = filterDownloadLinks(links)
-                cacheDownloadLinks(cacheKey, filteredLinks)
-                android.util.Log.d("BG_PREFETCH", "Cached ${filteredLinks.size} links for $data")
-            } catch (error: Exception) {
-                android.util.Log.d("BG_PREFETCH", "Prefetch failed for $data", error)
-            } finally {
-                prefetchingDownloadLinks.remove(cacheKey)
+            for (episode in candidates) {
+                val data = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl
+                val cacheKey = downloadCacheKey(pageUrl, episode)
+                if (!getCachedDownloadLinks(cacheKey).isNullOrEmpty() ||
+                    !prefetchingDownloadLinks.add(cacheKey)
+                ) continue
+                try {
+                    val api = APIHolder.getApiFromNameNull(apiName) ?: return@launch
+                    android.util.Log.d("BG_PREFETCH", "Fetching download links for $data")
+                    val links = mutableListOf<ExtractorLink>()
+                    APIRepository(api).loadLinks(
+                        data = data,
+                        isCasting = false,
+                        subtitleCallback = { },
+                        callback = { link -> links += link },
+                    )
+                    val filteredLinks = filterDownloadLinks(links)
+                    cacheDownloadLinks(cacheKey, filteredLinks)
+                    android.util.Log.d("BG_PREFETCH", "Cached ${filteredLinks.size} links for $data")
+                    android.util.Log.d("BG_PREFETCH_PROBE", "Probing up to 6 links for $data")
+                    filteredLinks.take(6).map { link ->
+                        async(Dispatchers.IO) {
+                            runCatching { QualityProbe.probeVideoQualities(link) }
+                                .onFailure {
+                                    android.util.Log.d(
+                                        "BG_PREFETCH_PROBE",
+                                        "Probe failed for ${link.url.take(80)}",
+                                        it,
+                                    )
+                                }
+                        }
+                    }.awaitAll()
+                } catch (error: Exception) {
+                    android.util.Log.d("BG_PREFETCH", "Prefetch failed for $data", error)
+                } finally {
+                    prefetchingDownloadLinks.remove(cacheKey)
+                }
             }
         }
     }
-
     private val gestureRegionsListener =
         object : PanelsChildGestureRegionObserver.GestureRegionsListener {
             override fun onGestureRegionsUpdate(gestureRegions: List<Rect>) {
@@ -304,6 +325,26 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             return
         }
         fun renderLinks(links: List<ExtractorLink>) {
+            val selectedLang = links.firstOrNull()?.languageKey().orEmpty()
+            val downloadedHeights = if (downloadEpisodes.size == 1) {
+                val isMovie = loadedResponse is MovieLoadResponse
+                val season = ep.season ?: 1
+                DirectDownloadManager.activeDownloads.value.values
+                    .filter {
+                        it.parentTitle == loadedResponse.name &&
+                            it.status == com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus.COMPLETED &&
+                            (it.language == null || it.language.equals(selectedLang, ignoreCase = true)) &&
+                            if (isMovie) {
+                                it.season == null && it.episode == null
+                            } else {
+                                it.season == season && it.episode == ep.episode
+                            }
+                    }
+                    .map { it.selectedHeight }
+                    .toSet()
+            } else {
+                emptySet()
+            }
             composeView.setContent {
                 androidx.compose.material3.MaterialTheme {
                     if (links.isEmpty()) {
@@ -317,6 +358,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             title = loadedResponse.name,
                             apiName = apiName,
                             isMovie = loadedResponse is MovieLoadResponse,
+                            downloadedHeights = downloadedHeights,
                             onDownload = { selectedLink, selectedHeight, estimatedSizeBytes ->
                                 dialog.dismiss()
                                 lifecycleScope.launch(Dispatchers.IO) {
@@ -353,7 +395,9 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
                                             val season = episode.season ?: 1
                                             val title = if (isMovie) response.name else "${response.name} - S${season}E${episode.episode}"
-                                            val fileName = if (isMovie) response.name else "${response.name}_S${season}E${episode.episode}"
+                                            val langTag = selectedLanguage.replace(Regex("[^A-Za-z0-9]"), "").take(12).ifEmpty { "default" }
+                                            val fileName = if (isMovie) "${response.name}_${langTag}_${selectedHeight}p"
+                                            else "${response.name}_S${season}E${episode.episode}_${langTag}_${selectedHeight}p"
                                             ensureDownloadPath(activityContext)
                                             val started = DirectDownloadManager.startDownload(
                                                 context = activityContext,
@@ -363,6 +407,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                                 posterUrl = response.posterUrl,
                                                 apiName = apiName,
                                                 selectedHeight = selectedHeight,
+                                                parentTitle = response.name,
+                                                language = selectedLanguage,
+                                                season = if (isMovie) null else season,
+                                                episode = if (isMovie) null else episode.episode,
                                                 estimatedSizeBytes = estimatedSizeBytes,
                                                 dataUrl = episode.data.takeIf { !APIRepository.isInvalidData(it) } ?: pageUrl,
                                             )
@@ -659,19 +707,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     var selectEpisodeRange: String? = null
 
     private fun setUrl(url: String?) {
-        if (url == null) {
-            binding?.resultOpenInBrowser?.isVisible = false
-            return
-        }
-
-        val valid = url.startsWith("http")
-
-        binding?.resultOpenInBrowser?.apply {
-            isVisible = valid
-            setOnClickListener {
-                context?.openBrowser(url)
-            }
-        }
+        if (url == null) return
 
         resultBinding?.resultReloadConnectionOpenInBrowser?.setOnClickListener {
             view?.context?.openBrowser(url)
@@ -777,11 +813,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
         // ===== ===== =====
 
-        binding.resultSearch.isGone = storedData.name.isBlank()
-        binding.resultSearch.setOnClickListener {
-            QuickSearchFragment.pushSearch(activity, storedData.name)
-        }
-
         resultBinding?.apply {
             resultReloadConnectionerror.setOnClickListener {
                 viewModel.load(
@@ -821,8 +852,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             resultCastItems.setRecycledViewPool(ActorAdaptor.sharedPool)
             resultCastItems.adapter = ActorAdaptor()
             resultEpisodes.setRecycledViewPool(EpisodeAdapter.sharedPool)
-            resultEpisodes.adapter =
-                EpisodeAdapter(
+            val episodeAdapter = EpisodeAdapter(
                     api?.hasDownloadSupport == true,
                         { episodeClick ->
                             when (episodeClick.action) {
@@ -838,6 +868,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
 
                 )
+            resultEpisodes.adapter = episodeAdapter
 
             observeNullable(viewModel.selectedSorting) {
                 resultSortButton.setText(it)
@@ -866,9 +897,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             resultScroll.setOnScrollChangeListener(NestedScrollView.OnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
                 val dy = scrollY - oldScrollY
                 if (dy > 0) { //check for scroll down
-                    binding.resultBookmarkFab.shrink()
                 } else if (dy < -5) {
-                    binding.resultBookmarkFab.extend()
                 }
                 if (!isFullScreenPlayer && player.getIsPlaying()) {
                     if (scrollY > (resultBinding?.fragmentTrailer?.playerBackground?.height
@@ -911,7 +940,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
                 })
             */
-            resultSubscribe.setOnClickListener {
+            resultBinding?.resultSubscribeInline?.setOnClickListener {
                 viewModel.toggleSubscriptionStatus(context) { newStatus: Boolean? ->
                     if (newStatus == null) return@toggleSubscriptionStatus
 
@@ -921,25 +950,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         R.string.subscription_new
                     } else {
                         R.string.subscription_deleted
-                    }
-
-                    val name = (viewModel.page.value as? Resource.Success)?.value?.title
-                        ?: com.lagradost.cloudstream3.utils.txt(R.string.no_data)
-                            .asStringNull(context) ?: ""
-                    showToast(
-                        com.lagradost.cloudstream3.utils.txt(message, name),
-                        Toast.LENGTH_SHORT
-                    )
-                }
-            }
-            resultFavorite.setOnClickListener {
-                viewModel.toggleFavoriteStatus(context) { newStatus: Boolean? ->
-                    if (newStatus == null) return@toggleFavoriteStatus
-
-                    val message = if (newStatus) {
-                        R.string.favorite_added
-                    } else {
-                        R.string.favorite_removed
                     }
 
                     val name = (viewModel.page.value as? Resource.Success)?.value?.title
@@ -1004,18 +1014,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             }
         }
 
-
-        /*
-        result_bookmark_button?.setOnClickListener {
-            it.popupMenuNoIcons(
-                items = WatchType.values()
-                    .map { watchType -> Pair(watchType.internalId, watchType.stringRes) },
-                //.map { watchType -> Triple(watchType.internalId, watchType.iconRes, watchType.stringRes) },
-            ) {
-                viewModel.updateWatchStatus(WatchType.fromInternalId(this.itemId))
-            }
-        }*/
-
         observeNullable(viewModel.resumeWatching) { resume ->
             resultBinding?.apply {
                 if (resume == null) {
@@ -1024,7 +1022,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultResumeProgressHolder.isVisible = false
                     return@observeNullable
                 }
-                resultResumeParent.isVisible = true
+                resultResumeParent.isVisible = false
+                resultResumeProgressHolder.isVisible = false
+                resultPlayParent.isVisible = true
+                resultPlayMovie.text = context?.getString(R.string.play_movie_button)
                 resume.progress?.let { progress ->
                     resultNextSeriesButton.isVisible = false
                     resultResumeSeriesTitle.apply {
@@ -1037,7 +1038,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             )
                     }
                     if (resume.isMovie) {
-                        resultPlayParent.isGone = true
+                        resultPlayParent.isVisible = true
+                        resultPlayMovie.text = context?.getString(R.string.resume)
                         resultResumeSeriesProgressText.isVisible = true
                         resultResumeSeriesProgressText.setText(progress.progressLeft)
                     }
@@ -1072,7 +1074,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
 
         observeNullable(viewModel.subscribeStatus) { isSubscribed ->
-            binding.resultSubscribe.isVisible = isSubscribed != null
+            resultBinding?.resultSubscribeInline?.isVisible = isSubscribed != null
             if (isSubscribed == null) return@observeNullable
 
             val drawable = if (isSubscribed) {
@@ -1081,20 +1083,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 R.drawable.baseline_notifications_none_24
             }
 
-            binding.resultSubscribe.setImageResource(drawable)
-        }
-
-        observeNullable(viewModel.favoriteStatus) { isFavorite ->
-            binding.resultFavorite.isVisible = isFavorite != null
-            if (isFavorite == null) return@observeNullable
-
-            val drawable = if (isFavorite) {
-                R.drawable.ic_baseline_favorite_24
-            } else {
-                R.drawable.ic_baseline_favorite_border_24
-            }
-
-            binding.resultFavorite.setImageResource(drawable)
+            resultBinding?.resultSubscribeInline?.setImageResource(drawable)
         }
 
         observeNullable(viewModel.episodes) { episodes ->
@@ -1106,6 +1095,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     episodes is Resource.Success && episodes.value.isNotEmpty()
 
                 if (episodes is Resource.Success) {
+                    (resultEpisodes.adapter as? EpisodeAdapter)?.setHasDownloadSupport(
+                        viewModel.currentRepo?.api?.hasDownloadSupport
+                            ?: api?.hasDownloadSupport == true
+                    )
                     prefetchDownloadLinks(episodes.value)
                     (resultEpisodes.adapter as? EpisodeAdapter)?.submitList(episodes.value)
 
@@ -1167,7 +1160,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
                 (data as? Resource.Success)?.value?.let { (text, ep) ->
                     prefetchDownloadLinks(listOf(ep))
-                    resultPlayMovie.setText(text)
+                    resultPlayMovie.setText(context?.getString(R.string.play_movie_button))
                     resultPlayMovie.setOnClickListener {
                         viewModel.handleAction(
                             EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)
@@ -1239,6 +1232,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultCastText.setText(d.actorsText)
                     resultNextAiring.setText(d.nextAiringEpisode)
                     resultNextAiringTime.setText(d.nextAiringDate)
+                    val isMovie = viewModel.getCurrentResponse()?.isMovie() == true
+                    resultPoster.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                     resultPoster.loadImage(d.posterImage, headers = d.posterHeaders) {
                         error {
                             getImageFromDrawable(
@@ -1247,6 +1242,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             )
                         }
                     }
+                    resultPoster.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                     resultPosterBackground.loadImage(
                         d.posterBackgroundImage,
                         headers = d.posterHeaders
@@ -1273,7 +1269,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             isExpanded = !isExpanded
                             maxLines = if (isExpanded) {
                                 Integer.MAX_VALUE
-                            } else 10
+                            } else 3
                         }
                     }
 
@@ -1289,8 +1285,24 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         true
                     )
 
+                    resultCastText.isGone = !showCast || d.actors.isNullOrEmpty()
                     resultCastItems.isGone = !showCast || d.actors.isNullOrEmpty()
                     (resultCastItems.adapter as? ActorAdaptor)?.submitList(if (showCast) d.actors else emptyList())
+                    resultTabs.isVisible = !isMovie
+                    resultMltSection.isVisible = isMovie && !viewModel.recommendations.value.isNullOrEmpty()
+                    if (!isMovie && resultTabs.tabCount == 0) {
+                        resultTabs.addTab(resultTabs.newTab().setText("Episodes"))
+                        resultTabs.addTab(resultTabs.newTab().setText("More Like This"))
+                        resultTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+                            override fun onTabSelected(tab: TabLayout.Tab) {
+                                val showMlt = tab.position == 1
+                                resultEpisodeContent.isVisible = !showMlt
+                                resultMltSection.isVisible = showMlt && !viewModel.recommendations.value.isNullOrEmpty()
+                            }
+                            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+                            override fun onTabReselected(tab: TabLayout.Tab) = Unit
+                        })
+                    }
 
                     if (d.contentRatingText == null) {
                         // If there is no rating to display, we don't want an empty gap
@@ -1303,39 +1315,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     } else {
                         syncModel.addFromUrl(d.url)
                     }
-
-                    binding.apply {
-                        resultSearch.isGone = d.title.isBlank()
-                        resultSearch.setOnClickListener {
-                            QuickSearchFragment.pushSearch(activity, d.title)
-                        }
-
-                        resultShare.setOnClickListener {
-                            try {
-                                val i = Intent(Intent.ACTION_SEND)
-                                val nameBase64 =
-                                    base64Encode(d.apiName.toString().toByteArray(Charsets.UTF_8))
-                                val urlBase64 = base64Encode(d.url.toByteArray(Charsets.UTF_8))
-                                val encodedUri = URLEncoder.encode(
-                                    "$APP_STRING_SHARE:$nameBase64?$urlBase64",
-                                    "UTF-8"
-                                )
-                                val redirectUrl =
-                                    "https://recloudstream.github.io/csredirect?redirectto=$encodedUri"
-                                i.type = "text/plain"
-                                i.putExtra(Intent.EXTRA_SUBJECT, d.title)
-                                i.putExtra(Intent.EXTRA_TEXT, redirectUrl)
-                                startActivity(Intent.createChooser(i, d.title))
-                            } catch (e: Exception) {
-                                logError(e)
-                            }
-                        }
-                        setUrl(d.url)
-                        resultBookmarkFab.apply {
-                            isVisible = true
-                            extend()
-                        }
-                    }
+                    setUrl(d.url)
                 }
 
                 (data as? Resource.Failure)?.let { data ->
@@ -1343,7 +1323,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultErrorText.text = storedData.url.plus("\n") + data.errorString
                 }
 
-                binding.resultBookmarkFab.isVisible = data is Resource.Success
                 resultFinishLoading.isVisible = data is Resource.Success
 
                 resultLoading.isVisible = data is Resource.Loading
@@ -1499,18 +1478,23 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
         observe(viewModel.recommendations) { recommendations ->
             setRecommendations(recommendations, null)
+            resultBinding?.apply {
+                val isMovie = viewModel.getCurrentResponse()?.isMovie() == true
+                resultMltSection.isVisible = !recommendations.isNullOrEmpty() &&
+                    (isMovie || resultTabs.selectedTabPosition == 1)
+                if (resultMltList.adapter == null) {
+                    resultMltList.layoutManager =
+                        LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                    resultMltList.adapter = MltAdapter { callback ->
+                        SearchHelper.handleSearchClickCallback(callback)
+                    }
+                }
+                (resultMltList.adapter as? MltAdapter)?.submitList(recommendations ?: emptyList())
+            }
         }
+
         context?.let { ctx ->
             val arrayAdapter = ArrayAdapter<String>(ctx, R.layout.sort_bottom_single_choice)
-            /*
-            -1 -> None
-            0 -> Watching
-            1 -> Completed
-            2 -> OnHold
-            3 -> Dropped
-            4 -> PlanToWatch
-            5 -> ReWatching
-            */
             val items = listOf(
                 R.string.none,
                 R.string.type_watching,
@@ -1555,33 +1539,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             syncModel.publishUserData()
         }
 
-        observe(viewModel.watchStatus) { watchType ->
-            binding.resultBookmarkFab.apply {
-                setText(watchType.stringRes)
-                if (watchType == WatchType.NONE) {
-                    context?.colorFromAttribute(R.attr.white)
-                } else {
-                    context?.colorFromAttribute(R.attr.colorPrimary)
-                }?.let {
-                    val colorState = ColorStateList.valueOf(it)
-                    iconTint = colorState
-                    setTextColor(colorState)
-                }
-
-                setOnClickListener { fab ->
-                    activity?.showBottomDialog(
-                        WatchType.entries.map { fab.context.getString(it.stringRes) }.toList(),
-                        watchType.ordinal,
-                        fab.context.getString(R.string.action_add_to_bookmarks),
-                        showApply = false,
-                        {}) {
-                        viewModel.updateWatchStatus(WatchType.entries[it], context)
-                    }
-                }
-            }
-        }
-
-
         observeNullable(viewModel.loadedLinks) { load ->
             if (load == null) {
                 loadingDialog?.dismissSafe(activity)
@@ -1620,10 +1577,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         observeNullable(viewModel.selectedSeason) { text ->
             resultBinding?.apply {
                 resultSeasonButton.setText(text)
-
-                selectSeason =
-                    text?.asStringNull(resultSeasonButton.context)
-                // If the season button is visible the result season button will be next focus down
+                selectSeason = text?.asStringNull(resultSeasonButton.context)
                 if (resultSeasonButton.isVisible && resultResumeParent.isVisible) {
                     setFocusUpAndDown(resultResumeSeriesButton, resultSeasonButton)
                 }
@@ -1690,6 +1644,16 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             }
         }
 
+        resultBinding?.resultOverflow?.setOnClickListener { view ->
+            val entries = buildList {
+                if (resultBinding?.resultEpisodeSelect?.isVisible == true) add("Episodes" to { resultBinding?.resultEpisodeSelect?.performClick() })
+                if (resultBinding?.resultDubSelect?.isVisible == true) add("Dub" to { resultBinding?.resultDubSelect?.performClick() })
+                if (resultBinding?.resultSortButton?.isVisible == true) add("Sort" to { resultBinding?.resultSortButton?.performClick() })
+                if (resultBinding?.resultBatchDownloadButton?.isVisible == true) add("Download all" to { resultBinding?.resultBatchDownloadButton?.performClick() })
+            }
+            view.popupMenuNoIconsAndNoStringRes(entries.mapIndexed { index, pair -> index to pair.first }) { entries.getOrNull(itemId)?.second?.invoke() }
+        }
+
         observe(viewModel.seasonSelections) { seasonList ->
             resultBinding?.resultSeasonButton?.setOnClickListener { view ->
 
@@ -1752,23 +1716,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         }
 
         binding?.apply {
-            resultRecommendationsBtt.isGone = isInvalid
-            resultRecommendationsBtt.setOnClickListener {
-                val nextFocusDown = if (resultOverlappingPanels.getSelectedPanel().ordinal == 1) {
-                    resultOverlappingPanels.openEndPanel()
-                    R.id.result_recommendations
-                } else {
-                    resultOverlappingPanels.closePanels()
-                    R.id.result_description
-                }
-                resultBinding?.apply {
-                    resultRecommendationsBtt.nextFocusDownId = nextFocusDown
-                    resultSearch.nextFocusDownId = nextFocusDown
-                    resultOpenInBrowser.nextFocusDownId = nextFocusDown
-                    resultShare.nextFocusDownId = nextFocusDown
-                }
-            }
             resultOverlappingPanels.setEndPanelLockState(if (isInvalid) OverlappingPanelsLayout.LockState.CLOSE else OverlappingPanelsLayout.LockState.UNLOCKED)
+        }
 
             rec?.map { it.apiName }?.distinct()?.let { apiNames ->
                 // very dirty selection
@@ -1788,6 +1737,5 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             } ?: run {
                 recommendationBinding?.resultRecommendationsFilterButton?.isVisible = false
             }
-        }
     }
 }
