@@ -91,7 +91,8 @@ fun displayLinkName(name: String): String {
             name
                 .replace(Regex("""Orion\s*[·•.]\s*""", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("""\s*\d{3,4}p\s*""", RegexOption.IGNORE_CASE), "")
-                .trim()
+                .trim(),
+            fallback = "Original"
         )
     }
     val (quality, size) = parseLegacyLinkName(name)
@@ -140,13 +141,13 @@ fun normalizeLanguageName(raw: String?, fallback: String = "Audio"): String {
     val text = raw?.trim().orEmpty()
     if (text.isEmpty()) return fallback
 
-    // ISO tag or known tag in the string -> real name (en -> English, hi -> Hindi ...)
+    // 1) ISO tag or known tag in the string -> real name (en -> English, hi -> Hindi ...)
     SubtitleHelper.fromTagToEnglishLanguageName(text)?.let { return it }
     Regex("\\b([a-z]{2,3}(?:-[A-Za-z]{2,4})?)\\b").findAll(text).mapNotNull { match ->
         SubtitleHelper.fromTagToEnglishLanguageName(match.groupValues[1])
     }.firstOrNull()?.let { return it }
 
-    // Known language names written out anywhere in the string
+    // 2) Known language names written out anywhere in the string
     val known = listOf(
         "English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali",
         "Marathi", "Gujarati", "Punjabi", "Urdu", "Arabic", "French", "German",
@@ -155,16 +156,10 @@ fun normalizeLanguageName(raw: String?, fallback: String = "Audio"): String {
     )
     known.firstOrNull { text.contains(it, ignoreCase = true) }?.let { return it }
 
-    // Provider artifacts and junk words that are never language names
-    val junk = listOf(
-        "multi-audio", "multiaudio", "multi audio", "vela", "atlas", "orion",
-        "original", "default", "und", "audio", "track", "multi", "dual",
-    )
-    val cleaned = text.replace(Regex("[|_\\[\\](){ } :]"), " ")
-        .split(" ").filter { it.isNotBlank() }
-        .filterNot { word -> junk.any { word.equals(it, ignoreCase = true) } }
-        .joinToString(" ").trim()
-    return cleaned.ifBlank { fallback }
+    // 3) V36 strict mode: nothing above matched, so the string is a provider artifact
+    // ("Vela", "BigBang", "Vexon", the provider name, ...). It is NEVER shown as a
+    // language name — return the caller's fallback instead.
+    return fallback
 }
 
 fun ExtractorLink.languageKey(): String {
@@ -177,7 +172,7 @@ fun ExtractorLink.languageKey(): String {
         .replace(Regex("""\b\d{3,4}\s*p\b|\b4[kK]\b""", RegexOption.IGNORE_CASE), "")
         .replace(Regex("""[•·\-–—_|\[\](){ } :]"""), " ")
         .replace(Regex("\\s+"), " ").trim()
-    return normalizeLanguageName(residual.ifBlank { name }, fallback = "Unknown")
+    return normalizeLanguageName(residual.ifBlank { name }, fallback = "Original")
 }
 
 data class QualityOption(

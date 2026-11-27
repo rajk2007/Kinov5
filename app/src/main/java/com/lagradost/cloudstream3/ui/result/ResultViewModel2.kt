@@ -2501,8 +2501,56 @@ class ResultViewModel2 : ViewModel() {
 
     // this instantly updates the metadata on the page
     private fun postPage(loadResponse: LoadResponse, apiRepository: APIRepository) {
-        _recommendations.postValue(loadResponse.recommendations ?: emptyList())
+        val providerRecs = loadResponse.recommendations ?: emptyList()
+        _recommendations.postValue(providerRecs)
         _page.postValue(Resource.Success(loadResponse.toResultData(apiRepository)))
+
+        // V36: the provider returns no recommendations for most titles. Build a
+        // genre-based "More Like This" from the provider's own genre lists (mainPage),
+        // excluding the current title and anything with the same name. This runs after
+        // the page data is posted, so it lands on every fresh page load — no race.
+        if (providerRecs.isEmpty()) {
+            viewModelScope.launchSafe {
+                try {
+                    val genres = loadResponse.tags.orEmpty().take(3)
+                    if (genres.isEmpty()) return@launchSafe
+
+                    val results = mutableListOf<SearchResponse>()
+                    for (genre in genres) {
+                        val genreListIndex = apiRepository.mainPage.indexOfFirst { page ->
+                            page.name.equals(genre, ignoreCase = true)
+                        }
+                        val mainPage = if (genreListIndex >= 0) {
+                            apiRepository.getMainPage(1, genreListIndex)
+                        } else {
+                            null
+                        }
+                        val items = (mainPage as? Resource.Success)?.value
+                            ?.firstOrNull()?.items.orEmpty()
+                            .flatMap { it.list }
+                        results += items
+                        if (results.size >= 30) break
+                    }
+
+                    val fallback = results
+                        .filterNot { it.url == loadResponse.url }
+                        .filterNot { it.name.equals(loadResponse.name, ignoreCase = true) }
+                        .distinctBy { it.name.lowercase() }
+                        .take(20)
+
+                    // only publish if the provider itself still has nothing (and the
+                    // user has not navigated to another title meanwhile)
+                    if (fallback.isNotEmpty() &&
+                        _recommendations.value.isNullOrEmpty() &&
+                        currentResponse?.url == loadResponse.url
+                    ) {
+                        _recommendations.postValue(fallback)
+                    }
+                } catch (t: Throwable) {
+                    logError(t)
+                }
+            }
+        }
     }
 
     fun hasLoaded() = currentResponse != null

@@ -529,11 +529,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     protected lateinit var syncModel: SyncViewModel
 
     protected var resultBinding: FragmentResultBinding? = null
-
-    /** V35: guards the More Like This search fallback so it runs once per page. */
-    private val mlFallbackDone = java.util.concurrent.atomic.AtomicBoolean(false)
-    @Volatile
-    private var mlFallbackHasResults = false
     protected var recommendationBinding: ResultRecommendationsBinding? = null
     protected var syncBinding: ResultSyncBinding? = null
 
@@ -883,6 +878,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             observe(viewModel.sortSelections) { sort ->
                 // V33: selectors are only shown when there is something to choose
                 resultBinding?.resultSortButton?.isVisible = sort.size > 1
+                updatePillSpacer()
                 resultBinding?.resultSortButton?.setOnClickListener { view ->
                     view?.context?.let { ctx ->
                         val names = sort
@@ -1310,10 +1306,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         true
                     )
 
-                    // V35: a new page is loading, allow the MLT fallback to run again
-                    mlFallbackDone.set(false)
-                    mlFallbackHasResults = false
-
                     // V33: "Cast" is a section header below More Like This, also on movies
                     resultCastText.isGone = d.actors.isNullOrEmpty()
                     resultCastText.text = root.context.getString(R.string.kino_cast)
@@ -1328,7 +1320,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     // V35: the season chips replace the legacy season pill
                     resultSeasonButton.isVisible = false
                     resultNextAiringHolder.isGone = d.nextAiringEpisode == null && d.nextAiringDate == null
-                    resultMltSection.isVisible = isMovie && !viewModel.recommendations.value.isNullOrEmpty()
+                    resultMltSection.isVisible = isMovie &&
+                        !viewModel.recommendations.value.isNullOrEmpty()
                     if (!isMovie && resultTabs.tabCount == 0) {
                         resultTabs.addTab(resultTabs.newTab().setText("Episodes"))
                         resultTabs.addTab(resultTabs.newTab().setText("More Like This"))
@@ -1340,7 +1333,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 resultSeasonChipsScroll.isVisible =
                                     !showMlt && resultSeasonChips.childCount > 1
                                 resultMltSection.isVisible = showMlt &&
-                                    (!viewModel.recommendations.value.isNullOrEmpty() || mlFallbackHasResults)
+                                    !viewModel.recommendations.value.isNullOrEmpty()
                             }
                             override fun onTabUnselected(tab: TabLayout.Tab) = Unit
                             override fun onTabReselected(tab: TabLayout.Tab) = Unit
@@ -1531,38 +1524,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
                 }
                 (resultMltList.adapter as? MltAdapter)?.submitList(recommendations ?: emptyList())
-
-                // V35: the provider (KDesa) returns no recommendations for most titles.
-                // Fall back to a same-provider search on the title (minus the year) and
-                // show those results as More Like This instead of an empty section.
-                if (recommendations.isNullOrEmpty() && mlFallbackDone.compareAndSet(false, true)) {
-                    val response = viewModel.getCurrentResponse()
-                    val api = viewModel.currentRepo?.api
-                    if (response != null && api != null) {
-                        ioSafe {
-                            val query = response.name.substringBefore(" (").trim()
-                            val found = try {
-                                (viewModel.currentRepo?.search(query, 1) as? Resource.Success)
-                                    ?.value?.items.orEmpty()
-                            } catch (t: Throwable) {
-                                emptyList()
-                            }
-                            val filtered = found
-                                .filterNot { it.url == response.url }
-                                .distinctBy { it.name }
-                                .take(20)
-                            if (filtered.isNotEmpty()) {
-                                mlFallbackHasResults = true
-                                activity?.runOnUiThread {
-                                    resultMltSection.isVisible =
-                                        isMovie || resultTabs.selectedTabPosition == 1
-                                    (resultMltList.adapter as? MltAdapter)
-                                        ?.submitList(filtered)
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -1685,6 +1646,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         observe(viewModel.dubSubSelections) { range ->
             // V33: selectors are only shown when there is something to choose
             resultBinding?.resultDubSelect?.isVisible = range.size > 1
+            updatePillSpacer()
             resultBinding?.resultDubSelect?.setOnClickListener { view ->
                 view?.context?.let { ctx ->
                     view.popupMenuNoIconsAndNoStringRes(
@@ -1703,6 +1665,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
         observe(viewModel.rangeSelections) { range ->
             resultBinding?.resultEpisodeSelect?.isVisible = range.size > 1
+            updatePillSpacer()
             resultBinding?.resultEpisodeSelect?.setOnClickListener { view ->
                 view?.context?.let { ctx ->
                     val names = range
@@ -1796,6 +1759,16 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
             viewModel.handleAction(EpisodeClickEvent(ACTION_SHOW_OPTIONS, playEpisode))
             true
         }
+    }
+
+    /** V36: keeps a small gap between the episode count and the first visible pill. */
+    private fun updatePillSpacer() {
+        val binding = resultBinding ?: return
+        val anyPill = binding.resultEpisodeSelect.isVisible ||
+            binding.resultDubSelect.isVisible ||
+            binding.resultSeasonButton.isVisible ||
+            binding.resultSortButton.isVisible
+        binding.resultPillSpacer.isVisible = anyPill
     }
 
     /** V33: season pills of the reference design, one chip per season. */

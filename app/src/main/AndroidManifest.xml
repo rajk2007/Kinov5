@@ -100,6 +100,15 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- V36: WorkManager runs SubscriptionWorkManager as a foreground service on
+             Android 14+ (targetSdk 34+). Without this declaration setForeground() throws
+             MissingForegroundServiceTypeException, the app dies to a black screen and
+             WorkManager restarts it in a loop. Same fix upstream CloudStream ships. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <service
             android:name=".services.VideoDownloadService"
             android:exported="false" />

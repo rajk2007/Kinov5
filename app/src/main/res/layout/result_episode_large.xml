@@ -72,7 +72,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="3dp"
                             android:layout_gravity="bottom"
-                            app:indicatorColor="#E11D48"
+                            app:indicatorColor="#E50914"
                             app:trackColor="#55333333"
                             tools:progress="100" />
                     </FrameLayout>

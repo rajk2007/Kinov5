@@ -46,7 +46,7 @@
                     android:layout_width="26dp"
                     android:layout_height="26dp"
                     android:visibility="gone"
-                    app:indicatorColor="#E11D48"
+                    app:indicatorColor="#E50914"
                     app:indicatorSize="26dp"
                     app:trackColor="#44FFFFFF"
                     app:trackThickness="2dp"

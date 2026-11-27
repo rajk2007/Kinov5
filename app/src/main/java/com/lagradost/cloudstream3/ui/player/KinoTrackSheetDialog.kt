@@ -158,9 +158,9 @@ class KinoTrackSheetDialog(
                 setPadding(dp(8), 0, dp(8), dp(6))
             }
             binding.sheetContent.addView(heading)
-            audioTracks.forEach { track ->
+            audioTracks.forEachIndexed { index, track ->
                 val selected = track.id == selectedAudio?.id && track.formatIndex == selectedAudio?.formatIndex
-                addRow(audioLabel(track), R.drawable.ic_baseline_audiotrack_24, selected) {
+                addRow(audioLabel(track, index), R.drawable.ic_baseline_audiotrack_24, selected) {
                     it.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
                     onAudioSelected(track)
                     renderAudio(audioTab, subTab)
@@ -358,21 +358,21 @@ class KinoTrackSheetDialog(
         if (selected) setColor(red) else { setColor(Color.TRANSPARENT); setStroke(dp(1), gray) }
     }
 
-    /** V35: maps a raw audio track language/label to a real language name. */
-    private fun normalizeAudioLanguage(language: String?, label: String?): String {
-        val direct = com.lagradost.cloudstream3.ui.result.normalizeLanguageName(language, fallback = "")
-        if (direct.isNotBlank()) return direct
-        val fromLabel = com.lagradost.cloudstream3.ui.result.normalizeLanguageName(label, fallback = "")
-        if (fromLabel.isNotBlank()) return fromLabel
-        // Neither the language tag nor the label is a language: fall back to the label
-        // text itself (still better than a wrong language name).
-        return label?.takeIf { it.isNotBlank() } ?: "Audio"
+    /** V36: maps a raw audio track language/label to a real language name; junk
+     *  names ("Vela", "BigBang", "Vexon") collapse to per-track "Audio N" labels. */
+    private fun normalizeAudioLanguage(language: String?, label: String?, index: Int): String {
+        val real = com.lagradost.cloudstream3.ui.result
+            .normalizeLanguageName(language, fallback = "")
+            .ifBlank {
+                com.lagradost.cloudstream3.ui.result.normalizeLanguageName(label, fallback = "")
+            }
+        return real.ifBlank { "Audio ${index + 1}" }
     }
 
-    private fun audioLabel(track: AudioTrack): String {
-        // V35: normalize the raw HLS LANGUAGE/NAME attribute; junk like "Vela" or
-        // "atlas" must never be shown as a language name.
-        val language = normalizeAudioLanguage(track.language, track.label)
+    private fun audioLabel(track: AudioTrack, index: Int = 0): String {
+        // V36: normalize the raw HLS LANGUAGE/NAME attribute; junk names collapse to
+        // "Audio 1"/"Audio 2" instead of leaking provider words.
+        val language = normalizeAudioLanguage(track.language, track.label, index)
         val channels = when (track.channelCount) { 1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"; else -> "" }
         return listOf(language, channels, track.sampleMimeType?.substringAfter('/')?.uppercase().orEmpty()).filter { it.isNotBlank() }.joinToString(" • ")
     }

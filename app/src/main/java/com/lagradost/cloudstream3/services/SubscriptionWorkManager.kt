@@ -134,7 +134,14 @@ class SubscriptionWorkManager(val context: Context, workerParams: WorkerParamete
                     progressNotificationBuilder.build(),
                     FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 ) else ForegroundInfo(SUBSCRIPTION_NOTIFICATION_ID, progressNotificationBuilder.build(),)
-            setForeground(foregroundInfo)
+            // V36: becoming a foreground service can throw (e.g. missing service-type
+            // declaration on some OEM builds). The subscription update still works
+            // without the foreground notification, so never let this crash the app.
+            try {
+                setForeground(foregroundInfo)
+            } catch (t: Throwable) {
+                logError(t)
+            }
 
             val subscriptions = getAllSubscriptions()
 
