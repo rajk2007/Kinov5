@@ -10,7 +10,7 @@
     android:layout_marginBottom="10dp"
     android:foreground="@drawable/outline_drawable"
     android:nextFocusRight="@id/download_button"
-    app:cardBackgroundColor="?attr/boxItemBackground"
+    app:cardBackgroundColor="#0E0E10"
 
     app:cardCornerRadius="@dimen/rounded_image_radius">
 
@@ -66,17 +66,21 @@
 
                 <FrameLayout
                     android:id="@+id/watch_progress_container"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
                     android:layout_gravity="center">
 
                     <com.google.android.material.imageview.ShapeableImageView
                         android:id="@+id/episode_play_icon"
                         style="@style/EpisodePlayUnderlayProgress"
                         />
-                    <com.google.android.material.progressindicator.CircularProgressIndicator
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
                         android:id="@+id/episode_progress"
-                        style="@style/EpisodeCircularProgress"
+                        android:layout_width="match_parent"
+                        android:layout_height="3dp"
+                        android:layout_gravity="bottom"
+                        app:indicatorColor="#E11D48"
+                        app:trackColor="#55333333"
                         tools:progress="100" />
                 </FrameLayout>
             </androidx.cardview.widget.CardView>
@@ -148,10 +152,10 @@
                 android:id="@+id/download_button"
                 android:layout_width="@dimen/download_size"
                 android:layout_height="@dimen/download_size"
-                android:layout_gravity="center_vertical|end"
-                android:layout_marginStart="-50dp"
+                android:layout_gravity="top|end"
+                android:layout_marginStart="0dp"
                 android:background="?selectableItemBackgroundBorderless"
-                android:padding="10dp" />
+                android:padding="6dp" />
         </LinearLayout>
 
         <TextView
@@ -159,7 +163,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
-            android:maxLines="4"
+            android:maxLines="2"
+            android:textSize="12sp"
             android:paddingTop="10dp"
             android:paddingBottom="10dp"
             android:textColor="?attr/grayTextColor"

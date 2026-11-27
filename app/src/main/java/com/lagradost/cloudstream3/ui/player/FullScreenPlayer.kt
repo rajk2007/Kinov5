@@ -12,7 +12,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.text.Editable
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -32,21 +31,19 @@ import androidx.core.graphics.red
 import androidx.core.view.children
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
-import androidx.core.widget.doOnTextChanged
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.preference.PreferenceManager
-import androidx.recyclerview.widget.SimpleItemAnimator
 import com.google.android.material.button.MaterialButton
+import com.lagradost.cloudstream3.CommonActivity.enterPIPMode
 import com.lagradost.cloudstream3.CommonActivity.keyEventListener
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.databinding.FragmentPlayerBinding
 import com.lagradost.cloudstream3.databinding.PlayerCustomLayoutBinding
 import com.lagradost.cloudstream3.databinding.SpeedDialogBinding
-import com.lagradost.cloudstream3.databinding.SubtitleOffsetBinding
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.ui.player.GeneratorPlayer.Companion.subsProvidersIsActive
+import com.lagradost.cloudstream3.ui.player.PlayerPipHelper.isPIPPossible
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityDataHelper
 import com.lagradost.cloudstream3.ui.settings.Globals.EMULATOR
 import com.lagradost.cloudstream3.ui.settings.Globals.PHONE
@@ -58,13 +55,10 @@ import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.attachBackPres
 import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.detachBackPressedCallback
 import com.lagradost.cloudstream3.utils.DataStoreHelper
 import com.lagradost.cloudstream3.utils.UIHelper.colorFromAttribute
-import com.lagradost.cloudstream3.utils.UIHelper.dismissSafe
-import com.lagradost.cloudstream3.utils.UIHelper.fixSystemBarsPadding
 import com.lagradost.cloudstream3.utils.UIHelper.hideSystemUI
 import com.lagradost.cloudstream3.utils.UIHelper.popCurrentPage
 import com.lagradost.cloudstream3.utils.UIHelper.toPx
 import com.lagradost.cloudstream3.utils.setText
-import com.lagradost.cloudstream3.utils.txt
 import kotlin.math.roundToInt
 
 private const val SUBTITLE_DELAY_BUNDLE_KEY = "subtitle_delay"
@@ -230,6 +224,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         throw NotImplementedError()
     }
 
+    open fun showSubtitlesDialogue() {
+        showMirrorsDialogue()
+    }
+
     open fun showTracksDialogue() {
         throw NotImplementedError()
     }
@@ -359,13 +357,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
     }
 
     override fun subtitlesChanged() {
-        val tracks = player.getVideoTracks()
-        val isBuiltinSubtitles = tracks.currentTextTracks.all { track ->
-            track.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES
-        }
-        // Subtitle offset is not possible on built-in media3 tracks
-        playerBinding?.playerSubtitleOffsetBtt?.isGone =
-            isBuiltinSubtitles || tracks.currentTextTracks.isEmpty()
+        // Subtitle offset is no longer exposed as a phone-player chip.
     }
 
     private fun restoreOrientationWithSensor(activity: Activity) {
@@ -495,7 +487,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             DataStoreHelper.playBackSpeed = speed
             playerBinding?.playerSpeedBtt?.text =
                 getString(R.string.player_speed_text_format).format(speed)
-                    .replace(".0x", "x")
+                    .replace(Regex("\\.?0+x$"), "x")
         } catch (e: Exception) {
             // the format string was wrong
             logError(e)
@@ -506,119 +498,6 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
     private fun skipOp() {
         player.seekTime(85000) // skip 85s
-    }
-
-    private fun showSubtitleOffsetDialog() {
-        val ctx = context ?: return
-        // Pause player because the subtitles cannot be continuously updated to follow playback.
-        player.handleEvent(
-            CSPlayerEvent.Pause,
-            PlayerEventSource.UI
-        )
-
-        val binding = SubtitleOffsetBinding.inflate(LayoutInflater.from(ctx), null, false)
-
-        // Use dialog as opposed to alertdialog to get fullscreen
-        val dialog = Dialog(ctx, R.style.DialogFullscreenPlayer).apply {
-            setContentView(binding.root)
-        }
-        this.selectSubtitlesDialog = dialog
-        dialog.show()
-
-        val isPortrait =
-            ctx.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-        fixSystemBarsPadding(binding.root, fixIme = isPortrait)
-
-        var currentOffset = subtitleDelay
-        binding.apply {
-            subtitleOffsetInput.doOnTextChanged { text, _, _, _ ->
-                text?.toString()?.toLongOrNull()?.let { time ->
-                    currentOffset = time
-                    val str = when {
-                        time > 0L -> {
-                            txt(R.string.subtitle_offset_extra_hint_later_format, time)
-                        }
-
-                        time < 0L -> {
-                            txt(R.string.subtitle_offset_extra_hint_before_format, -time)
-                        }
-
-                        else -> {
-                            txt(R.string.subtitle_offset_extra_hint_none_format)
-                        }
-                    }
-                    subtitleOffsetSubTitle.setText(str)
-                }
-            }
-            subtitleOffsetInput.text =
-                Editable.Factory.getInstance()?.newEditable(currentOffset.toString())
-
-            val subtitles = player.getSubtitleCues().toMutableList()
-
-            subtitleOffsetRecyclerview.isVisible = subtitles.isNotEmpty()
-            noSubtitlesLoadedNotice.isVisible = subtitles.isEmpty()
-
-            val initialSubtitlePosition = (player.getPosition() ?: 0) - currentOffset
-            val subtitleAdapter =
-                SubtitleOffsetItemAdapter(initialSubtitlePosition) { subtitleCue ->
-                    val playerPosition = player.getPosition() ?: 0
-                    subtitleOffsetInput.text = Editable.Factory.getInstance()
-                        ?.newEditable((playerPosition - subtitleCue.startTimeMs).toString())
-                }.apply {
-                    submitList(subtitles)
-                }
-
-            subtitleOffsetRecyclerview.adapter = subtitleAdapter
-            // Prevent flashing changes when changing items
-            (subtitleOffsetRecyclerview.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations =
-                false
-
-            val firstSubtitle = subtitleAdapter.getLatestActiveItem(initialSubtitlePosition)
-            subtitleOffsetRecyclerview.scrollToPosition(firstSubtitle)
-
-            val buttonChange = 100L
-            val buttonChangeMore = 1000L
-
-            fun changeBy(by: Long) {
-                val current = (subtitleOffsetInput.text?.toString()?.toLongOrNull() ?: 0) + by
-                subtitleOffsetInput.text =
-                    Editable.Factory.getInstance()?.newEditable(current.toString())
-            }
-
-            subtitleOffsetAdd.setOnClickListener {
-                changeBy(buttonChange)
-            }
-            subtitleOffsetAddMore.setOnClickListener {
-                changeBy(buttonChangeMore)
-            }
-            subtitleOffsetSubtract.setOnClickListener {
-                changeBy(-buttonChange)
-            }
-            subtitleOffsetSubtractMore.setOnClickListener {
-                changeBy(-buttonChangeMore)
-            }
-
-            dialog.setOnDismissListener {
-                selectSubtitlesDialog = null
-                activity?.hideSystemUI()
-            }
-            applyBtt.setOnClickListener {
-                selectSubtitlesDialog = null
-                subtitleDelay = currentOffset
-                dialog.dismissSafe(activity)
-                player.seekTime(1L)
-            }
-            resetBtt.setOnClickListener {
-                selectSubtitlesDialog = null
-                subtitleDelay = 0
-                dialog.dismissSafe(activity)
-                player.seekTime(1L)
-            }
-            cancelBtt.setOnClickListener {
-                selectSubtitlesDialog = null
-                dialog.dismissSafe(activity)
-            }
-        }
     }
 
     @SuppressLint("SetTextI18n")
@@ -773,10 +652,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             playerEpisodesButtonRoot.isVisible = showPlayerEpisodes
             playerEpisodesButton.isVisible = showPlayerEpisodes
             playerVideoTitleHolder.isGone = togglePlayerTitleGone
-            playerVideoTitleRez.isGone = isGone || playerVideoTitleRez.text.isBlank()
+            playerVideoTitleRez.isGone = true
             playerEpisodeFiller.isGone = isGone
             playerCenterMenu.isGone = isGone
-            playerLock.isGone = !isShowing
+            playerLock.isGone = !isShowing && !isLocked
             playerGoBackHolder.isGone = isGone
             playerSourcesBtt.isGone = isGone
             shadowOverlay.isGone = isGone
@@ -874,8 +753,20 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         }
     }
 
+    private fun updateResizeButtonLabel() {
+        val mode = playerHostView?.resizeMode ?: DataStoreHelper.resizeMode
+        playerBinding?.playerResizeBtt?.text = when (PlayerResize.entries
+            .getOrNull(mode.coerceIn(0, PlayerResize.entries.lastIndex))) {
+            PlayerResize.Fit -> "Fit"
+            PlayerResize.Fill -> "Stretch"
+            PlayerResize.Zoom -> "Zoom"
+            null -> "Fit"
+        }
+    }
+
     override fun resize(resize: PlayerResize, showToast: Boolean) {
         super.resize(resize, showToast)
+        updateResizeButtonLabel()
         playerHostView?.requestUpdateBrightnessOverlayOnNextLayout()
     }
 
@@ -914,7 +805,11 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                 onClickChange()
             }
 
-            KeyEvent.KEYCODE_M, KeyEvent.KEYCODE_VOLUME_MUTE -> {
+            KeyEvent.KEYCODE_M -> {
+                showSubtitlesDialogue()
+            }
+
+            KeyEvent.KEYCODE_VOLUME_MUTE -> {
                 player.handleEvent(CSPlayerEvent.ToggleMute)
             }
 
@@ -935,6 +830,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
             KeyEvent.KEYCODE_R, KeyEvent.KEYCODE_NUMPAD_0, KeyEvent.KEYCODE_0 -> {
                 nextResize()
+                updateResizeButtonLabel()
             }
 
             KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_NUMPAD_4, KeyEvent.KEYCODE_4 -> {
@@ -1098,6 +994,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             PlayerCustomLayoutBinding.bind(binding.root.findViewById(R.id.player_holder))
 
         super.onBindingCreated(binding, savedInstanceState)
+        updateResizeButtonLabel()
 
         // This player is always full-screen; tell PlayerView so volume-key handling is active.
         playerHostView?.isFullScreen = true
@@ -1162,7 +1059,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                                 ?: currentQualityProfile
             }
             playerBinding?.apply {
-                playerSpeedBtt.isVisible = playBackSpeedEnabled
+                playerSpeedBtt.isVisible = true
                 playerResizeBtt.isVisible = playerResizeEnabled
                 playerRotateBtt.isVisible =
                     if (isLayout(TV or EMULATOR)) false else playerRotateEnabled
@@ -1213,6 +1110,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             playerResizeBtt.setOnClickListener {
                 autoHide()
                 nextResize()
+                updateResizeButtonLabel()
             }
 
             playerSpeedBtt.setOnClickListener {
@@ -1245,8 +1143,13 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                 toggleLock()
             }
 
-            playerSubtitleOffsetBtt.setOnClickListener {
-                showSubtitleOffsetDialog()
+            playerPipBtt.setOnClickListener {
+                val act = activity ?: return@setOnClickListener
+                if (act.isPIPPossible()) {
+                    act.enterPIPMode(force = true)
+                } else {
+                    android.widget.Toast.makeText(act, "PiP not supported on this device", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
 
             playerGoBack.setOnClickListener {

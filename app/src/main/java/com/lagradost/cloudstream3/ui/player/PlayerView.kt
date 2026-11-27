@@ -542,6 +542,11 @@ class PlayerView @JvmOverloads constructor(
     }
 
     fun updateIsPlaying(wasPlaying: CSPlayerLoading, isPlaying: CSPlayerLoading) {
+        if (isPlaying == CSPlayerLoading.IsPlaying) {
+            // The offline subtitle path can recreate the player after the mode was selected.
+            applyResizeMode()
+            Log.d("RESIZE", "after playback start mode=$resizeMode exo=${exoPlayerView?.resizeMode}")
+        }
         val isPlayingRightNow = CSPlayerLoading.IsPlaying == isPlaying
         val isBuffering = CSPlayerLoading.IsBuffering == isPlaying
         currentPlayerStatus = isPlaying
@@ -702,14 +707,19 @@ class PlayerView @JvmOverloads constructor(
         resize(PlayerResize.entries[resize], showToast)
     }
 
-    fun resize(resize: PlayerResize, showToast: Boolean) {
-        DataStoreHelper.resizeMode = resize.ordinal
-        val type = when (resize) {
+    private fun applyResizeMode() {
+        exoPlayerView?.resizeMode = when (PlayerResize.entries.getOrNull(resizeMode)) {
             PlayerResize.Fill -> AspectRatioFrameLayout.RESIZE_MODE_FILL
             PlayerResize.Fit -> AspectRatioFrameLayout.RESIZE_MODE_FIT
             PlayerResize.Zoom -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            null -> return
         }
-        exoPlayerView?.resizeMode = type
+    }
+
+    fun resize(resize: PlayerResize, showToast: Boolean) {
+        DataStoreHelper.resizeMode = resize.ordinal
+        applyResizeMode()
+        Log.d("RESIZE", "mode=$resizeMode exo=${exoPlayerView?.resizeMode}")
         if (showToast) showToast(resize.nameRes, Toast.LENGTH_SHORT)
     }
 

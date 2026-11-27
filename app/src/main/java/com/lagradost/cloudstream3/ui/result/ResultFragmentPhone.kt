@@ -1022,10 +1022,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultResumeProgressHolder.isVisible = false
                     return@observeNullable
                 }
-                resultResumeParent.isVisible = false
-                resultResumeProgressHolder.isVisible = false
-                resultPlayParent.isVisible = true
-                resultPlayMovie.text = context?.getString(R.string.play_movie_button)
+                resultResumeParent.isVisible = true
                 resume.progress?.let { progress ->
                     resultNextSeriesButton.isVisible = false
                     resultResumeSeriesTitle.apply {
@@ -1160,7 +1157,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
                 (data as? Resource.Success)?.value?.let { (text, ep) ->
                     prefetchDownloadLinks(listOf(ep))
-                    resultPlayMovie.setText(context?.getString(R.string.play_movie_button))
+                    resultPlayMovie.setText(text)
                     resultPlayMovie.setOnClickListener {
                         viewModel.handleAction(
                             EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)
@@ -1233,7 +1230,6 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultNextAiring.setText(d.nextAiringEpisode)
                     resultNextAiringTime.setText(d.nextAiringDate)
                     val isMovie = viewModel.getCurrentResponse()?.isMovie() == true
-                    resultPoster.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                     resultPoster.loadImage(d.posterImage, headers = d.posterHeaders) {
                         error {
                             getImageFromDrawable(
@@ -1269,7 +1265,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                             isExpanded = !isExpanded
                             maxLines = if (isExpanded) {
                                 Integer.MAX_VALUE
-                            } else 3
+                            } else 10
                         }
                     }
 
@@ -1285,8 +1281,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         true
                     )
 
-                    resultCastText.isGone = !showCast || d.actors.isNullOrEmpty()
-                    resultCastItems.isGone = !showCast || d.actors.isNullOrEmpty()
+                    resultCastText.isGone = isMovie || d.actors.isNullOrEmpty()
+                    resultCastItems.isGone = isMovie || !showCast || d.actors.isNullOrEmpty()
                     (resultCastItems.adapter as? ActorAdaptor)?.submitList(if (showCast) d.actors else emptyList())
                     resultTabs.isVisible = !isMovie
                     resultMltSection.isVisible = isMovie && !viewModel.recommendations.value.isNullOrEmpty()

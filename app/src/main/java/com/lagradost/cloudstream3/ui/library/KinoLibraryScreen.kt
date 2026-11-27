@@ -9,6 +9,7 @@ import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,9 +39,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,6 +57,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -67,6 +72,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,9 +80,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import androidx.compose.ui.res.painterResource
 import java.io.File
 import java.io.FileInputStream
 
+import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadItem
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadManager
 import com.lagradost.cloudstream3.utils.downloader.DirectDownloadStatus
@@ -105,6 +115,7 @@ fun KinoLibraryScreen(
     var selectedTab by remember { mutableIntStateOf(if (initialTab == "downloaded") 1 else 0) }
     var showRemoveDialog by remember { mutableStateOf(false) }
     var itemToRemove by remember { mutableStateOf<KinoLibraryItem?>(null) }
+    var openGroup by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { viewModel.loadData(context) }
 
@@ -117,7 +128,8 @@ fun KinoLibraryScreen(
         directItems.filter {
             it.status == DirectDownloadStatus.DOWNLOADING ||
                 it.status == DirectDownloadStatus.PENDING ||
-                it.status == DirectDownloadStatus.PAUSED
+                it.status == DirectDownloadStatus.PAUSED ||
+                it.status == DirectDownloadStatus.FAILED
         } + legacyOnly.filter { it.downloadStatus != DirectDownloadStatus.COMPLETED }
     }
     val downloaded: List<Any> = remember(directItems, legacyOnly) {
@@ -127,6 +139,7 @@ fun KinoLibraryScreen(
                     (it.downloadStatus == null && it.localUri != null)
             }
     }
+    val downloadedGroups = remember(downloaded) { groupDownloads(downloaded) }
     val availableBytes = remember(context) {
         runCatching { StatFs(context.filesDir.path).availableBytes }.getOrDefault(0L)
     }
@@ -202,10 +215,10 @@ fun KinoLibraryScreen(
             if (downloaded.isEmpty()) {
                 item { EmptyMessage("No downloads yet. Your offline library will appear here.") }
             } else {
-                items(groupDownloads(downloaded)) { group ->
+                items(downloadedGroups) { group ->
                     DownloadedCard(
                         group = group,
-                        onPlay = { group.items.firstOrNull()?.let(onMediaClick) },
+                        onPlay = { openGroup = group.title },
                         onDelete = { group.directIds.forEach(DirectDownloadManager::cancelDownload) },
                     )
                 }
@@ -247,6 +260,14 @@ fun KinoLibraryScreen(
             },
         )
     }
+
+    downloadedGroups.firstOrNull { it.title == openGroup }?.let { group ->
+        DownloadGroupDetail(
+            group = group,
+            onBack = { openGroup = null },
+            onMediaClick = onMediaClick,
+        )
+    }
 }
 
 @Composable
@@ -283,11 +304,15 @@ private fun ContinueWatchingCard(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    val view = LocalView.current
     val progress = if (media.duration > 0L) (media.position.toFloat() / media.duration).coerceIn(0f, 1f) else 0f
-    Column(Modifier.width(165.dp).combinedClickable(onClick = onClick, onLongClick = onLongPress)) {
+    Column(Modifier.width(165.dp).combinedClickable(
+        onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
+        onLongClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onLongPress() },
+    )) {
         Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(14.dp)).background(KinoSurface)) {
             AsyncImage(
-                model = media.posterUrl ?: "",
+                model = ImageRequest.Builder(LocalContext.current).data(media.posterUrl ?: "").crossfade(150).build(),
                 contentDescription = media.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -364,11 +389,11 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
     DownloadCardShell(onClick = {
         when (item.status) {
             DirectDownloadStatus.DOWNLOADING -> DirectDownloadManager.pauseDownload(item.id)
-            DirectDownloadStatus.PAUSED -> DirectDownloadManager.resumeDownload(item.id)
+            DirectDownloadStatus.PAUSED, DirectDownloadStatus.FAILED -> DirectDownloadManager.resumeDownload(item.id)
             else -> Unit
         }
     }) {
-        AsyncImage(model = item.posterUrl ?: "", contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(70.dp, 92.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: "").crossfade(150).build(), contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(70.dp, 92.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
             Text(cleanLibraryTitle(item.title), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -376,7 +401,8 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
             Spacer(Modifier.height(5.dp))
             Text("${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}", color = KinoMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
-            LinearProgressIndicator(progress = { (item.progress / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = KinoRed, trackColor = KinoTrack)
+            val animatedProgress by animateFloatAsState((item.progress / 100f).coerceIn(0f, 1f), label = "downloadProgress")
+            LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = KinoRed, trackColor = KinoTrack)
             Spacer(Modifier.height(4.dp))
             Text(
                 when {
@@ -387,6 +413,9 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
                 color = KinoMuted,
                 fontSize = 11.sp,
             )
+            if (item.status == DirectDownloadStatus.FAILED || (item.status == DirectDownloadStatus.PAUSED && item.error != null)) {
+                Text(item.error.orEmpty(), color = Color.Red, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
         IconButton(
             onClick = { DirectDownloadManager.cancelDownload(item.id) },
@@ -405,7 +434,7 @@ private fun ActiveDownloadCard(item: DirectDownloadItem) {
 @Composable
 private fun QueueDownloadCard(item: KinoLibraryItem) {
     DownloadCardShell {
-        AsyncImage(model = item.posterUrl ?: "", contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.size(54.dp, 70.dp).clip(RoundedCornerShape(7.dp)).background(KinoSurface))
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: "").crossfade(150).build(), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.size(54.dp, 70.dp).clip(RoundedCornerShape(7.dp)).background(KinoSurface))
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
             Text(item.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -421,7 +450,7 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit, onDelete: (
     val context = LocalContext.current
     DownloadCardShell(onClick = onPlay) {
         Box {
-            AsyncImage(model = group.posterUrl ?: "", contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.size(88.dp, 112.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
+            AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(group.posterUrl ?: "").crossfade(150).build(), contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.size(88.dp, 112.dp).clip(RoundedCornerShape(8.dp)).background(KinoSurface))
             Row(Modifier.align(Alignment.TopStart).padding(4.dp).background(KinoRed, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Downloaded", tint = Color.White, modifier = Modifier.size(10.dp))
                 Text("Downloaded", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
@@ -430,7 +459,7 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit, onDelete: (
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(group.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (group.items.size > 1) "Series • ${group.items.size} Episodes" else downloadInfo(group.items.first()), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
+            Text(downloadGroupSubtitle(group), color = KinoMuted, fontSize = 12.sp, maxLines = 1)
             Spacer(Modifier.height(7.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(Icons.Default.CheckCircle, contentDescription = "Downloaded", tint = KinoRed, modifier = Modifier.size(14.dp))
@@ -458,6 +487,136 @@ private fun DownloadedCard(group: DownloadGroup, onPlay: () -> Unit, onDelete: (
         }
     }
 }
+
+@Composable
+private fun DownloadGroupDetail(
+    group: DownloadGroup,
+    onBack: () -> Unit,
+    onMediaClick: (KinoLibraryItem) -> Unit,
+) {
+    val sortedDirectItems = remember(group.directItems) {
+        if (group.directItems.any { it.season != null }) {
+            group.directItems.sortedWith(compareBy<DirectDownloadItem> { it.season ?: 0 }.thenBy { it.episode ?: 0 })
+        } else {
+            group.directItems.sortedByDescending { it.selectedHeight }
+        }
+    }
+    val context = LocalContext.current
+    val isSeries = sortedDirectItems.any { it.season != null }
+    val seasons = sortedDirectItems.mapNotNull { it.season }.distinct().sorted()
+    val firstSeason = seasons.firstOrNull() ?: 1
+    var selectedSeason by remember(group) { mutableStateOf(firstSeason) }
+    var seasonMenuExpanded by remember { mutableStateOf(false) }
+    val filteredItems = if (isSeries && seasons.size > 1) {
+        sortedDirectItems.filter { it.season == selectedSeason }
+    } else sortedDirectItems
+    val totalBytes = if (group.directItems.isNotEmpty()) group.directItems.sumOf { it.totalBytes } else group.items.sumOf { it.totalBytes }
+    val itemCount = if (group.directItems.isNotEmpty()) group.directItems.size else group.items.size
+    val metadata = if (isSeries) {
+        val seasonText = if (seasons.size == 1) "" else "${seasons.size} Seasons · "
+        "$seasonText$itemCount Episodes"
+    } else {
+        "Movie · $itemCount Qualities · ${formatBytes(totalBytes)}"
+    }
+    BackHandler(onBack = onBack)
+    Column(Modifier.fillMaxSize().background(KinoBackgroundBottom)) {
+        Box(Modifier.fillMaxWidth().height(230.dp)) {
+            AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(group.posterUrl ?: "").crossfade(150).build(), contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .5f), Color.Transparent, KinoBackgroundBottom))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .35f), Color.Transparent))))
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars).padding(top = 8.dp, start = 12.dp).size(40.dp).clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = .45f)),
+            ) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = 16.dp)) {
+                Text(group.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(metadata, color = Color(0xFFB0B0B0), fontSize = 14.sp)
+            }
+        }
+        if (isSeries && seasons.size > 1) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    Row(Modifier.clickable { seasonMenuExpanded = true }, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Season $selectedSeason", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Select season", tint = Color.White)
+                    }
+                    DropdownMenu(expanded = seasonMenuExpanded, onDismissRequest = { seasonMenuExpanded = false }) {
+                        seasons.forEach { season ->
+                            DropdownMenuItem(text = { Text("Season $season") }, onClick = { selectedSeason = season; seasonMenuExpanded = false })
+                        }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Text("${filteredItems.size} Episodes", color = KinoMuted, fontSize = 14.sp)
+            }
+        }
+        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(filteredItems, key = { it.id }) { item ->
+                DownloadDetailRow(
+                    item = item,
+                    groupPosterUrl = group.posterUrl,
+                    onPlay = { onMediaClick(item.toLibraryItem()) },
+                    onDelete = { DirectDownloadManager.cancelDownload(item.id) },
+                    onSaveToGallery = { item.filePath?.let { saveDownloadToGallery(context, it, item.title) } },
+                    onSend = { item.filePath?.let { sendDownload(context, it, item.title) } },
+                )
+            }
+            if (group.directItems.isEmpty()) {
+                items(group.items, key = { "legacy-${it.id}" }) { item ->
+                    LegacyDownloadDetailRow(item, onPlay = { onMediaClick(item) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadDetailRow(
+    item: DirectDownloadItem,
+    groupPosterUrl: String?,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit,
+    onSaveToGallery: () -> Unit,
+    onSend: () -> Unit,
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    val episodeLabel = if (item.season != null && item.episode != null) "S${item.season} · E${item.episode}" else downloadQuality(item).substringBefore(" ·")
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp)).background(KinoSurface).border(1.dp, Color.White.copy(alpha = .08f), RoundedCornerShape(16.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(4.dp).height(72.dp).clip(RoundedCornerShape(10.dp)).background(KinoRed))
+        Spacer(Modifier.width(8.dp))
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: groupPosterUrl ?: "").crossfade(150).build(), contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.size(84.dp, 72.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onPlay))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(episodeLabel, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(item.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable(onClick = onPlay))
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(painterResource(R.drawable.hourglass_24), contentDescription = null, tint = KinoMuted, modifier = Modifier.size(14.dp))
+                Text(formatBytes(item.totalBytes), color = KinoMuted, fontSize = 13.sp)
+            }
+        }
+        Box {
+            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White.copy(alpha = .7f), modifier = Modifier.size(20.dp))
+            }
+            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete() })
+                DropdownMenuItem(text = { Text("Save to Gallery") }, onClick = { showMenu = false; onSaveToGallery() })
+                DropdownMenuItem(text = { Text("Send to other device") }, onClick = { showMenu = false; onSend() })
+            }
+        }
+    }
+}
+@Composable
+private fun LegacyDownloadDetailRow(item: KinoLibraryItem, onPlay: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp)).background(KinoSurface).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(item.posterUrl ?: "").crossfade(150).build(), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.size(110.dp, 96.dp).clip(RoundedCornerShape(12.dp)))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) { Text(item.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis); Text(formatBytes(item.totalBytes), color = KinoMuted, fontSize = 13.sp) }
+        IconButton(onClick = onPlay, modifier = Modifier.size(48.dp).border(2.dp, KinoRed, androidx.compose.foundation.shape.CircleShape)) { Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White) }
+    }
+}
+
 
 @Composable
 private fun DownloadCardShell(onClick: (() -> Unit)? = null, content: @Composable RowScope.() -> Unit) {
@@ -561,16 +720,28 @@ private fun saveDownloadToGallery(context: Context, path: String, title: String)
     }
 }
 
-private data class DownloadGroup(val title: String, val posterUrl: String?, val items: List<KinoLibraryItem>, val directIds: List<String> = emptyList())
+private data class DownloadGroup(
+    val title: String,
+    val posterUrl: String?,
+    val items: List<KinoLibraryItem>,
+    val directIds: List<String> = emptyList(),
+    val directItems: List<DirectDownloadItem> = emptyList(),
+)
 
 private fun groupDownloads(items: List<Any>): List<DownloadGroup> = items.mapNotNull { item ->
     when (item) {
         is KinoLibraryItem -> DownloadGroup(item.name, item.posterUrl, listOf(item))
-        is DirectDownloadItem -> DownloadGroup(item.title, item.posterUrl, listOf(item.toLibraryItem()), listOf(item.id))
+        is DirectDownloadItem -> DownloadGroup(item.parentTitle ?: item.title, item.posterUrl, listOf(item.toLibraryItem()), listOf(item.id), listOf(item))
         else -> null
     }
 }.groupBy { it.title }.map { (title, groups) ->
-    DownloadGroup(title, groups.first().posterUrl, groups.flatMap { it.items }, groups.flatMap { it.directIds })
+    DownloadGroup(
+        title = title,
+        posterUrl = groups.firstOrNull { it.posterUrl != null }?.posterUrl,
+        items = groups.flatMap { it.items },
+        directIds = groups.flatMap { it.directIds },
+        directItems = groups.flatMap { it.directItems },
+    )
 }
 
 private fun DirectDownloadItem.toLibraryItem() = KinoLibraryItem(name = title, url = url, apiName = apiName, posterUrl = posterUrl, downloadedBytes = downloadedBytes, totalBytes = totalBytes, progress = progress / 100f, localUri = filePath, downloadStatus = status)
@@ -589,11 +760,20 @@ private fun downloadInfo(item: KinoLibraryItem): String {
     val availability = if (item.localUri != null) "Offline" else "Downloaded"
     return "${formatBytes(item.totalBytes)} · $availability"
 }
+private fun downloadGroupSubtitle(group: DownloadGroup): String {
+    val totalBytes = group.items.sumOf { it.totalBytes }.coerceAtLeast(0L)
+    return when {
+        group.directItems.size > 1 && group.directItems.any { it.season != null } -> "${group.directItems.size} episodes · ${formatBytes(totalBytes)}"
+        group.directItems.size > 1 -> "${group.directItems.size} qualities · ${formatBytes(totalBytes)}"
+        group.items.size == 1 -> formatBytes(totalBytes)
+        else -> "${group.items.size} items · ${formatBytes(totalBytes)}"
+    }
+}
 private fun downloadStatusText(status: DirectDownloadStatus): String = when (status) {
     DirectDownloadStatus.DOWNLOADING -> "Downloading..."
     DirectDownloadStatus.PAUSED -> "Paused"
     DirectDownloadStatus.PENDING -> "Waiting in queue"
-    DirectDownloadStatus.FAILED -> "Download failed"
+    DirectDownloadStatus.FAILED -> "Retry"
     DirectDownloadStatus.COMPLETED -> "Completed"
 }
 private fun formatDuration(milliseconds: Long): String {

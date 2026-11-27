@@ -284,8 +284,8 @@ object CommonActivity {
     }
 
     /** Enters pip mode if it is both possible and desired to do so*/
-    private fun Activity.enterPIPMode() {
-        if (!isPipDesired || !this.isPIPPossible()) return
+    fun Activity.enterPIPMode(force: Boolean = false) {
+        if ((!force && !isPipDesired) || !this.isPIPPossible()) return
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

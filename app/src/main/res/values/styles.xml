@@ -89,6 +89,16 @@
         <item name="boxItemBackground">@color/amoledModeLight</item>
     </style>
 
+    <style name="ChipOutlined" parent="@style/Widget.Material3.Chip.Filter">
+        <item name="chipBackgroundColor">@android:color/transparent</item>
+        <item name="chipStrokeColor">#66FFFFFF</item>
+        <item name="chipStrokeWidth">1dp</item>
+        <item name="textColor">@android:color/white</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="chipMinTouchTargetSize">0dp</item>
+        <item name="checkedIconVisible">false</item>
+    </style>
+
     <style name="ChipFilled" parent="@style/Widget.Material3.Chip.Filter">
         <item name="chipBackgroundColor">@color/chip_color</item>
         <item name="chipStrokeColor">@color/white_transparent_toggle</item>
@@ -576,6 +586,16 @@
         <item name="android:windowBackground">@color/transparent</item>
     </style>
 
+    <style name="DialogCompactPlayer" parent="AlertDialogCustomTransparent">
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowEnterAnimation">@anim/sheet_in</item>
+        <item name="android:windowExitAnimation">@anim/sheet_out</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
     <style name="DialogFullscreen">
         <item name="android:windowEnterAnimation">@anim/enter_anim</item>
         <item name="android:windowExitAnimation">@anim/exit_anim</item>
@@ -877,16 +897,17 @@
         <item name="android:shadowColor">@color/transparent</item>
 
         <item name="cornerRadius">3dp</item>
-        <item name="iconTint">@color/white</item>
-        <item name="textColor">@color/white</item>
-        <item name="android:textColor">@color/white</item>
+        <item name="iconTint">#FFFFFF</item>
+        <item name="iconSize">22dp</item>
+        <item name="textColor">#FFFFFF</item>
+        <item name="android:textColor">#FFFFFF</item>
         <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">45dp</item>
+        <item name="android:layout_height">40dp</item>
         <item name="android:gravity">center</item>
         <item name="android:layout_gravity">center</item>
         <item name="textAllCaps">false</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:textSize">10sp</item>
+        <item name="android:textSize">11sp</item>
         <item name="android:layout_marginStart">10dp</item>
         <item name="android:layout_marginEnd">10dp</item>
     </style>

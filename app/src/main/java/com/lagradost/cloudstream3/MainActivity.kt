@@ -888,10 +888,10 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
 
         val builder = NavOptions.Builder().setLaunchSingleTop(true).setRestoreState(true)
-            .setEnterAnim(R.anim.enter_anim)
-            .setExitAnim(R.anim.exit_anim)
-            .setPopEnterAnim(R.anim.pop_enter)
-            .setPopExitAnim(R.anim.pop_exit)
+            .setEnterAnim(R.anim.fade_in)
+            .setExitAnim(R.anim.fade_out)
+            .setPopEnterAnim(R.anim.fade_in)
+            .setPopExitAnim(R.anim.fade_out)
         if (item.order and Menu.CATEGORY_SECONDARY == 0) {
             builder.setPopUpTo(
                 navController.graph.findStartDestination().id,
@@ -1851,6 +1851,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
             itemActiveIndicatorColor = rippleColor
             setupWithNavController(navController)
             setOnItemSelectedListener { item ->
+                window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
                 onNavDestinationSelected(
                     item,
                     navController
@@ -1879,6 +1880,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
             }*/
 
             setOnItemSelectedListener { item ->
+                window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
                 onNavDestinationSelected(
                     item,
                     navController

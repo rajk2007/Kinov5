@@ -26,7 +26,9 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.parseHlsAudioBandwidth
 import com.lagradost.cloudstream3.utils.parseHlsDuration
+import com.lagradost.cloudstream3.utils.QualityProbe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -54,6 +56,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -74,6 +77,10 @@ data class DirectDownloadItem(
     val eta: String = "",
     val error: String? = null,
     val selectedHeight: Int = 0,
+    val parentTitle: String? = null,
+    val language: String? = null,
+    val season: Int? = null,
+    val episode: Int? = null,
     val referer: String = "",
     val headers: Map<String, String> = emptyMap(),
 )
@@ -85,6 +92,13 @@ fun isUnsupportedDirectDownload(link: ExtractorLink, url: String = link.url): Bo
 
 /** Removes probe-only URL fragments before a URL is used for an HTTP request. */
 fun cleanDownloadUrl(url: String): String = url.substringBefore("#")
+
+private fun isNetworkError(error: Throwable): Boolean {
+    val t = error::class.qualifiedName.orEmpty().lowercase()
+    return error is java.net.UnknownHostException || error is java.net.ConnectException ||
+        error is java.net.SocketTimeoutException || error is java.io.IOException && "network" in (error.message ?: "").lowercase() ||
+        "econnreset" in t || "ssl" in t || "timeout" in t
+}
 
 private fun isDirectFileUrl(url: String): Boolean {
     val normalized = url.lowercase()
@@ -125,13 +139,14 @@ object DirectDownloadManager {
     private const val SAVED_DOWNLOADS = "saved_downloads"
     private const val MAX_RETRIES = 5
     private const val MAX_RESOLVE_RETRIES = 2
+    private const val AUDIO_PHASE_TIMEOUT_MS = 90_000L
     private const val MIN_VALID_VIDEO_BYTES = 1024L * 1024L // 1 MiB minimum for valid video
 
     private val _activeDownloads = MutableStateFlow<Map<String, DirectDownloadItem>>(emptyMap())
     val activeDownloads: StateFlow<Map<String, DirectDownloadItem>> = _activeDownloads.asStateFlow()
 
     private val downloadJobs = ConcurrentHashMap<String, Job>()
-    private val activeConnections = ConcurrentHashMap<String, HttpURLConnection>()
+    private val activeConnections = ConcurrentHashMap<String, MutableSet<HttpURLConnection>>()
     private val posterCache = ConcurrentHashMap<String, Bitmap>()
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var appContext: Context? = null
@@ -162,6 +177,10 @@ object DirectDownloadManager {
         posterUrl: String? = null,
         apiName: String = "Unknown",
         selectedHeight: Int = 0,
+        parentTitle: String? = null,
+        language: String? = null,
+        season: Int? = null,
+        episode: Int? = null,
         estimatedSizeBytes: Long = 0L,
         dataUrl: String? = null,
         reResolveLink: (suspend () -> ExtractorLink?)? = null,
@@ -233,6 +252,10 @@ object DirectDownloadManager {
             posterUrl = posterUrl,
             apiName = apiName,
             selectedHeight = selectedHeight,
+            parentTitle = parentTitle,
+            language = language,
+            season = season,
+            episode = episode,
             totalBytes = estimatedSizeBytes,
             referer = downloadLink.referer,
             headers = downloadLink.headers,
@@ -313,6 +336,19 @@ object DirectDownloadManager {
                 delay(1_000L)
             }
         }
+        // Delete stale subtitle files ONCE, up front, before either subtitle path
+        // runs. The provider fetch (downloadEnglishSubtitle) launches a background
+        // coroutine and the HLS path runs concurrently; a delete inside either path
+        // races the other and can wipe a file the other just wrote. Doing it here,
+        // synchronously, before downloadEnglishSubtitle is launched, guarantees
+        // neither writer can clobber the other.
+        val staleBase = fileName.substringBeforeLast('.')
+        listOf("$staleBase.srt", "$staleBase.raw.sub").forEach { name ->
+            File(getDownloadDir(context), name).takeIf { it.exists() }?.let {
+                it.delete()
+                Log.e("SUBS", "deleted stale $name before download (startDownload)")
+            }
+        }
         if (dataUrl != null) {
             downloadEnglishSubtitle(context.applicationContext, dataUrl, title, fileName, apiName)
         } else {
@@ -359,9 +395,19 @@ object DirectDownloadManager {
                 }
                 val safeBase = sanitizeFileName(fileName).ifBlank { "download" }
                 val base = safeBase.substringBeforeLast('.', safeBase)
+                // Save the raw subtitle content so we can inspect what the provider
+                // actually returned if the converted SRT doesn't render.
+                val rawFile = File(getDownloadDir(context), "$base.raw.sub")
+                rawFile.writeText(content)
+                val isVtt = content.trimStart().startsWith("WEBVTT", ignoreCase = true)
+                val isM3u = content.trimStart().startsWith("#EXTM3U", ignoreCase = true)
+                val firstLine = content.lineSequence().firstOrNull()?.take(80) ?: ""
+                Log.e("SUBS", "raw saved=${rawFile.absolutePath} size=${content.length} isVtt=$isVtt isM3u=$isM3u firstLine=$firstLine")
                 val subtitleFile = File(getDownloadDir(context), "$base.srt")
-                subtitleFile.writeText(toSrt(content))
-                Log.e("SUBS", "saved path=${subtitleFile.absolutePath}")
+                val srt = toSrt(content)
+                subtitleFile.writeText(srt)
+                val cueCount = if (srt.isNotBlank()) Regex("^\\d+$", RegexOption.MULTILINE).findAll(srt).count() else 0
+                Log.e("SUBS", "saved path=${subtitleFile.absolutePath} srtSize=${srt.length} cues=$cueCount")
             } catch (error: Exception) {
                 Log.e("SUBS", "Provider subtitle download failed for $title", error)
             }
@@ -390,20 +436,86 @@ object DirectDownloadManager {
     }
 
     private fun toSrt(content: String): String {
+        // Only convert actual WebVTT. SRT, TTML, or any other format is returned
+        // unchanged so the player's own parser handles it. vttSegmentsToSrt on
+        // non-VTT content can produce garbled or empty output.
         if (!content.trimStart().startsWith("WEBVTT", ignoreCase = true)) return content
-        return content
-            .lineSequence()
-            .drop(1)
-            .joinToString("\n")
-            .replace(Regex("(\\d{2}:\\d{2}:\\d{2})\\.(\\d{3})"), "$1,$2")
-            .trim() + "\n"
+        return vttSegmentsToSrt(listOf(content), listOf(0.0))
+    }
+
+    /**
+     * Convert one or more WebVTT segment bodies into one valid SRT file.
+     * Each HLS subtitle segment is its own VTT file whose cue timestamps are LOCAL
+     * to that segment (they restart at zero), so [offsetsSeconds] must carry the
+     * cumulative start time of each segment. Strips per-segment headers, offsets
+     * every cue, removes bridged duplicates, and renumbers cues sequentially.
+     */
+    private fun vttSegmentsToSrt(segmentBodies: List<String>, offsetsSeconds: List<Double>): String {
+        data class Cue(var start: Double, var end: Double, val lines: MutableList<String>)
+        val timestampRegex = Regex("""(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})""")
+
+        fun parseTimestamp(value: String): Double? {
+            val match = timestampRegex.matchEntire(value.trim()) ?: return null
+            val (hours, minutes, seconds, millis) = match.destructured
+            return (hours.toDoubleOrNull() ?: 0.0) * 3600.0 +
+                minutes.toDouble() * 60.0 + seconds.toDouble() + millis.toDouble() / 1000.0
+        }
+
+        fun formatTimestamp(totalSeconds: Double): String {
+            val totalMillis = Math.round(totalSeconds.coerceAtLeast(0.0) * 1000.0)
+            return String.format(
+                java.util.Locale.US, "%02d:%02d:%02d,%03d",
+                totalMillis / 3_600_000, (totalMillis % 3_600_000) / 60_000,
+                (totalMillis % 60_000) / 1_000, totalMillis % 1_000,
+            )
+        }
+
+        val cues = mutableListOf<Cue>()
+        segmentBodies.forEachIndexed { index, body ->
+            val offset = offsetsSeconds.getOrElse(index) { 0.0 }
+            var current: Cue? = null
+            body.lineSequence().forEach { raw ->
+                val line = raw.trimEnd()
+                when {
+                    line.isBlank() -> {
+                        current?.let { cue -> if (cue.lines.isNotEmpty()) cues += cue }
+                        current = null
+                    }
+                    line.contains("-->") -> {
+                        current?.let { cue -> if (cue.lines.isNotEmpty()) cues += cue }
+                        val parts = line.split("-->")
+                        val start = parseTimestamp(parts.firstOrNull().orEmpty())
+                        val end = parseTimestamp(parts.getOrNull(1)?.trim()?.substringBefore(' ') ?: "")
+                        if (start != null && end != null) current = Cue(start + offset, end + offset, mutableListOf())
+                    }
+                    line.startsWith("WEBVTT", true) || line.startsWith("X-TIMESTAMP-MAP", true) ||
+                        line.startsWith("NOTE", true) || line.startsWith("Kind:", true) ||
+                        line.startsWith("Language:", true) -> Unit
+                    current != null -> current!!.lines.add(line.replace(Regex("<[^>]+>"), ""))
+                }
+            }
+            current?.let { cue -> if (cue.lines.isNotEmpty()) cues += cue }
+        }
+
+        val distinct = cues.sortedBy { it.start }
+            .distinctBy { "${it.start}|${it.end}|${it.lines.joinToString(" ")}" }
+        return buildString {
+            distinct.forEachIndexed { index, cue ->
+                appendLine(index + 1)
+                appendLine("${formatTimestamp(cue.start)} --> ${formatTimestamp(cue.end)}")
+                cue.lines.forEach { appendLine(it) }
+                appendLine()
+            }
+        }
     }
 
     fun pauseDownload(downloadId: String) {
         Log.d(TAG, "Pausing download without deleting partial data: $downloadId")
         // Disconnect first so a blocking read wakes up promptly; cancellation then preserves
         // the .part file and any completed HLS/DASH segments for resume.
-        activeConnections[downloadId]?.disconnect()
+        activeConnections.remove(downloadId)?.forEach { connection ->
+            runCatching { connection.disconnect() }
+        }
         downloadJobs.remove(downloadId)?.cancel()
         updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "") }
         persistDownloads(force = true)
@@ -418,8 +530,8 @@ object DirectDownloadManager {
             return
         }
         Log.e(TAG, "Resume item='${item.title}', status=${item.status}, url=${item.url.take(120)}, downloaded=${item.downloadedBytes}, total=${item.totalBytes}")
-        if (item.status != DirectDownloadStatus.PAUSED) {
-            Log.e(TAG, "Resume aborted: expected PAUSED, got ${item.status}")
+        if (item.status !in setOf(DirectDownloadStatus.PAUSED, DirectDownloadStatus.FAILED)) {
+            Log.e(TAG, "Resume aborted: expected PAUSED or FAILED, got ${item.status}")
             return
         }
         if (item.url.isBlank()) {
@@ -471,13 +583,30 @@ object DirectDownloadManager {
     }
 
     fun cancelDownload(downloadId: String) {
-        val item = _activeDownloads.value[downloadId]
+        val item = _activeDownloads.value[downloadId] ?: return
         downloadJobs.remove(downloadId)?.cancel()
-        item?.filePath?.let { File(it).delete() }
-        item?.let { File(getDownloadDir(appContext ?: return), outputName(it.fileName) + ".part").delete() }
+        val context = appContext ?: return
+        val dir = getDownloadDir(context)
+        val base = sanitizeFileName(item.fileName.substringBeforeLast('.'))
+        val suffixes = listOf(
+            "", ".mp4", ".ts", ".part", ".m3u8", ".master.m3u8", ".audio.m3u8",
+            ".audio.part", ".video.part", ".muxed.part", ".mp4.part", ".ts.part",
+            ".srt", ".raw.sub",
+        )
+        suffixes.forEach { suffix ->
+            val file = File(dir, "$base$suffix")
+            if (file.isFile) file.delete()
+        }
+        File(dir, "$base.segments").deleteRecursively()
+        File(dir, "$base.mp4.part.segments").deleteRecursively()
+        File(dir, "$base.ts.part.segments").deleteRecursively()
+        File(dir, "$base.audio.part.segments").deleteRecursively()
+        File(dir, "$base.mp4.audio.part.segments").deleteRecursively()
+        File(dir, "$base.ts.audio.part.segments").deleteRecursively()
+        item.filePath?.let { File(it).delete() }
         _activeDownloads.value = _activeDownloads.value - downloadId
         persistDownloads(force = true)
-        appContext?.let { cancelNotification(downloadId, it) }
+        cancelNotification(downloadId, context)
     }
 
     private suspend fun executeDownload(context: Context, downloadId: String, link: ExtractorLink): Boolean {
@@ -511,7 +640,7 @@ object DirectDownloadManager {
                         requestHeaders(link).forEach { (key, value) -> setRequestProperty(key, value) }
                         if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
                     }
-                    activeConnections[downloadId] = connection
+                    activeConnections.computeIfAbsent(downloadId) { ConcurrentHashMap.newKeySet() }.add(connection)
                     val responseCode = connection.responseCode
                     Log.e("DL_404", "═════════════════════════════")
                     Log.e("DL_404", "Attempting to download:")
@@ -653,7 +782,10 @@ object DirectDownloadManager {
                     delay(2_000L * attempt)
                 } finally {
                     connection?.disconnect()
-                    activeConnections.remove(downloadId, connection)
+                    activeConnections[downloadId]?.let { connections ->
+                        connections.remove(connection)
+                        if (connections.isEmpty()) activeConnections.remove(downloadId, connections)
+                    }
                 }
             }
 throw IOException("Download failed after $MAX_RETRIES attempts.")
@@ -692,7 +824,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("TRACE_HLS", "═══════════════════════════════════")
             Log.e("DL_EXEC", "Entered downloadHlsVideo")
             Log.e("DL_EXEC", "Fetching manifest from: ${link.url.take(300)}")
-            var playlistResponse = requestHls(link.url, headers)
+            var playlistResponse = requestHls(link.url, headers, downloadId)
             var playlistUrl = playlistResponse.url
             var playlist = String(playlistResponse.body, Charsets.UTF_8)
             var masterPlaylistUrl = playlistUrl
@@ -712,12 +844,14 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("HLS_DEBUG", "Is encrypted: ${playlist.contains("#EXT-X-KEY", ignoreCase = true)}")
             require(playlist.contains("#EXTM3U")) { "The server did not return an HLS playlist." }
             var selectedVariantBandwidth: Long? = null
+            var selectedVariantWidth: Int? = null
+            var selectedVariantHeight: Int? = null
             if (!inputIsMaster) {
                 val extractorMasterUrl = link.extractorData?.trim()?.let { data ->
                     Regex("https?://[^\\s\\\"'}]+", RegexOption.IGNORE_CASE).find(data)?.value
                 }
                 extractorMasterUrl?.let { candidateUrl ->
-                    runCatching { requestHls(candidateUrl, headers) }.getOrNull()?.let { candidate ->
+                    runCatching { requestHls(candidateUrl, headers, downloadId) }.getOrNull()?.let { candidate ->
                         val candidateText = String(candidate.body, Charsets.UTF_8)
                         if (candidateText.contains("#EXT-X-STREAM-INF", ignoreCase = true)) {
                             playlistResponse = candidate
@@ -755,7 +889,9 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         ?: variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 }
                 } else variants.maxByOrNull { it.height ?: it.bandwidth ?: 0 }
                 selectedVariantBandwidth = selected?.bandwidth?.toLong()
-                playlistResponse = requestHls(requireNotNull(selected).url, headers)
+                selectedVariantWidth = selected?.width
+                selectedVariantHeight = selected?.height
+                playlistResponse = requestHls(requireNotNull(selected).url, headers, downloadId)
                 playlistUrl = playlistResponse.url
                 playlist = String(playlistResponse.body, Charsets.UTF_8)
             }
@@ -763,7 +899,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             // Re-fetch the original URL once so subtitle renditions are not lost when a
             // master is available there.
             if (masterPlaylistText == null) {
-                runCatching { requestHls(link.url, headers) }
+                runCatching { requestHls(link.url, headers, downloadId) }
                     .getOrNull()
                     ?.let { candidate ->
                         val candidateText = String(candidate.body, Charsets.UTF_8)
@@ -797,31 +933,30 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 .map { URI(playlistUrl).resolve(it).toString() }.toList()
             require(segments.isNotEmpty()) { "No media segments were found in the HLS playlist." }
             val mediaDurationSeconds = parseHlsDuration(playlist)
-            val estimatedMediaBytes = selectedVariantBandwidth?.let { bandwidth ->
-                (bandwidth.toDouble() * mediaDurationSeconds / 8.0 * 0.35).toLong()
-            }?.takeIf { it > 0L }
-            if (item.totalBytes <= 0L && estimatedMediaBytes != null) {
+            // Use the persisted total immediately. A cold sampler must never delay the first
+            // segment; it fills the same one-time total guard in the background instead.
+            val cachedTotal = if (item.totalBytes <= 0L) QualityProbe.getCachedSize(playlistUrl) else null
+            cachedTotal?.takeIf { it > 0L }?.let { total ->
                 updateItem(downloadId) { current ->
-                    current.copy(totalBytes = estimatedMediaBytes.coerceAtLeast(current.downloadedBytes))
+                    if (current.totalBytes == 0L) current.copy(totalBytes = total) else current
+                }
+                Log.e("SIZE_FINAL", "hls_total_at_start=$cachedTotal variant=$playlistUrl")
+            }
+            if (item.totalBytes <= 0L && cachedTotal == null) {
+                downloadScope.launch {
+                    withTimeoutOrNull(4_000L) { QualityProbe.sampleVariantSize(link, playlistUrl) }
+                        ?.takeIf { it > 0L }
+                        ?.let { total ->
+                            updateItem(downloadId) { current ->
+                                if (current.totalBytes == 0L) current.copy(totalBytes = total) else current
+                            }
+                            Log.e("SIZE_FINAL", "hls_total_async=$total variant=$playlistUrl")
+                        }
                 }
             }
-            // URL suffixes are unreliable on signed Kdesa URLs. Probe the first real segment so
-            // that a TS stream cannot accidentally be written and advertised as fMP4 (or vice versa).
-            val firstSegmentBytes = requestHls(segments.first(), headers).body
-            val firstSegmentType = detectHlsSegmentType(firstSegmentBytes)
-            Log.e("TRACE_HLS", "   First segment type: $firstSegmentType")
-            Log.e("HLS_PHASE", "first_segment_type=$firstSegmentType")
-            require(firstSegmentType != HlsSegmentType.HTML) {
-                "HLS segment returned an HTML error page; the link may have expired."
-            }
-            require(firstSegmentType != HlsSegmentType.UNKNOWN) {
-                "Unsupported or invalid HLS segment format."
-            }
-            if (selectedAudio == null && firstSegmentType == HlsSegmentType.FMP4 && playlist.contains("#EXT-X-MAP", ignoreCase = true)) {
-                Log.e("HLS_AUDIO", "demuxed_video_only_no_audio_source")
-            }
-            val isFragmentedMp4 = firstSegmentType == HlsSegmentType.FMP4 ||
-                playlist.contains("#EXT-X-MAP", ignoreCase = true)
+            // The total is supplied by the probe/sampler and is frozen during download.
+            val videoExtrapolationScale = 1.0
+            val isFragmentedMp4 = playlist.contains("#EXT-X-MAP", ignoreCase = true)
             val extension = if (isFragmentedMp4) ".mp4" else ".ts"
             val baseName = item.fileName.removeSuffix(".mp4").removeSuffix(".ts")
             outputFile = File(getDownloadDir(context), "$baseName$extension")
@@ -845,28 +980,62 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             segmentDir = File(resolvedTempFile.parentFile, "${resolvedTempFile.name}.segments")
             val resolvedSegmentDir = requireNotNull(segmentDir)
             val segmentExtension = if (isFragmentedMp4) ".m4s" else ".ts"
+            val existingFirstSegment = File(resolvedSegmentDir, "segment_0$segmentExtension")
+                .takeIf { it.isFile && it.length() > 0L }
+            existingFirstSegment?.let { firstFile ->
+                val firstSegmentType = detectHlsSegmentType(firstFile.readBytes())
+                Log.e("HLS_PHASE", "first_segment_type=$firstSegmentType source=disk")
+                require(firstSegmentType != HlsSegmentType.HTML) {
+                    "HLS segment returned an HTML error page; the link may have expired."
+                }
+                require(firstSegmentType != HlsSegmentType.UNKNOWN) {
+                    "Unsupported or invalid HLS segment format."
+                }
+            }
             val mapUri = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
                 .find(playlist)?.groupValues?.get(1)?.let { URI(playlistUrl).resolve(it).toString() }
             requireWritableDirectory(resolvedSegmentDir, "HLS_STEP=create_segment_dir")
             val initializationBytes = mapUri?.let { uri ->
-                val bytes = requestHls(uri, headers).body
+                val bytes = requestHls(uri, headers, downloadId).body
                 require(bytes.isNotEmpty()) { "The HLS initialization segment was empty." }
                 writeHlsFile(File(resolvedSegmentDir, "init.mp4"), bytes, "HLS_STEP=write_segment")
                 bytes.size.toLong()
             } ?: 0L
-            val totalDownloadedBytes = initializationBytes + downloadSegmentsParallel(
-                downloadId,
-                segments,
-                headers,
-                resolvedTempFile,
-                logHlsDiagnostics = true,
-                keepSegments = true,
-                segmentExtension = segmentExtension,
-            )
-            if (!currentCoroutineContext().isActive) throw CancellationException()
-            require(segments.indices.all { index ->
-                File(resolvedSegmentDir, "segment_$index$segmentExtension").let { it.isFile && it.length() > 0L }
-            }) { "One or more HLS segments failed to download." }
+            DownloadLog.phase("video-start: segments=${segments.size} url=${playlistUrl.take(240)}")
+            val audioSegmentCount = if (selectedAudio != null) {
+                runCatching {
+                    val rendition = selectedAudio!!
+                    val audioHeaders = headers + rendition.headers
+                    val audioResp = requestHls(rendition.uri, audioHeaders, downloadId)
+                    String(audioResp.body, Charsets.UTF_8).lineSequence()
+                        .map(String::trim)
+                        .filter { it.isNotEmpty() && !it.startsWith("#") }
+                        .count()
+                }.getOrDefault(0)
+            } else 0
+            val totalDownloadedBytes = try {
+                initializationBytes + downloadSegmentsParallel(
+                    downloadId,
+                    segments,
+                    headers,
+                    resolvedTempFile,
+                    logHlsDiagnostics = true,
+                    keepSegments = true,
+                    segmentExtension = segmentExtension,
+                    extrapolationScale = videoExtrapolationScale,
+                    progressOffset = 0,
+                    progressTotal = segments.size + audioSegmentCount,
+                    validateFirstSegment = true,
+                ).also {
+                    if (!currentCoroutineContext().isActive) throw CancellationException()
+                    require(segments.indices.all { index ->
+                        File(resolvedSegmentDir, "segment_$index$segmentExtension").let { it.isFile && it.length() > 0L }
+                    }) { "One or more HLS segments failed to download." }
+                }
+            } catch (error: Exception) {
+                DownloadLog.phase("video-failed: ${error.javaClass.simpleName}: ${error.message}")
+                throw error
+            }
 
             localPlaylistFile = File(getDownloadDir(context), "$baseName.m3u8")
             val resolvedPlaylistFile = requireNotNull(localPlaylistFile)
@@ -888,16 +1057,19 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 }
                 appendLine("#EXT-X-ENDLIST")
             })
-            Log.e("HLS_PHASE", "video_done bytes=${totalDownloadedBytes}")
+            DownloadLog.phase("video-done: ${segments.size} segments -> ${resolvedPlaylistFile.absolutePath}")
             var combinedDownloadedBytes = totalDownloadedBytes
             var audioTempFile: File? = null
-            if (selectedAudio != null) {
+            val audioOk = if (selectedAudio == null) {
+                DownloadLog.phase("audio-start: hasAudioRendition=false")
+                DownloadLog.audio("no TYPE=AUDIO rendition in master — completing video-only")
+                false
+            } else {
                 val rendition = selectedAudio!!
-                Log.e("HLS_PHASE", "audio_start uri=${rendition.uri.take(180)}")
-                try {
+                DownloadLog.phase("audio-start: hasAudioRendition=true")
+                HlsCompletionGuard.bestEffort(DownloadLog.HLS_AUDIO, AUDIO_PHASE_TIMEOUT_MS) {
                     val audioHeaders = headers + rendition.headers
-                    withTimeout(120_000L) {
-                        val audioResponse = requestHls(rendition.uri, audioHeaders)
+                        val audioResponse = requestHls(rendition.uri, audioHeaders, downloadId)
                         val audioPlaylist = String(audioResponse.body, Charsets.UTF_8)
                         require(audioPlaylist.contains("#EXTM3U", true)) { "Selected HLS audio rendition is not a playlist." }
                         val audioSegments = audioPlaylist.lineSequence().map(String::trim)
@@ -905,14 +1077,14 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                             .map { URI(audioResponse.url).resolve(it).toString() }.toList()
                         require(audioSegments.isNotEmpty()) { "Selected HLS audio rendition has no segments." }
                         Log.e("HLS_AUDIO", "audio segments count=${audioSegments.size}")
-                        val audioFirst = requestHls(audioSegments.first(), audioHeaders).body
+                        val audioFirst = requestHls(audioSegments.first(), audioHeaders, downloadId).body
                         val audioFmp4 = detectHlsSegmentType(audioFirst) == HlsSegmentType.FMP4 || audioPlaylist.contains("#EXT-X-MAP", true)
                         val audioExtension = if (audioFmp4) ".m4s" else ".ts"
                         audioTempFile = File(getDownloadDir(context), "$baseName.audio.part")
                         val audioSegmentDir = File(audioTempFile!!.parentFile, "${audioTempFile!!.name}.segments")
                         requireWritableDirectory(audioSegmentDir, "HLS_STEP=create_segment_dir")
                         val audioMap = Regex("#EXT-X-MAP:[^\\n]*URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(audioPlaylist)?.groupValues?.get(1)?.let { URI(audioResponse.url).resolve(it).toString() }
-                        if (audioMap != null) writeHlsFile(File(audioSegmentDir, "init.mp4"), requestHls(audioMap, audioHeaders).body, "HLS_STEP=write_segment")
+                        if (audioMap != null) writeHlsFile(File(audioSegmentDir, "init.mp4"), requestHls(audioMap, audioHeaders, downloadId).body, "HLS_STEP=write_segment")
                         val audioBytes = downloadSegmentsParallel(
                             downloadId,
                             audioSegments,
@@ -926,30 +1098,39 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         )
                         audioPlaylistFile = File(getDownloadDir(context), "$baseName.audio.m3u8")
                         val audioDurations = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).findAll(audioPlaylist).map { it.groupValues[1].toDoubleOrNull() ?: 5.0 }.toList()
+                        // After per-segment tolerance (Anchor 1), some segment files may be
+                        // missing. Write the playlist referencing ONLY the segments that
+                        // actually exist on disk, so the player does not 404 on a gap.
+                        val survivingAudioIndices = audioSegments.indices.filter { idx ->
+                            File(audioSegmentDir, "segment_$idx$audioExtension").let { it.isFile && it.length() > 0L }
+                        }
+                        Log.e("HLS_AUDIO", "audio_segments_total=${audioSegments.size} surviving=${survivingAudioIndices.size} missing=${audioSegments.size - survivingAudioIndices.size}")
+                        require(survivingAudioIndices.isNotEmpty()) { "All audio segments failed to download." }
                         writeHlsText(audioPlaylistFile!!, buildString {
                             appendLine("#EXTM3U"); appendLine("#EXT-X-VERSION:3"); appendLine("#EXT-X-TARGETDURATION:${audioDurations.maxOrNull()?.let { kotlin.math.ceil(it).toInt() } ?: 10}"); appendLine("#EXT-X-PLAYLIST-TYPE:VOD"); appendLine("#EXT-X-MEDIA-SEQUENCE:0")
                             if (audioMap != null) appendLine("#EXT-X-MAP:URI=\"${audioSegmentDir.name}/init.mp4\"")
-                            audioSegments.indices.forEach { index -> appendLine("#EXTINF:${audioDurations.getOrNull(index) ?: 5.0},"); appendLine("${audioSegmentDir.name}/segment_$index$audioExtension") }; appendLine("#EXT-X-ENDLIST")
+                            survivingAudioIndices.forEach { index -> appendLine("#EXTINF:${audioDurations.getOrNull(index) ?: 5.0},"); appendLine("${audioSegmentDir.name}/segment_$index$audioExtension") }; appendLine("#EXT-X-ENDLIST")
                         })
                         audioTempFile!!.delete()
                         audioMasterFile = File(getDownloadDir(context), "$baseName.master.m3u8")
-                        writeHlsText(audioMasterFile!!, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"${rendition.name.ifBlank { "English" }}\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"${rendition.language}\",URI=\"${audioPlaylistFile!!.name}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"audio\"\n${resolvedPlaylistFile.name}\n")
+                        val localResolution = if (selectedVariantWidth != null && selectedVariantHeight != null) {
+                            ",RESOLUTION=${selectedVariantWidth}x${selectedVariantHeight}"
+                        } else ""
+                        writeHlsText(audioMasterFile!!, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"${rendition.name.ifBlank { "English" }}\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"${rendition.language}\",URI=\"${audioPlaylistFile!!.name}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1$localResolution,AUDIO=\"audio\"\n${resolvedPlaylistFile.name}\n")
                         Log.e("HLS_AUDIO", "audio_segments=${audioSegments.size} bytes=$audioBytes")
                         Log.e("HLS_AUDIO", "master_path=${audioMasterFile!!.absolutePath}")
                         Log.e("HLS_PHASE", "local_master=${audioMasterFile!!.exists()} size=${audioMasterFile!!.length()} video_playlist=${resolvedPlaylistFile.exists()} video_size=${resolvedPlaylistFile.length()} audio_playlist=${audioPlaylistFile!!.exists()} audio_size=${audioPlaylistFile!!.length()} video_segment=${File(resolvedSegmentDir, "segment_0$segmentExtension").length()} audio_segment=${File(audioSegmentDir, "segment_0$audioExtension").length()}")
                         combinedDownloadedBytes += audioBytes
                         Log.e("HLS_PHASE", "audio_done bytes=$audioBytes")
+                }
+                .also { ok ->
+                    DownloadLog.phase("audio-done: ok=$ok")
+                    if (!ok) {
+                        audioPlaylistFile?.delete()
+                        audioMasterFile?.delete()
+                        audioTempFile?.delete()
+                        audioTempFile?.let { File("${it.absolutePath}.segments").deleteRecursively() }
                     }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    Log.e("HLS_AUDIO", "audio phase failed; refusing video-only completion", error)
-                    Log.e("HLS_PHASE", "audio_failed exception=${error.message}")
-                    audioPlaylistFile?.delete()
-                    audioMasterFile?.delete()
-                    audioTempFile?.delete()
-                    audioTempFile?.let { File("${it.absolutePath}.segments").deleteRecursively() }
-                    throw IOException("HLS audio rendition download failed: ${error.message}", error)
                 }
             }
             resolvedTempFile.delete()
@@ -959,18 +1140,23 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     progress = 100,
                     downloadedBytes = combinedDownloadedBytes,
                     totalBytes = combinedDownloadedBytes,
-                    filePath = audioMasterFile?.absolutePath ?: resolvedPlaylistFile.absolutePath,
+                    filePath = if (audioOk && audioMasterFile?.isFile == true) audioMasterFile!!.absolutePath else resolvedPlaylistFile.absolutePath,
                     speed = "",
                     eta = "",
                 )
             }
             persistDownloads(force = true)
-            Log.e("HLS_PHASE", "completed filePath=${audioMasterFile?.absolutePath ?: resolvedPlaylistFile.absolutePath}")
-            if (masterPlaylistText != null) {
-                downloadHlsEnglishSubtitleFallback(context, masterPlaylistText!!, masterPlaylistUrl, headers, item.fileName)
-            } else {
-                Log.e("SUBS", "none reason=no master playlist available")
+            showCompletedNotification(downloadId)
+            downloadScope.launch {
+                DownloadLog.phase("subs-start")
+                val subsOk = HlsCompletionGuard.bestEffort(DownloadLog.HLS_SUBS, 30_000L) {
+                    if (masterPlaylistText != null) {
+                        downloadHlsEnglishSubtitleFallback(context, masterPlaylistText!!, masterPlaylistUrl, headers, item.fileName, downloadId)
+                    }
+                }
+                DownloadLog.phase("subs-done: ok=$subsOk")
             }
+            DownloadLog.phase("completed: opening ${if (audioOk && audioMasterFile?.isFile == true) "master" else "video-only"} -> ${if (audioOk && audioMasterFile?.isFile == true) audioMasterFile!!.absolutePath else resolvedPlaylistFile.absolutePath}")
             val sidecar = File(getDownloadDir(context), "${item.fileName.substringBeforeLast('.', item.fileName)}.srt")
             Log.e("HLS_PHASE", "files master=${audioMasterFile?.absolutePath ?: "none"} master_size=${audioMasterFile?.length() ?: 0L} video=${resolvedPlaylistFile.absolutePath} video_size=${resolvedPlaylistFile.length()} audio=${audioPlaylistFile?.absolutePath ?: "none"} audio_size=${audioPlaylistFile?.length() ?: 0L} srt=${sidecar.exists()} srt_size=${sidecar.length()}")
             Log.e("HLS_DEBUG", "Created local playlist: ${resolvedPlaylistFile.absolutePath}")
@@ -979,13 +1165,17 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("TRACE_HLS", "   Total bytes: $totalDownloadedBytes")
             Log.e("TRACE_HLS", "   Playlist size: ${resolvedPlaylistFile.length()}")
             Log.e("TRACE_HLS", "═══════════════════════════════════")
-            showCompletedNotification(downloadId)
             return true
         } catch (_: CancellationException) {
             markPausedIfNoReplacement(downloadId)
             return true
         } catch (error: Exception) {
             tempFile?.delete()
+            if (isNetworkError(error) && downloadJobs[downloadId] != null) {
+                updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "", error = "Network connection lost — download paused. Tap resume when you’re back online.") }
+                persistDownloads(force = true)
+                return true
+            }
             segmentDir?.deleteRecursively()
             localPlaylistFile?.delete()
             audioPlaylistFile?.delete()
@@ -1017,6 +1207,8 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         logHlsDiagnostics: Boolean = false,
         keepSegments: Boolean = false,
         segmentExtension: String = ".bin",
+        extrapolationScale: Double = 1.0,
+        validateFirstSegment: Boolean = false,
     ): Long {
         val parallelCount = minOf(6, segmentUrls.size)
         val segmentDir = File(outputFile.parentFile, "${outputFile.name}.segments")
@@ -1033,6 +1225,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             }
         }
         val lastUpdate = AtomicLong(0L)
+        val networkFailure = AtomicReference<Throwable?>(null)
         val startedAt = System.currentTimeMillis()
         coroutineScope {
                 segmentUrls.withIndex()
@@ -1044,8 +1237,43 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                     batch.map { indexed ->
                         async(Dispatchers.IO) {
                             if (!currentCoroutineContext().isActive) throw CancellationException()
-                            val bytes = requestHls(indexed.value, headers).body
-                            require(bytes.isNotEmpty()) { "Segment ${indexed.index + 1} was empty." }
+                            val bytes = try {
+                                var lastError: Exception? = null
+                                var result: ByteArray? = null
+                                repeat(3) { attempt ->
+                                    try {
+                                        result = requestHls(indexed.value, headers, downloadId).body
+                                        return@repeat
+                                    } catch (e: Exception) {
+                                        if (e is CancellationException) throw e
+                                        lastError = e
+                                        if (attempt < 2) delay(if (attempt == 0) 2_000L else 5_000L)
+                                    }
+                                }
+                                result ?: throw (lastError ?: IOException("Segment request failed"))
+                            } catch (e: Exception) {
+                                if (e is CancellationException) throw e
+                                if (downloadJobs[downloadId] == null || !currentCoroutineContext().isActive) {
+                                    throw CancellationException("paused")
+                                }
+                                if (isNetworkError(e)) networkFailure.compareAndSet(null, e)
+                                Log.e(TAG, "HLS_STEP=segment_fetch_failed index=${indexed.index + 1}/${segmentUrls.size} ${e::class.simpleName}: ${e.message}")
+                                return@async
+                            }
+                            if (bytes.isEmpty()) {
+                                Log.e(TAG, "HLS_STEP=segment_empty index=${indexed.index + 1}/${segmentUrls.size} url=${indexed.value.take(120)}")
+                                return@async
+                            }
+                            if (validateFirstSegment && indexed.index == 0) {
+                                val firstSegmentType = detectHlsSegmentType(bytes)
+                                Log.e("HLS_PHASE", "first_segment_type=$firstSegmentType source=network")
+                                require(firstSegmentType != HlsSegmentType.HTML) {
+                                    "HLS segment returned an HTML error page; the link may have expired."
+                                }
+                                require(firstSegmentType != HlsSegmentType.UNKNOWN) {
+                                    "Unsupported or invalid HLS segment format."
+                                }
+                            }
                             if (logHlsDiagnostics && indexed.index == 0) {
                                 val headerString = String(bytes.take(50).toByteArray(), Charsets.ISO_8859_1)
                                 Log.e("HLS_DEBUG", "First segment size: ${bytes.size} bytes")
@@ -1060,6 +1288,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                             }
                             val target = segmentFile(indexed.index)
                             writeHlsFile(target, bytes, "HLS_STEP=write_segment")
+                            if (!currentCoroutineContext().isActive) throw CancellationException()
 
                             val finished = completed.incrementAndGet()
                             val downloaded = totalBytes.addAndGet(bytes.size.toLong())
@@ -1069,13 +1298,16 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                                 val elapsedSeconds = (now - startedAt).coerceAtLeast(1L) / 1_000.0
                                 val speedBps = downloaded / elapsedSeconds
                                 val downloadedSoFar = downloadedBytesOffset + downloaded
-                                val estimatedTotalBytes = downloadedBytesOffset +
-                                    (downloaded.toDouble() / finished.coerceAtLeast(1) * (progressTotal - progressOffset)).toLong()
                                 updateItem(downloadId) {
+                                    // The total is initialized once before segments begin and
+                                    // remains frozen; completion is the only later authority.
                                     val newTotal = when {
-                                        it.totalBytes > 0L -> maxOf(it.totalBytes, downloadedSoFar)
-                                        estimatedTotalBytes > 0L -> maxOf(estimatedTotalBytes, downloadedSoFar)
-                                        else -> downloadedSoFar
+                                        it.totalBytes > 0L -> it.totalBytes
+                                        finished >= 3 -> {
+                                            val avgBytesPerSegment = downloadedSoFar / finished
+                                            (avgBytesPerSegment * progressTotal).toLong().coerceAtLeast(1L)
+                                        }
+                                        else -> 0L
                                     }
                                     Log.e("SIZE", "progress downloadId=$downloadId downloaded=$downloadedSoFar totalBytes=$newTotal")
                                     it.copy(
@@ -1121,7 +1353,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             it.copy(
                 progress = ((progressOffset + segmentUrls.size) * 100 / progressTotal.coerceAtLeast(1)).coerceIn(0, 100),
                 downloadedBytes = downloadedBytesOffset + totalBytes.get(),
-                totalBytes = it.totalBytes.coerceAtLeast(downloadedBytesOffset + totalBytes.get()),
+                totalBytes = it.totalBytes,
             )
         }
         // Keep the segment directory for local HLS playback; other callers clean up
@@ -1147,7 +1379,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             Log.e("DL_EXEC", "Entered downloadDashVideo")
             Log.e("DL_EXEC", "Fetching manifest from: ${link.url.take(300)}")
             Log.e("DASH_PARSE", "Fetching MPD: ${link.url.take(300)}")
-            val response = requestHls(link.url, headers)
+            val response = requestHls(link.url, headers, downloadId)
             val manifest = String(response.body, Charsets.UTF_8)
             Log.e("TRACE_DASH", "   Manifest fetched: ${manifest.length} chars")
             Log.e("TRACE_DASH", "   First 300 chars: ${manifest.take(300)}")
@@ -1189,6 +1421,11 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
             markPausedIfNoReplacement(downloadId)
             return true
         } catch (error: Exception) {
+            if (isNetworkError(error) && downloadJobs[downloadId] != null) {
+                updateItem(downloadId) { it.copy(status = DirectDownloadStatus.PAUSED, speed = "", eta = "", error = "Network connection lost — download paused. Tap resume when you’re back online.") }
+                persistDownloads(force = true)
+                return true
+            }
             videoFile.delete()
             audioFile.delete()
             muxedFile.delete()
@@ -1423,7 +1660,7 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
     }
 
     private fun downloadHlsEnglishSubtitleFallback(
-        context: Context, masterPlaylist: String, masterUrl: String, headers: Map<String, String>, fileName: String,
+        context: Context, masterPlaylist: String, masterUrl: String, headers: Map<String, String>, fileName: String, downloadId: String? = null,
     ) {
         try {
             val candidates = masterPlaylist.lineSequence()
@@ -1438,16 +1675,37 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 ?: candidates.firstOrNull { it.first["DEFAULT"].equals("YES", true) }
                 ?: candidates.firstOrNull()
             if (selected == null) { Log.e("SUBS", "HLS subtitle none reason=no TYPE=SUBTITLES rendition"); return }
-            val response = requestHls(selected.third, headers)
+            val response = requestHls(selected.third, headers, downloadId)
             val body = String(response.body, Charsets.UTF_8)
-            val subtitleContent = if (body.contains("#EXTM3U", true)) {
-                body.lineSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }.map { URI(response.url).resolve(it).toString() }.joinToString("\n") { String(requestHls(it, headers).body, Charsets.UTF_8) }
-            } else body
-            if (subtitleContent.isBlank()) { Log.e("SUBS", "HLS subtitle none reason=selected rendition empty"); return }
             val safeBase = sanitizeFileName(fileName).ifBlank { "download" }
             val base = safeBase.substringBeforeLast('.', safeBase)
             val subtitleFile = File(getDownloadDir(context), "$base.srt")
-            if (!subtitleFile.exists()) { subtitleFile.writeText(toSrt(subtitleContent)); Log.e("SUBS", "saved path=${subtitleFile.absolutePath}") }
+            if (body.contains("#EXTM3U", true)) {
+                var cumulative = 0.0
+                val segmentBodies = mutableListOf<String>()
+                val offsets = mutableListOf<Double>()
+                body.lineSequence().forEach { raw ->
+                    val line = raw.trim()
+                    val extinf = Regex("#EXTINF:([\\d.]+)", RegexOption.IGNORE_CASE).find(line)?.groupValues?.get(1)?.toDoubleOrNull()
+                    if (extinf != null) {
+                        offsets += cumulative
+                        cumulative += extinf
+                    } else if (line.isNotEmpty() && !line.startsWith("#")) {
+                        segmentBodies += String(requestHls(URI(response.url).resolve(line).toString(), headers, downloadId).body, Charsets.UTF_8)
+                    }
+                }
+                if (segmentBodies.isEmpty()) { Log.e("SUBS", "HLS subtitle none reason=playlist had no segments"); return }
+                while (offsets.size < segmentBodies.size) offsets += cumulative
+                val srt = vttSegmentsToSrt(segmentBodies, offsets)
+                if (srt.isBlank()) { Log.e("SUBS", "HLS subtitle none reason=no cues after conversion (segments=${segmentBodies.size})"); return }
+                subtitleFile.writeText(srt)
+                Log.e("SUBS", "saved path=${subtitleFile.absolutePath} segments=${segmentBodies.size} cues=${Regex("\\n\\n").split(srt.trim()).size}")
+            } else {
+                val srt = vttSegmentsToSrt(listOf(body), listOf(0.0))
+                if (srt.isBlank()) { Log.e("SUBS", "HLS subtitle none reason=rendition had no cues"); return }
+                subtitleFile.writeText(srt)
+                Log.e("SUBS", "saved path=${subtitleFile.absolutePath}")
+            }
         } catch (error: Exception) { Log.e("SUBS", "HLS subtitle fallback failed", error) }
     }
 
@@ -1488,12 +1746,15 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
         }
     }
 
-    private fun requestHls(url: String, headers: Map<String, String>): HlsResponse {
+    private fun requestHls(url: String, headers: Map<String, String>, downloadId: String? = null): HlsResponse {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
             readTimeout = 30_000
             instanceFollowRedirects = true
             headers.forEach { (key, value) -> setRequestProperty(key, value) }
+        }
+        downloadId?.let { id ->
+            activeConnections.computeIfAbsent(id) { ConcurrentHashMap.newKeySet() }.add(connection)
         }
         return try {
             val code = connection.responseCode
@@ -1507,7 +1768,15 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 throw httpException(code, connection.responseMessage)
             }
             HlsResponse(connection.url.toString(), connection.inputStream.use { it.readBytes() })
-        } finally { connection.disconnect() }
+        } finally {
+            connection.disconnect()
+            downloadId?.let { id ->
+                activeConnections[id]?.let { connections ->
+                    connections.remove(connection)
+                    if (connections.isEmpty()) activeConnections.remove(id, connections)
+                }
+            }
+        }
     }
 
     private fun requestHeaders(link: ExtractorLink): Map<String, String> {
@@ -1663,6 +1932,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                 put("speed", item.speed)
                 put("eta", item.eta)
                 put("selectedHeight", item.selectedHeight)
+                put("parentTitle", item.parentTitle ?: JSONObject.NULL)
+                put("language", item.language ?: JSONObject.NULL)
+                item.season?.let { put("season", it) } ?: put("season", JSONObject.NULL)
+                item.episode?.let { put("episode", it) } ?: put("episode", JSONObject.NULL)
                 put("referer", item.referer)
                 put("headers", JSONObject().apply { item.headers.forEach { (key, value) -> put(key, value) } })
                 put("error", item.error ?: JSONObject.NULL)
@@ -1706,6 +1979,10 @@ throw IOException("Download failed after $MAX_RETRIES attempts.")
                         eta = json.optString("eta", ""),
                         error = json.optString("error").takeUnless { it.isBlank() || it == "null" },
                         selectedHeight = json.optInt("selectedHeight", 0),
+                        parentTitle = json.optString("parentTitle").takeUnless { it.isBlank() || it == "null" },
+                        language = json.optString("language").takeUnless { it.isBlank() || it == "null" },
+                        season = if (json.isNull("season")) null else json.optInt("season"),
+                        episode = if (json.isNull("episode")) null else json.optInt("episode"),
                         referer = json.optString("referer", ""),
                         headers = json.optJSONObject("headers")?.let { headersJson ->
                             headersJson.keys().asSequence().associateWith { key -> headersJson.optString(key) }

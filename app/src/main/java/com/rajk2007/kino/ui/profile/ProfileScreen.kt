@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lagradost.cloudstream3.R
+import com.rajk2007.kino.debug.DebugDiagnosticsActivity
 import kotlin.random.Random
 
 private const val PROFILE_PREFS = "kino_profile"
@@ -184,6 +185,15 @@ fun ProfileScreen() {
                         prefs.edit().remove(USER_NAME_KEY).remove(USER_EMAIL_KEY).remove(AVATAR_URI_KEY).putBoolean(IS_PREMIUM_KEY, false).apply()
                     }
                     ProfileRow("Delete My Account", "", Icons.Default.ArrowForward, danger = true) { showDelete = true }
+                }
+            }
+            item {
+                ProfileSection("DEVELOPER", Icons.Default.Settings) {
+                    ProfileRow("Diagnostics", "", Icons.Default.ArrowForward) {
+                        context.startActivity(
+                            Intent(context, DebugDiagnosticsActivity::class.java)
+                        )
+                    }
                 }
             }
             item {

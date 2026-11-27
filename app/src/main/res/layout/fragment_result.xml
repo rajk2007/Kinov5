@@ -253,7 +253,7 @@
                                 android:layout_gravity="bottom"
                                 android:contentDescription="@string/result_poster_img_des"
                                 android:foreground="@drawable/outline_drawable"
-                                android:scaleType="fitCenter"
+                                android:scaleType="centerCrop"
                                 tools:src="@drawable/example_poster" />
                         </androidx.cardview.widget.CardView>
 
@@ -330,7 +330,7 @@
                                     android:layout_height="wrap_content"
                                     android:ellipsize="end"
                                     android:foreground="@drawable/outline_drawable"
-                                    android:maxLines="3"
+                                    android:maxLines="4"
                                     android:nextFocusUp="@id/result_back"
                                     android:nextFocusDown="@id/result_play_movie"
                                     android:paddingTop="5dp"
@@ -348,6 +348,35 @@
                             </FrameLayout>
                         </LinearLayout>
                     </LinearLayout>
+                    <TextView
+                        android:id="@+id/result_cast_text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="5dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="?attr/grayTextColor"
+                        android:textSize="15sp"
+                        tools:text="Cast: Joe Ligma" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/result_cast_items"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+
+                        android:descendantFocusability="afterDescendants"
+                        android:fadingEdge="horizontal"
+                        android:focusable="false"
+                        android:focusableInTouchMode="false"
+                        android:nextFocusUp="@id/result_description"
+                        android:nextFocusDown="@id/result_play_movie"
+                        android:orientation="horizontal"
+                        android:paddingTop="5dp"
+                        android:requiresFadingEdge="horizontal"
+                        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+                        tools:itemCount="2"
+                        tools:listitem="@layout/cast_item"
+                        tools:visibility="visible" />
 
                     <TextView
                         android:id="@+id/result_vpn"
@@ -652,35 +681,6 @@
                                 app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
                         </LinearLayout>
 
-                    <TextView
-                        android:id="@+id/result_cast_text"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="5dp"
-                        android:ellipsize="end"
-                        android:maxLines="2"
-                        android:textColor="?attr/grayTextColor"
-                        android:textSize="15sp"
-                        tools:text="Cast: Joe Ligma" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/result_cast_items"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-
-                        android:descendantFocusability="afterDescendants"
-                        android:fadingEdge="horizontal"
-                        android:focusable="false"
-                        android:focusableInTouchMode="false"
-                        android:nextFocusUp="@id/result_description"
-                        android:nextFocusDown="@id/result_play_movie"
-                        android:orientation="horizontal"
-                        android:paddingTop="5dp"
-                        android:requiresFadingEdge="horizontal"
-                        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
-                        tools:itemCount="2"
-                        tools:listitem="@layout/cast_item"
-                        tools:visibility="visible" />
                         <com.google.android.material.tabs.TabLayout
                             android:id="@+id/result_tabs"
                             android:layout_width="match_parent"
@@ -689,9 +689,7 @@
                             app:tabIndicatorColor="#E11D48"
                             app:tabIndicatorHeight="2dp"
                             app:tabSelectedTextColor="@android:color/white"
-                            app:tabTextColor="@color/grayTextColor"
-                            app:tabMode="scrollable"
-                            app:tabGravity="start" />
+                            app:tabTextColor="@color/grayTextColor" />
 
                         <HorizontalScrollView
                             android:id="@+id/result_season_chips_scroll"

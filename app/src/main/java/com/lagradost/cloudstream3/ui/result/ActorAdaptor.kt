@@ -42,6 +42,7 @@ class ActorAdaptor(
         when (val binding = holder.view) {
             is CastItemBinding -> {
                 clearImage(binding.actorImage)
+                clearImage(binding.voiceActorImage)
             }
         }
     }
@@ -61,7 +62,7 @@ class ActorAdaptor(
                 // Fix tv focus escaping the recyclerview
                 if (position == 0) {
                     itemView.nextFocusLeftId = R.id.result_cast_items
-                } else if ((position - 1) == itemCount) {
+                } else if (position == itemCount - 1) {
                     itemView.nextFocusRightId = R.id.result_cast_items
                 }
                 nextFocusUpId?.let {
@@ -129,8 +130,8 @@ class ActorAdaptor(
                         voiceActorName.isVisible = false
                     } else {
                         voiceActorName.text = item.voiceActor?.name
-                        if (!vaImage.isNullOrEmpty())
-                            voiceActorImageHolder.isVisible = true
+                        voiceActorName.isVisible = true
+                        voiceActorImageHolder.isVisible = !vaImage.isNullOrEmpty()
                         voiceActorImage.loadImage(vaImage)
                     }
                 }
