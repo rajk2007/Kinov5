@@ -506,8 +506,7 @@
                                         android:layout_height="26dp"
                                         app:indicatorColor="#E11D48"
                                         app:indicatorSize="26dp"
-                                        app:indicatorThickness="2dp"
-                                        app:trackColor="#44FFFFFF"
+                                                            app:trackColor="#44FFFFFF"
                                         app:trackThickness="2dp"
                                         tools:progress="50" />
                                 </FrameLayout>

@@ -1753,7 +1753,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     }
 
     /** V33: season pills of the reference design, one chip per season. */
-    private fun bindSeasonChips(seasonList: List<Pair<com.lagradost.cloudstream3.UiText?, Int>>) {
+    private fun bindSeasonChips(seasonList: List<Pair<UiText?, Int>>) {
         val binding = resultBinding ?: return
         val group = binding.resultSeasonChips
         val selected = viewModel.selectedSeason.value?.asStringNull(binding.root.context)
