@@ -101,6 +101,27 @@ class SubscriptionWorkManager(val context: Context, workerParams: WorkerParamete
     override suspend fun doWork(): Result {
         try {
 //        println("Update subscriptions!")
+            // V35: hard overall timeout so a slow provider can never keep the
+            // "Updating subscribed shows" notification alive forever.
+            withTimeoutOrNull(10 * 60_000) {
+                runSubscriptionUpdate()
+            }
+            return Result.success()
+        } catch (t: Throwable) {
+            logError(t)
+            // ye, while this is not correct, but because gods know why android just crashes
+            // and this causes major battery usage as it retries it inf times. This is better, just
+            // in case android decides to be android and fuck us
+            return Result.success()
+        } finally {
+            // V35: the progress notification MUST go away when the work ends, whatever
+            // the outcome. This is what made "Updating subscribed shows" never stop.
+            notificationManager.cancel(SUBSCRIPTION_NOTIFICATION_ID)
+        }
+    }
+
+    private suspend fun runSubscriptionUpdate() {
+        try {
             context.createNotificationChannel(
                 SUBSCRIPTION_CHANNEL_ID,
                 SUBSCRIPTION_CHANNEL_NAME,
@@ -119,7 +140,7 @@ class SubscriptionWorkManager(val context: Context, workerParams: WorkerParamete
 
             if (subscriptions.isEmpty()) {
                 WorkManager.getInstance(context).cancelWorkById(this.id)
-                return Result.success()
+                return
             }
 
             val max = subscriptions.size
@@ -213,14 +234,8 @@ class SubscriptionWorkManager(val context: Context, workerParams: WorkerParamete
                     logError(t)
                 }
             }
-
-            return Result.success()
         } catch (t: Throwable) {
             logError(t)
-            // ye, while this is not correct, but because gods know why android just crashes
-            // and this causes major battery usage as it retries it inf times. This is better, just
-            // in case android decides to be android and fuck us
-            return Result.success()
         }
     }
 }

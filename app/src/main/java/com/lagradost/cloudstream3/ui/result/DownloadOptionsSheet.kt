@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.ui.result
 
 import androidx.compose.foundation.background
+import com.lagradost.cloudstream3.utils.SubtitleHelper
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -83,12 +84,15 @@ fun filterKdesaLinks(links: List<ExtractorLink>): List<ExtractorLink> {
 }
 
 fun displayLinkName(name: String): String {
-    parseKdesaLanguage(name)?.let { return it }
+    // V35: real language name instead of the raw provider text
+    parseKdesaLanguage(name)?.let { return normalizeLanguageName(it) }
     if (name.contains("Orion", ignoreCase = true)) {
-        return name
-            .replace(Regex("""Orion\s*[·•.]\s*""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s*\d{3,4}p\s*""", RegexOption.IGNORE_CASE), "")
-            .trim()
+        return normalizeLanguageName(
+            name
+                .replace(Regex("""Orion\s*[·•.]\s*""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*\d{3,4}p\s*""", RegexOption.IGNORE_CASE), "")
+                .trim()
+        )
     }
     val (quality, size) = parseLegacyLinkName(name)
     return when {
@@ -126,14 +130,54 @@ fun ExtractorLink.effectiveQuality(): Int {
         ?: Qualities.Unknown.value
 }
 
+/**
+ * V35: normalizes a raw language string (ISO tag, HLS LANGUAGE/NAME attribute or a link
+ * name fragment) into a real language name. Provider artifacts like "Vela", "atlas",
+ * "Multi-audio" or the provider name itself are turned into something readable, falling
+ * back to "Audio"/"Unknown" rather than leaking provider internals.
+ */
+fun normalizeLanguageName(raw: String?, fallback: String = "Audio"): String {
+    val text = raw?.trim().orEmpty()
+    if (text.isEmpty()) return fallback
+
+    // ISO tag or known tag in the string -> real name (en -> English, hi -> Hindi ...)
+    SubtitleHelper.fromTagToEnglishLanguageName(text)?.let { return it }
+    Regex("\\b([a-z]{2,3}(?:-[A-Za-z]{2,4})?)\\b").findAll(text).mapNotNull { match ->
+        SubtitleHelper.fromTagToEnglishLanguageName(match.groupValues[1])
+    }.firstOrNull()?.let { return it }
+
+    // Known language names written out anywhere in the string
+    val known = listOf(
+        "English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali",
+        "Marathi", "Gujarati", "Punjabi", "Urdu", "Arabic", "French", "German",
+        "Spanish", "Japanese", "Korean", "Chinese", "Russian", "Italian", "Portuguese",
+        "Turkish", "Thai", "Indonesian", "Dual Audio", "Multi Audio", "Dubbed", "Subbed",
+    )
+    known.firstOrNull { text.contains(it, ignoreCase = true) }?.let { return it }
+
+    // Provider artifacts and junk words that are never language names
+    val junk = listOf(
+        "multi-audio", "multiaudio", "multi audio", "vela", "atlas", "orion",
+        "original", "default", "und", "audio", "track", "multi", "dual",
+    )
+    val cleaned = text.replace(Regex("[|_\\[\\](){ } :]"), " ")
+        .split(" ").filter { it.isNotBlank() }
+        .filterNot { word -> junk.any { word.equals(it, ignoreCase = true) } }
+        .joinToString(" ").trim()
+    return cleaned.ifBlank { fallback }
+}
+
 fun ExtractorLink.languageKey(): String {
-    parseKdesaLanguage(name)?.let { return it }
-    parseLanguageFromLinkName(name)?.let { return it }
+    // V35: every branch goes through normalizeLanguageName() so the grouping key is a
+    // real language name ("Hindi", "English"), never a provider artifact.
+    parseKdesaLanguage(name)?.let { return normalizeLanguageName(it) }
+    parseLanguageFromLinkName(name)?.let { return normalizeLanguageName(it) }
     val qStr = Qualities.getStringByInt(effectiveQuality()).ifBlank { parseQualityFromLinkName(name) ?: "" }
-    return name.replace(source, "", ignoreCase = true).replace(qStr, "", ignoreCase = true)
+    val residual = name.replace(source, "", ignoreCase = true).replace(qStr, "", ignoreCase = true)
         .replace(Regex("""\b\d{3,4}\s*p\b|\b4[kK]\b""", RegexOption.IGNORE_CASE), "")
         .replace(Regex("""[•·\-–—_|\[\](){ } :]"""), " ")
-        .replace(Regex("\\s+"), " ").trim().ifBlank { source.ifBlank { "Unknown" } }
+        .replace(Regex("\\s+"), " ").trim()
+    return normalizeLanguageName(residual.ifBlank { name }, fallback = "Unknown")
 }
 
 data class QualityOption(

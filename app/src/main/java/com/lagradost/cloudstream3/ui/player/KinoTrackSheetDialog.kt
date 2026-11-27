@@ -358,8 +358,21 @@ class KinoTrackSheetDialog(
         if (selected) setColor(red) else { setColor(Color.TRANSPARENT); setStroke(dp(1), gray) }
     }
 
+    /** V35: maps a raw audio track language/label to a real language name. */
+    private fun normalizeAudioLanguage(language: String?, label: String?): String {
+        val direct = com.lagradost.cloudstream3.ui.result.normalizeLanguageName(language, fallback = "")
+        if (direct.isNotBlank()) return direct
+        val fromLabel = com.lagradost.cloudstream3.ui.result.normalizeLanguageName(label, fallback = "")
+        if (fromLabel.isNotBlank()) return fromLabel
+        // Neither the language tag nor the label is a language: fall back to the label
+        // text itself (still better than a wrong language name).
+        return label?.takeIf { it.isNotBlank() } ?: "Audio"
+    }
+
     private fun audioLabel(track: AudioTrack): String {
-        val language = track.language?.replaceFirstChar { it.uppercaseChar() } ?: track.label ?: "Audio"
+        // V35: normalize the raw HLS LANGUAGE/NAME attribute; junk like "Vela" or
+        // "atlas" must never be shown as a language name.
+        val language = normalizeAudioLanguage(track.language, track.label)
         val channels = when (track.channelCount) { 1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"; else -> "" }
         return listOf(language, channels, track.sampleMimeType?.substringAfter('/')?.uppercase().orEmpty()).filter { it.isNotBlank() }.joinToString(" • ")
     }

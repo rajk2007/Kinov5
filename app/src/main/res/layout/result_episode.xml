@@ -54,13 +54,21 @@
                     tools:visibility="visible" />
             </FrameLayout>
 
-            <com.google.android.material.button.MaterialButton
+            <TextView
                 android:id="@+id/episode_filler"
-                style="@style/SmallWhiteButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:text="@string/filler" />
+                android:background="@drawable/bg_episode_number"
+                android:paddingStart="10dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="3dp"
+                android:textColor="#E4E4E7"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="1" />
 
             <TextView
                 android:id="@+id/episode_text"
@@ -75,13 +83,20 @@
                 tools:text="1. Jobless" />
         </LinearLayout>
 
-        <com.lagradost.cloudstream3.ui.download.button.PieFetchButton
-            android:id="@+id/download_button"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+        <!-- V35: same rounded bordered circle as the large card. -->
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:layout_gravity="center_vertical|end"
-            android:layout_marginEnd="2dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:padding="10dp" />
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_download_circle">
+
+            <com.lagradost.cloudstream3.ui.download.button.PieFetchButton
+                android:id="@+id/download_button"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:padding="10dp" />
+        </FrameLayout>
     </FrameLayout>
 </androidx.cardview.widget.CardView>

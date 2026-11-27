@@ -141,7 +141,7 @@
                 <FrameLayout
                     android:id="@+id/result_top_holder"
                     android:layout_width="match_parent"
-                    android:layout_height="250dp">
+                    android:layout_height="320dp">
 
                     <FrameLayout
                         android:id="@+id/result_smallscreen_holder"
@@ -377,7 +377,7 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
 
-                        <!-- Play + two squares -->
+                        <!-- Play + download square + subscribe square (series only) -->
                         <LinearLayout
                             android:id="@+id/result_play_parent"
                             android:layout_width="match_parent"
@@ -390,7 +390,7 @@
                                 android:id="@+id/result_play_movie"
                                 style="@style/NiceButton"
                                 android:layout_width="0dp"
-                                android:layout_height="52dp"
+                                android:layout_height="60dp"
                                 android:layout_marginStart="0dp"
                                 android:layout_marginTop="0dp"
                                 android:layout_marginEnd="10dp"
@@ -435,8 +435,10 @@
                                     app:tint="@color/white" />
                             </FrameLayout>
 
-                            <!-- square 2: Subscribe bell -->
+                            <!-- square 2: Subscribe bell (series only; hidden with its
+                                 wrapper on movies so no empty box remains) -->
                             <FrameLayout
+                                android:id="@+id/result_subscribe_square"
                                 android:layout_width="52dp"
                                 android:layout_height="52dp"
                                 android:background="@drawable/bg_icon_square">
@@ -602,9 +604,11 @@
                 <com.google.android.material.tabs.TabLayout
                     android:id="@+id/result_tabs"
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="10dp"
-                    android:background="@android:color/transparent"
+                    android:layout_height="52dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@drawable/bg_tabs_container"
                     android:visibility="gone"
                     app:tabIndicatorColor="#E11D48"
                     app:tabIndicatorFullWidth="false"

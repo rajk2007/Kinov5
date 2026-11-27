@@ -529,6 +529,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
     protected lateinit var syncModel: SyncViewModel
 
     protected var resultBinding: FragmentResultBinding? = null
+
+    /** V35: guards the More Like This search fallback so it runs once per page. */
+    private val mlFallbackDone = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile
+    private var mlFallbackHasResults = false
     protected var recommendationBinding: ResultRecommendationsBinding? = null
     protected var syncBinding: ResultSyncBinding? = null
 
@@ -1028,6 +1033,7 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 }
                 resultResumeParent.isVisible = true
                 resume.progress?.let { progress ->
+                    // V35: no dedicated resume row any more; only the Play button relabels.
                     resultNextSeriesButton.isVisible = false
                     resultResumeSeriesTitle.apply {
                         isVisible = !resume.isMovie
@@ -1040,26 +1046,18 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
                     if (resume.isMovie) {
                         resultPlayParent.isVisible = true
+                        // V35: no separate remaining-time strip; the Play button itself
+                        // becomes the Resume button.
                         resultPlayMovie.text = context?.getString(R.string.resume)
-                        resultResumeSeriesProgressText.isVisible = true
-                        resultResumeSeriesProgressText.setText(progress.progressLeft)
+                        resultResumeSeriesProgressText.isVisible = false
                     }
-                    resultResumeSeriesProgress.apply {
-                        isVisible = true
-                        this.max = progress.maxProgress
-                        this.progress = progress.progress
-                    }
-                    resultResumeProgressHolder.isVisible = true
-                } ?: run {
+                    // V35: the remaining-time strip is removed for movies and series alike
                     resultResumeProgressHolder.isVisible = false
-                    if (!resume.isMovie) {
-                        resultNextSeriesButton.isVisible = true
-                        resultNextSeriesButton.text = context?.getNameFull(
-                            resume.result.name,
-                            resume.result.episode,
-                            resume.result.season
-                        )
-                    }
+                } ?: run {
+                    // V35: the remaining-time / next-episode strip is removed; the Play
+                    // row (which becomes Resume) is the only resume affordance.
+                    resultResumeProgressHolder.isVisible = false
+                    resultNextSeriesButton.isVisible = false
                     resultResumeSeriesProgress.isVisible = false
                     resultResumeSeriesTitle.isVisible = false
                     resultResumeSeriesProgressText.isVisible = false
@@ -1264,9 +1262,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     // V33: a portrait poster is shown whole instead of centre-cropped; the bottom fade is only
                     // drawn under a landscape backdrop
                     val heroIsBackdrop = !d.backgroundPosterUrl.isNullOrBlank()
+                    // V35: portrait posters fill the taller hero at full height (FIT_START)
+                    // instead of a small centered letterbox.
                     resultPosterBackground.scaleType =
                         if (heroIsBackdrop) android.widget.ImageView.ScaleType.CENTER_CROP
-                        else android.widget.ImageView.ScaleType.FIT_CENTER
+                        else android.widget.ImageView.ScaleType.FIT_START
                     resultHeroFade.isVisible = heroIsBackdrop
                     resultPosterBackground.loadImage(
                         d.posterBackgroundImage,
@@ -1310,6 +1310,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                         true
                     )
 
+                    // V35: a new page is loading, allow the MLT fallback to run again
+                    mlFallbackDone.set(false)
+                    mlFallbackHasResults = false
+
                     // V33: "Cast" is a section header below More Like This, also on movies
                     resultCastText.isGone = d.actors.isNullOrEmpty()
                     resultCastText.text = root.context.getString(R.string.kino_cast)
@@ -1318,7 +1322,11 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     resultTabs.isVisible = !isMovie
                     // V33: movies have no tabs, season pills or episode list
                     resultEpisodeContent.isVisible = !isMovie
+                    // V35: hide the whole subscribe square on movies (no empty box)
+                    resultSubscribeSquare.isVisible = !isMovie
                     resultSubscribeInline.isVisible = !isMovie
+                    // V35: the season chips replace the legacy season pill
+                    resultSeasonButton.isVisible = false
                     resultNextAiringHolder.isGone = d.nextAiringEpisode == null && d.nextAiringDate == null
                     resultMltSection.isVisible = isMovie && !viewModel.recommendations.value.isNullOrEmpty()
                     if (!isMovie && resultTabs.tabCount == 0) {
@@ -1331,7 +1339,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                                 // V33: the season pills belong to the Episodes tab
                                 resultSeasonChipsScroll.isVisible =
                                     !showMlt && resultSeasonChips.childCount > 1
-                                resultMltSection.isVisible = showMlt && !viewModel.recommendations.value.isNullOrEmpty()
+                                resultMltSection.isVisible = showMlt &&
+                                    (!viewModel.recommendations.value.isNullOrEmpty() || mlFallbackHasResults)
                             }
                             override fun onTabUnselected(tab: TabLayout.Tab) = Unit
                             override fun onTabReselected(tab: TabLayout.Tab) = Unit
@@ -1522,6 +1531,38 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     }
                 }
                 (resultMltList.adapter as? MltAdapter)?.submitList(recommendations ?: emptyList())
+
+                // V35: the provider (KDesa) returns no recommendations for most titles.
+                // Fall back to a same-provider search on the title (minus the year) and
+                // show those results as More Like This instead of an empty section.
+                if (recommendations.isNullOrEmpty() && mlFallbackDone.compareAndSet(false, true)) {
+                    val response = viewModel.getCurrentResponse()
+                    val api = viewModel.currentRepo?.api
+                    if (response != null && api != null) {
+                        ioSafe {
+                            val query = response.name.substringBefore(" (").trim()
+                            val found = try {
+                                (viewModel.currentRepo?.search(query, 1) as? Resource.Success)
+                                    ?.value?.items.orEmpty()
+                            } catch (t: Throwable) {
+                                emptyList()
+                            }
+                            val filtered = found
+                                .filterNot { it.url == response.url }
+                                .distinctBy { it.name }
+                                .take(20)
+                            if (filtered.isNotEmpty()) {
+                                mlFallbackHasResults = true
+                                activity?.runOnUiThread {
+                                    resultMltSection.isVisible =
+                                        isMovie || resultTabs.selectedTabPosition == 1
+                                    (resultMltList.adapter as? MltAdapter)
+                                        ?.submitList(filtered)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1608,13 +1649,13 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
 
         observeNullable(viewModel.selectedSeason) { text ->
             resultBinding?.apply {
-                resultSeasonButton.setText(text)
+                // V35: the legacy season pill duplicated the season chips and is never
+                // shown. setText(UiText) would make the button visible again, so the
+                // visibility is forced back to gone every time.
+                resultSeasonButton.isVisible = false
                 // V33: keep the season pills in sync
                 updateSeasonChipSelection()
                 selectSeason = text?.asStringNull(resultSeasonButton.context)
-                if (resultSeasonButton.isVisible && resultResumeParent.isVisible) {
-                    setFocusUpAndDown(resultResumeSeriesButton, resultSeasonButton)
-                }
             }
         }
 
@@ -1742,7 +1783,12 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         binding.downloadButton.isGone = true
         if (playEpisode == null) return
 
-        binding.resultPlayMovie.setText(R.string.kino_play)
+        // V35: after watching an episode the Play button becomes Resume for that episode
+        if (resumeEpisode != null && playEpisode.id == resumeEpisode.id) {
+            binding.resultPlayMovie.setText(R.string.resume)
+        } else {
+            binding.resultPlayMovie.setText(R.string.kino_play)
+        }
         binding.resultPlayMovie.setOnClickListener {
             viewModel.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode))
         }

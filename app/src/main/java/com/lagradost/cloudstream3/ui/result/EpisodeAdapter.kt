@@ -210,9 +210,12 @@ class EpisodeAdapter(
 
                     val name =
                         if (item.name == null) "${episodeText.context.getString(R.string.episode)} ${item.episode}" else "${item.episode}. ${item.name}"
-                    episodeFiller.isVisible = item.isFiller == true
+                    // V35: the rounded chip before the title shows the episode number;
+                    // the filler tag moves into the title line.
+                    episodeFiller.isVisible = true
+                    episodeFiller.text = item.episode.toString()
                     episodeText.text =
-                        name//if(card.isFiller == true) episodeText.context.getString(R.string.filler).format(name) else name
+                        if (item.isFiller == true) "$name (${episodeText.context.getString(R.string.filler)})" else name
                     episodeText.isSelected = true // is needed for text repeating
 
                     if (item.videoWatchState == VideoWatchState.Watched) {
@@ -433,9 +436,12 @@ class EpisodeAdapter(
 
                     val name =
                         if (item.name == null) "${episodeText.context.getString(R.string.episode)} ${item.episode}" else "${item.episode}. ${item.name}"
-                    episodeFiller.isVisible = item.isFiller == true
+                    // V35: the rounded chip before the title shows the episode number;
+                    // the filler tag moves into the title line.
+                    episodeFiller.isVisible = true
+                    episodeFiller.text = item.episode.toString()
                     episodeText.text =
-                        name//if(card.isFiller == true) episodeText.context.getString(R.string.filler).format(name) else name
+                        if (item.isFiller == true) "$name (${episodeText.context.getString(R.string.filler)})" else name
                     episodeText.isSelected = true // is needed for text repeating
 
                     if (item.videoWatchState == VideoWatchState.Watched) {

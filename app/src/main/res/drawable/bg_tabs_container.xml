@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- V35: rounded, bordered container behind the Episodes / More Like This tabs -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#1A1A1F" />
+    <stroke android:width="1dp" android:color="#2E2E35" />
+    <corners android:radius="26dp" />
+</shape>
