@@ -10,7 +10,6 @@
     <style name="SeasonChip" parent="@style/Widget.Material3.Chip.Filter">
         <item name="chipMinTouchTargetSize">0dp</item>
         <item name="chipMinHeight">36dp</item>
-        <item name="chipMaxHeight">36dp</item>
         <item name="chipStartPadding">16dp</item>
         <item name="chipEndPadding">16dp</item>
         <item name="chipCornerRadius">10dp</item>
