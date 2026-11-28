@@ -361,12 +361,21 @@ class KinoTrackSheetDialog(
     /** V36: maps a raw audio track language/label to a real language name; junk
      *  names ("Vela", "BigBang", "Vexon") collapse to per-track "Audio N" labels. */
     private fun normalizeAudioLanguage(language: String?, label: String?, index: Int): String {
+        // V38: providers like Orion declare NAME="Audio" with no LANGUAGE attribute
+        // (verified on their live master playlists), which collapsed every row to
+        // "Audio". Junk names now fall back to the language of the source link
+        // being played, so an "Orion · Hindi" source labels its audio "Hindi".
         val real = com.lagradost.cloudstream3.ui.result
             .normalizeLanguageName(language, fallback = "")
             .ifBlank {
                 com.lagradost.cloudstream3.ui.result.normalizeLanguageName(label, fallback = "")
             }
-        return real.ifBlank { "Audio ${index + 1}" }
+        return real.ifBlank {
+            selectedSource?.first?.name
+                ?.let { com.lagradost.cloudstream3.ui.result.displayLinkName(it) }
+                ?.takeIf { it.isNotBlank() && !it.contains("audio", ignoreCase = true) }
+                ?: "Audio ${index + 1}"
+        }
     }
 
     private fun audioLabel(track: AudioTrack, index: Int = 0): String {

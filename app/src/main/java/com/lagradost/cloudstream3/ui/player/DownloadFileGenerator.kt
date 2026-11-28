@@ -1,5 +1,9 @@
 package com.lagradost.cloudstream3.ui.player
 
+// V38: ExtractorUri gains an optional explicit file path. When set, playback uses
+// exactly this file instead of re-resolving by title (which matched the wrong
+// quality when several qualities of one title were downloaded).
+
 import android.net.Uri
 import android.util.Log
 import java.io.File
@@ -36,6 +40,16 @@ class DownloadFileGenerator(
             .replace(Regex("_+"), "_")
             .trim(' ', '_', '.')
             .lowercase()
+
+        // V38: an explicit path from the tapped row always wins. The title-based
+        // search below cannot distinguish 480p from 1080p of the same title.
+        val explicitFile = (meta as? ExtractorUri)?.filePath
+            ?.let { java.io.File(it) }
+            ?.takeIf { it.isFile && it.length() > 0L }
+        if (explicitFile != null) {
+            DownloadLog.play("resolve: explicit tapped path=${explicitFile.absolutePath}")
+            return Uri.fromFile(explicitFile)
+        }
 
         val storedFile = meta.id?.let { id ->
             activity?.let { act -> getDownloadFileInfo(act, id)?.path?.toString() }

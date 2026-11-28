@@ -56,9 +56,12 @@ class KinoLibraryFragment : Fragment() {
     }
 
     private fun playDownloadLocally(media: KinoLibraryItem) {
-        val fallback = DirectDownloadManager.activeDownloads.value.values.firstOrNull {
-            it.title == media.name && it.status == DirectDownloadStatus.COMPLETED && it.filePath != null
-        }?.filePath
+        // V38: prefer the exact file of the tapped row. The old title-only
+        // fallback matched whichever quality was downloaded first.
+        val fallback = DirectDownloadManager.activeDownloads.value.values
+            .filter { it.title == media.name && it.status == DirectDownloadStatus.COMPLETED && it.filePath != null }
+            .maxByOrNull { it.selectedHeight }
+            ?.filePath
         val rawPath = media.localUri ?: fallback
         val uri = rawPath?.let { raw ->
             val parsed = Uri.parse(raw)
@@ -93,12 +96,15 @@ class KinoLibraryFragment : Fragment() {
         // hands it to the player via subtitleCallback. LinkGenerator only emits the
         // file URI and never scans for subtitles, so the .srt the download wrote was
         // being ignored. Mirrors OfflinePlaybackHelper.playUri.
+        // V38: pass the tapped file's URI explicitly; resolveLocalUri used to search
+        // by title and a 480p download matched when the user tapped the 1080p one.
         val generator = DownloadFileGenerator(
             listOf(
                 ExtractorUri(
                     uri = uri,
                     name = media.name,
                     id = media.id ?: media.episodeId ?: media.name.hashCode(),
+                    filePath = rawPath,
                 )
             )
         )

@@ -181,15 +181,14 @@ class GeneratorPlayer : FullScreenPlayer() {
     private fun filterKdesaSourceLinks(
         links: List<Pair<ExtractorLink?, ExtractorUri?>>
     ): List<Pair<ExtractorLink?, ExtractorUri?>> {
-        val hasOrion = links.any { (link, _) ->
-            link?.name?.contains("Orion", ignoreCase = true) == true
-        }
-        return if (hasOrion) {
-            links.filter { (link, _) ->
-                link?.name?.contains("Orion", ignoreCase = true) == true
-            }
-        } else {
-            links
+        // V38: the Orion-only filter hid the multi-audio mirrors (BigBang exposes
+        // English/French/Hindi as named renditions). Keep every non-torrent link;
+        // the language chips already label each source.
+        return links.filter { (link, _) ->
+            link == null || (
+                link.type != com.lagradost.cloudstream3.utils.ExtractorLinkType.TORRENT &&
+                    link.type != com.lagradost.cloudstream3.utils.ExtractorLinkType.MAGNET
+                )
         }
     }
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta

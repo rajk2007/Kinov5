@@ -26,6 +26,11 @@ data class ExtractorUri(
     val season: Int? = null,
     val headerName: String? = null,
     val tvType: TvType? = null,
+
+    /** V38: exact local file to open, set when the user tapped a specific
+     * downloaded quality. Prevents the wrong-quality mixup when several
+     * qualities of one title exist. */
+    val filePath: String? = null,
 )
 
 /**

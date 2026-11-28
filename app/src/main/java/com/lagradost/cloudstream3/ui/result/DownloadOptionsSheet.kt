@@ -32,6 +32,8 @@ import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.getActualLinkType
 import com.lagradost.cloudstream3.utils.downloader.cleanDownloadUrl
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -96,6 +98,7 @@ fun kdesaLanguageLabel(name: String): String? {
     return when {
         n == "anime" || n == "anime sub" -> "Japanese"
         n == "anime dub" || n == "anime english" -> "English Dub"
+        n == "orion · original" || n == "orion original" || n == "original" -> "Original"
         n in setOf("bigbang", "vexon", "evion", "selfhost", "vela", "titan", "atlas", "lyra") -> "Original"
         else -> null
     }
@@ -292,17 +295,22 @@ fun DownloadOptionsSheet(
     }
     val selectedOption = qualityOptions.firstOrNull { it.id == selectedId }
     val measuredSizes = remember { mutableStateMapOf<String, Long>() }
+    var sizeSamplingDone by remember(qualityOptions) { mutableStateOf(false) }
     LaunchedEffect(qualityOptions) {
-        qualityOptions.forEach { option ->
-            launch {
-                val size = when {
-                    getActualLinkType(option.link) == "HLS" && option.height > 0 ->
-                        QualityProbe.sampleVariantSize(option.link, option.variantUrl)
-                    else -> getActualFileSize(option.link)
+        sizeSamplingDone = false
+        coroutineScope {
+            qualityOptions.map { option ->
+                launch {
+                    val size = when {
+                        getActualLinkType(option.link) == "HLS" && option.height > 0 ->
+                            QualityProbe.sampleVariantSize(option.link, option.variantUrl)
+                        else -> getActualFileSize(option.link)
+                    }
+                    if (size != null && size > 0L) measuredSizes[option.id] = size
                 }
-                if (size != null && size > 0L) measuredSizes[option.id] = size
-            }
+            }.joinAll()
         }
+        sizeSamplingDone = true
     }
     LaunchedEffect(qualityOptions) {
         android.util.Log.e("QUALITY_UI", "displaying options=${qualityOptions.map { it.label }}")
@@ -332,9 +340,14 @@ fun DownloadOptionsSheet(
                     val selected = option.id == selectedId
                     val downloaded = option.height in downloadedHeights
                     val qualityDisplay = if (option.height > 0) "${option.width}×${option.height} (${option.label})" else option.label
-                    val display = (measuredSizes[option.id] ?: option.estimatedSizeBytes)?.takeIf { it > 0L }?.let {
-                        "$qualityDisplay · ${formatFileSize(it)}"
-                    } ?: "$qualityDisplay · measuring size…"
+                    val measured = measuredSizes[option.id]?.takeIf { it > 0L }
+                    val display = when {
+                        measured != null -> "$qualityDisplay · ${formatFileSize(measured)}"
+                        option.estimatedSizeBytes?.takeIf { it > 0L } != null ->
+                            "$qualityDisplay · ≈ ${formatFileSize(option.estimatedSizeBytes!!)}"
+                        sizeSamplingDone -> "$qualityDisplay · size unavailable"
+                        else -> "$qualityDisplay · measuring size…"
+                    }
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, if (selected) Color(0xFFE50914) else Color(0xFF333333), RoundedCornerShape(8.dp)).background(if (selected) Color(0xFF2A2A2A) else Color(0xFF1A1A1A)).clickable(enabled = !downloaded) { selectedId = option.id }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(display, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)

@@ -31,15 +31,31 @@ data class ProbedQuality(
     val selectionKey: String,
 )
 
-fun heightToQualityLabel(height: Int): String = when {
-    height >= 2160 -> "2160p 4K"
-    height >= 1440 -> "1440p QHD"
-    height >= 1080 -> "1080p Full HD"
-    height >= 720 -> "720p HD"
-    height >= 480 -> "480p SD"
-    height >= 360 -> "360p"
-    height > 0 -> "${height}p"
-    else -> "Unknown"
+fun heightToQualityLabel(height: Int): String = qualityLabel(0, height)
+
+/** V38: scope (2.39:1) movies carry anamorphic rungs — a 1080p encode is 1920x800,
+ *  a 480p encode 854x360. Height-only bucketing called the 1080p rung "720p HD".
+ *  Label by width when it is known; width is the encode's real tier. */
+fun qualityLabel(width: Int, height: Int): String {
+    val tier = when {
+        width >= 3840 || height >= 2160 -> 2160
+        width >= 2560 || height >= 1440 -> 1440
+        width >= 1920 || height >= 1080 -> 1080
+        width >= 1280 || height >= 720 -> 720
+        width >= 854 || height >= 480 -> 480
+        width >= 640 || height >= 360 -> 360
+        width > 0 || height > 0 -> 240
+        else -> return "Unknown"
+    }
+    return when (tier) {
+        2160 -> "2160p 4K"
+        1440 -> "1440p QHD"
+        1080 -> "1080p Full HD"
+        720 -> "720p HD"
+        480 -> "480p SD"
+        360 -> "360p"
+        else -> "240p"
+    }
 }
 
 fun heightToQualitiesInt(height: Int): Int = when {
@@ -149,6 +165,10 @@ object QualityProbe {
     private val sessionCache = ConcurrentHashMap<String, List<ProbedQuality>>()
     private val probeResultCache = ConcurrentHashMap<String, CachedProbe>()
     private val sizeCache = ConcurrentHashMap<String, Long>()
+
+    // V38: instant bandwidth estimates live separately so the sampler always
+    // re-measures instead of returning a rough estimate as final.
+    private val estimateCache = ConcurrentHashMap<String, Long>()
     private val playlistTextCache = ConcurrentHashMap<String, String>()
     private val hlsHeadSemaphore = Semaphore(32)
 
@@ -267,12 +287,15 @@ object QualityProbe {
                         calculateEstimatedSize(averageBandwidth, audioBandwidth, duration, hasSeparateAudio, videoBandwidthIsAverage = true)
                     } else null
                     // Phase 1 is playlist-text only. HEAD sampling runs in the background
-                    // from sampleVariantSize after these rows have rendered.
+                    // from sampleVariantSize after these rows have rendered. The estimate
+                    // goes to a SEPARATE cache: sampleVariantSize must re-measure and
+                    // overwrite it, not return it (V38: cached estimates made two variants
+                    // show the same size and stalled rows at "measuring size…").
                     val instantEstimate = byteRangeEstimate ?: bandwidthEstimate
-                    instantEstimate?.let { sizeCache[variantUrl] = it }
+                    instantEstimate?.let { estimateCache[variantUrl] = it }
                     ProbedQuality(
                         width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
-                        variantUrl, heightToQualityLabel(height), instantEstimate,
+                        variantUrl, qualityLabel(width, height), instantEstimate,
                         "hls-${height}-${variantUrl.hashCode()}",
                     )
                 }
@@ -323,7 +346,7 @@ object QualityProbe {
                         val effectiveVideoBandwidth = bandwidth
                         results += ProbedQuality(
                             width, height, effectiveVideoBandwidth?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
-                            "${link.url}#track=$height", heightToQualityLabel(height),
+                            "${link.url}#track=$height", qualityLabel(width, height),
                             calculateEstimatedSize(effectiveVideoBandwidth, audioBandwidth, durationSeconds = manifestDuration, videoBandwidthIsAverage = true),
                             selectionKey,
                         )
