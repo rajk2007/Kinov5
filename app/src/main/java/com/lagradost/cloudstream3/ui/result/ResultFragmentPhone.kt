@@ -214,6 +214,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     cacheDownloadLinks(cacheKey, filteredLinks)
                     android.util.Log.d("BG_PREFETCH", "Cached ${filteredLinks.size} links for $data")
                     android.util.Log.d("BG_PREFETCH_PROBE", "Probing up to 6 links for $data")
+                    // V37: warming QualityProbe here makes the download sheet open
+                    // with qualities already resolved (sessionCache hit).
                     filteredLinks.take(6).map { link ->
                         async(Dispatchers.IO) {
                             runCatching { QualityProbe.probeVideoQualities(link) }

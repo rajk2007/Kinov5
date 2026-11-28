@@ -462,8 +462,15 @@ class CS3IPlayer : IPlayer {
 
     override fun getVideoTracks(): CurrentTracks {
         val allTrackGroups = exoPlayer?.currentTracks?.groups ?: emptyList()
+        // V37: some providers (KDesa) expose a 640x360 keyframe-only I-FRAME
+        // rendition for trick-play; media3 lists it as a regular video track and it
+        // shows up as a bogus "360p" option in the quality sheet. Drop formats that
+        // only exist for trick-play.
         val videoTracks = allTrackGroups.filter { it.type == TRACK_TYPE_VIDEO }
             .getFormats()
+            .filter { (format, _) ->
+                (format.roleFlags and androidx.media3.common.C.ROLE_FLAG_TRICK_PLAY) == 0
+            }
             .map { it.first.toVideoTrack() }
         var currentAudioTrack: AudioTrack? = null
         val audioTracks = allTrackGroups.filter { it.type == TRACK_TYPE_AUDIO }

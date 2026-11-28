@@ -2515,36 +2515,104 @@ class ResultViewModel2 : ViewModel() {
                     val genres = loadResponse.tags.orEmpty().take(3)
                     if (genres.isEmpty()) return@launchSafe
 
+                    // V37: homepage lists are named "Action Movies", "Sci-Fi Movies"...
+                    // while title tags are TMDB genre names ("Action", "Science
+                    // Fiction"), so exact equality never matched and More Like This
+                    // never appeared. Match by keyword overlap instead, and also try
+                    // the media type ("Movies"/"Series") so an animated movie lands in
+                    // "Animated Movies" even when the tag itself does not overlap.
+                    val isSeries = loadResponse is TvSeriesLoadResponse
+                    val typeWord = if (isSeries) "series" else "movie"
+                    fun pageMatches(pageName: String, genre: String): Boolean {
+                        val page = pageName.lowercase()
+                        val g = genre.lowercase()
+                        if (page.contains(g)) return true
+                        // "Sci-Fi & Fantasy Series" vs "Science Fiction":
+                        // compare significant word stems
+                        val stems = mapOf(
+                            "sci-fi" to listOf("science fiction", "scifi"),
+                            "science fiction" to listOf("sci-fi", "scifi"),
+                            "animation" to listOf("animated"),
+                            "animated" to listOf("animation"),
+                        )
+                        return stems[g]?.any { page.contains(it) } == true
+                    }
+
                     val results = mutableListOf<SearchResponse>()
+                    val seenIndexes = mutableSetOf<Int>()
                     for (genre in genres) {
-                        val genreListIndex = apiRepository.mainPage.indexOfFirst { page ->
-                            page.name.equals(genre, ignoreCase = true)
+                        val candidates = apiRepository.mainPage
+                            .mapIndexed { index, page -> index to page }
+                            .filter { (index, page) ->
+                                index !in seenIndexes && (
+                                    pageMatches(page.name, genre) ||
+                                        page.name.contains(typeWord, ignoreCase = true) &&
+                                            pageMatches(page.name, genres.first())
+                                    )
+                            }
+                        for ((genreListIndex, _) in candidates.take(2)) {
+                            seenIndexes += genreListIndex
+                            val mainPage = try {
+                                apiRepository.getMainPage(1, genreListIndex)
+                            } catch (t: Throwable) {
+                                null
+                            }
+                            val items = (mainPage as? Resource.Success)?.value
+                                ?.firstOrNull()?.items.orEmpty()
+                                .flatMap { it.list }
+                            results += items
+                            if (results.size >= 30) break
                         }
-                        val mainPage = if (genreListIndex >= 0) {
-                            apiRepository.getMainPage(1, genreListIndex)
-                        } else {
-                            null
-                        }
-                        val items = (mainPage as? Resource.Success)?.value
-                            ?.firstOrNull()?.items.orEmpty()
-                            .flatMap { it.list }
-                        results += items
                         if (results.size >= 30) break
+                    }
+
+                    // V37: a same-name search was requested to never appear; also
+                    // filter other-season/other-cut entries of the same franchise.
+                    val normalizedName = loadResponse.name.lowercase()
+                        .replace(Regex("""[^\w\s]"""), "")
+                        .trim()
+                    fun sameFranchise(name: String): Boolean {
+                        val other = name.lowercase().replace(Regex("""[^\w\s]"""), "")
+                        return other.isNotBlank() && normalizedName.isNotBlank() &&
+                            (other == normalizedName ||
+                                other.contains(normalizedName) ||
+                                normalizedName.contains(other))
                     }
 
                     val fallback = results
                         .filterNot { it.url == loadResponse.url }
-                        .filterNot { it.name.equals(loadResponse.name, ignoreCase = true) }
+                        .filterNot { sameFranchise(it.name) }
                         .distinctBy { it.name.lowercase() }
                         .take(20)
 
+                    // V37: if the genre lists produced nothing (or everything was a
+                    // same-franchise entry), search the provider for the title and use
+                    // the OTHER results — same-genre first, but always something.
+                    val finalList = if (fallback.size >= 8) {
+                        fallback
+                    } else {
+                        val query = loadResponse.name.substringBefore(" (").trim()
+                        val found = try {
+                            (apiRepository.search(query, 1) as? Resource.Success)
+                                ?.value?.items.orEmpty()
+                        } catch (t: Throwable) {
+                            emptyList()
+                        }
+                        val searched = found
+                            .filterNot { it.url == loadResponse.url }
+                            .filterNot { sameFranchise(it.name) }
+                            .distinctBy { it.name.lowercase() }
+                            .take(20)
+                        (fallback + searched).distinctBy { it.name.lowercase() }.take(20)
+                    }
+
                     // only publish if the provider itself still has nothing (and the
                     // user has not navigated to another title meanwhile)
-                    if (fallback.isNotEmpty() &&
+                    if (finalList.isNotEmpty() &&
                         _recommendations.value.isNullOrEmpty() &&
                         currentResponse?.url == loadResponse.url
                     ) {
-                        _recommendations.postValue(fallback)
+                        _recommendations.postValue(finalList)
                     }
                 } catch (t: Throwable) {
                     logError(t)

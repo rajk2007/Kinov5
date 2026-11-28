@@ -75,16 +75,35 @@ fun parseKdesaQuality(name: String): String? =
     Regex("""\b(\d{3,4}p)\b""", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)
 
 fun filterKdesaLinks(links: List<ExtractorLink>): List<ExtractorLink> {
-    // Kdesa responses can be mixed with other providers. Only apply the Orion
-    // restriction when an Orion source is present, so other providers retain
-    // their existing download options.
-    val hasOrion = links.any { it.name.contains("Orion", ignoreCase = true) }
-    return links
-        .filter { !hasOrion || it.name.contains("Orion", ignoreCase = true) }
+    // V37: the Orion-only filter hid the original-language streams ("Anime",
+    // "BigBang", "Vexon", ...). Keep everything except torrents/magnets; the
+    // language grouping decides how each link is labeled.
+    return links.filter {
+        it.type != com.lagradost.cloudstream3.utils.ExtractorLinkType.TORRENT &&
+            it.type != com.lagradost.cloudstream3.utils.ExtractorLinkType.MAGNET
+    }
+}
+
+/**
+ * V37: maps a raw KDesa link name to a real language label, using the provider's
+ * actual stream naming (verified against the KDesa source and live API):
+ *   "Anime"     -> Japanese audio (the subbed anime stream)
+ *   "Anime Dub" -> English dub
+ *   mirrors (BigBang/Vexon/Evion/Selfhost/Vela/Titan/Atlas/Lyra) -> "Original"
+ */
+fun kdesaLanguageLabel(name: String): String? {
+    val n = name.trim().lowercase()
+    return when {
+        n == "anime" || n == "anime sub" -> "Japanese"
+        n == "anime dub" || n == "anime english" -> "English Dub"
+        n in setOf("bigbang", "vexon", "evion", "selfhost", "vela", "titan", "atlas", "lyra") -> "Original"
+        else -> null
+    }
 }
 
 fun displayLinkName(name: String): String {
-    // V35: real language name instead of the raw provider text
+    // V37: provider stream names map to real language labels first
+    kdesaLanguageLabel(name)?.let { return it }
     parseKdesaLanguage(name)?.let { return normalizeLanguageName(it) }
     if (name.contains("Orion", ignoreCase = true)) {
         return normalizeLanguageName(
@@ -163,8 +182,9 @@ fun normalizeLanguageName(raw: String?, fallback: String = "Audio"): String {
 }
 
 fun ExtractorLink.languageKey(): String {
-    // V35: every branch goes through normalizeLanguageName() so the grouping key is a
-    // real language name ("Hindi", "English"), never a provider artifact.
+    // V37: provider stream names map to real language labels first ("Anime" is
+    // Japanese, mirrors are the original audio), then the V35 normalization runs.
+    kdesaLanguageLabel(name)?.let { return it }
     parseKdesaLanguage(name)?.let { return normalizeLanguageName(it) }
     parseLanguageFromLinkName(name)?.let { return normalizeLanguageName(it) }
     val qStr = Qualities.getStringByInt(effectiveQuality()).ifBlank { parseQualityFromLinkName(name) ?: "" }
@@ -204,38 +224,41 @@ fun DownloadOptionsSheet(
     val languages = groupedLinks.keys.toList()
     var selectedLanguage by remember(languages) { mutableStateOf(languages.firstOrNull() ?: "") }
     val selectedLinks = groupedLinks[selectedLanguage].orEmpty()
-    var probedQualities by remember(selectedLanguage) { mutableStateOf<Map<ExtractorLink, List<ProbedQuality>>>(emptyMap()) }
-    var isProbing by remember(selectedLanguage) { mutableStateOf(true) }
+    // V37: probe ALL links once per sheet open (not per language). Rows for the
+    // selected language render as soon as its own probe resolves, and switching
+    // languages is instant because every language's results are already probed.
+    // QualityProbe.sessionCache makes re-opens instant as well.
+    var probedQualities by remember(links) { mutableStateOf<Map<ExtractorLink, List<ProbedQuality>>>(emptyMap()) }
+    var isProbing by remember(selectedLanguage, probedQualities) {
+        mutableStateOf(selectedLinks.any { it !in probedQualities })
+    }
 
-    LaunchedEffect(selectedLanguage, selectedLinks) {
-        isProbing = true
+    LaunchedEffect(links) {
         android.util.Log.e("QUALITY_UI", "title=$title type=${if (isMovie) "Movie" else "Episode"} api=$apiName")
-        android.util.Log.e("QUALITY_UI", "links count=${selectedLinks.size}")
+        android.util.Log.e("QUALITY_UI", "links count=${normalized.size}")
         val results = Channel<Pair<ExtractorLink, List<ProbedQuality>>>(Channel.UNLIMITED)
         try {
-            val pending = selectedLinks.map { link ->
+            val pending = normalized.map { link ->
                 async {
                     android.util.Log.e("QUALITY_UI", "probing url=${link.url} type=${getActualLinkType(link)}")
                     results.send(link to QualityProbe.probeVideoQualities(link))
                 }
             }
             val probed = linkedMapOf<ExtractorLink, List<ProbedQuality>>()
-            repeat(pending.size) { index ->
+            repeat(pending.size) { _ ->
                 val (link, qualities) = results.receive()
                 probed[link] = qualities
                 probedQualities = probed.toMap()
-                // Show rows as soon as the first probe resolves; remaining probes continue
-                // concurrently and append their rows as they complete.
-                if (index == 0) isProbing = false
             }
         } finally {
             results.close()
-            isProbing = false
         }
     }
 
     val qualityOptions = remember(probedQualities, selectedLinks) {
-        probedQualities.flatMap { (link, qualities) ->
+        // Only the SELECTED language's links may appear here, so a download never
+        // silently grabs another language's audio.
+        probedQualities.filterKeys { link -> link in selectedLinks }.flatMap { (link, qualities) ->
             val unknownOnly = qualities.size == 1 && qualities.first().height <= 0
             val shouldOfferPresets = isMovie && unknownOnly && getActualLinkType(link) == "HLS"
             if (shouldOfferPresets) {

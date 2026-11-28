@@ -34,8 +34,8 @@
                 android:orientation="horizontal">
 
                 <androidx.cardview.widget.CardView
-                    android:layout_width="140dp"
-                    android:layout_height="84dp"
+                    android:layout_width="124dp"
+                    android:layout_height="74dp"
                     app:cardBackgroundColor="#17171B"
                     app:cardCornerRadius="8dp"
                     app:cardElevation="0dp">
@@ -113,7 +113,7 @@
                             android:id="@+id/episode_text"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginEnd="36dp"
+                            android:layout_marginEnd="28dp"
                             android:layout_weight="1"
                             android:ellipsize="end"
                             android:maxLines="2"
@@ -173,8 +173,8 @@
         <!-- V35: the download button sits vertically centered at the right edge,
              inside a rounded bordered circle like the reference design. -->
         <FrameLayout
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:layout_gravity="center_vertical|end"
             android:layout_marginEnd="10dp"
             android:background="@drawable/bg_download_circle">
