@@ -67,6 +67,7 @@ import com.lagradost.cloudstream3.runAllAsync
 import com.lagradost.cloudstream3.sortUrls
 import com.lagradost.cloudstream3.syncproviders.AccountManager
 import com.lagradost.cloudstream3.syncproviders.AccountManager.Companion.secondsToReadable
+import com.lagradost.cloudstream3.api.TMDBApi
 import com.lagradost.cloudstream3.syncproviders.SyncAPI
 import com.lagradost.cloudstream3.syncproviders.providers.Kitsu
 import com.lagradost.cloudstream3.ui.APIRepository
@@ -370,6 +371,68 @@ fun LoadResponse.getId(): Int {
     // this fixes an issue with outdated api as getLoadResponseIdFromUrl might be fucked
     return (if (this is ResultViewModel2.LoadResponseFromSearch) this.id else null)
         ?: getLoadResponseIdFromUrl(uniqueUrl, apiName)
+}
+
+/**
+ * V39: KDesa sends no cast and no trailers. Its detail payload url is
+ * "movie|954|Title" / "tv|70036|Title", so the TMDB id and type can be
+ * parsed directly, and TMDB's append_to_response returns cast + trailer
+ * in ONE request. Enriching here lights up the existing cast row (V33)
+ * and the existing trailer flow with zero provider changes.
+ */
+private fun parseKdesaTmdbPayload(url: String?): Pair<String, Int>? {
+    // only match the provider's own payload format, never foreign urls
+    val parts = url?.split("|") ?: return null
+    val type = when (parts.firstOrNull()?.lowercase()) {
+        "movie" -> "movie"
+        "tv" -> "tv"
+        else -> return null
+    }
+    val id = parts.getOrNull(1)?.toIntOrNull() ?: return null
+    return type to id
+}
+
+suspend fun enrichKdesaFromTmdb(loadResponse: LoadResponse): LoadResponse {
+    if (loadResponse.actors.isNullOrEmpty() || loadResponse.trailers.isEmpty()) {
+        val payload = parseKdesaTmdbPayload(loadResponse.url) ?: return loadResponse
+        runCatching {
+            val (type, tmdbId) = payload
+            val api = TMDBApi.create()
+            val enrichment = api.getDetailsEnrichment(
+                type = type,
+                id = tmdbId,
+                apiKey = TMDBApi.API_KEY
+            )
+
+            if (loadResponse.actors.isNullOrEmpty()) {
+                val cast = enrichment.credits?.cast.orEmpty()
+                    .filter { !it.name.isNullOrBlank() }
+                    .take(20)
+                    .mapNotNull { member ->
+                        com.lagradost.cloudstream3.ActorData(
+                            actor = com.lagradost.cloudstream3.Actor(
+                                name = member.name!!,
+                                image = member.profile_path?.let { TMDBApi.IMAGE_BASE_URL + it },
+                            ),
+                            roleString = member.character?.takeIf { it.isNotBlank() },
+                        )
+                    }
+                if (cast.isNotEmpty()) loadResponse.actors = cast
+            }
+
+            if (loadResponse.trailers.isEmpty()) {
+                enrichment.videos?.results.orEmpty()
+                    .filter { it.site.equals("YouTube", true) && it.type.equals("Trailer", true) && !it.key.isNullOrBlank() }
+                    .take(2)
+                    .forEach { video ->
+                        loadResponse.addTrailer(
+                            trailerUrl = "https://www.youtube.com/watch?v=${video.key}",
+                        )
+                    }
+            }
+        }
+    }
+    return loadResponse
 }
 
 private fun getLoadResponseIdFromUrl(url: String, apiName: String): Int {
@@ -2804,10 +2867,14 @@ class ResultViewModel2 : ViewModel() {
                             cacheTime = System.currentTimeMillis(),
                         )
                     )
+                    // V39: fill missing cast + trailer from TMDB before the page
+                    // renders; the details screen already displays both.
+                    val enriched = runCatching { enrichKdesaFromTmdb(data.value) }
+                        .getOrDefault(data.value)
                     if (loadTrailers)
-                        loadTrailers(data.value)
+                        loadTrailers(enriched)
                     postSuccessful(
-                        data.value,
+                        enriched,
                         mainId,
                         updateEpisodes = true,
                         updateFillers = showFillers,

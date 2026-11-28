@@ -181,15 +181,21 @@ class GeneratorPlayer : FullScreenPlayer() {
     private fun filterKdesaSourceLinks(
         links: List<Pair<ExtractorLink?, ExtractorUri?>>
     ): List<Pair<ExtractorLink?, ExtractorUri?>> {
-        // V38: the Orion-only filter hid the multi-audio mirrors (BigBang exposes
-        // English/French/Hindi as named renditions). Keep every non-torrent link;
-        // the language chips already label each source.
-        return links.filter { (link, _) ->
+        // V39: mirrors (atlas/vexon/bigbang/vela/...) all normalize to "Original",
+        // which flooded the audio sheet with identical rows. When Orion dub links
+        // exist they are the only meaningful language switch — show them alone
+        // (V37 behavior the user asked to restore). Without Orion, keep every
+        // non-torrent link so playback still works.
+        val nonTorrent = links.filter { (link, _) ->
             link == null || (
                 link.type != com.lagradost.cloudstream3.utils.ExtractorLinkType.TORRENT &&
                     link.type != com.lagradost.cloudstream3.utils.ExtractorLinkType.MAGNET
                 )
         }
+        val orionLinks = nonTorrent.filter { (link, _) ->
+            link?.name?.contains("Orion", ignoreCase = true) == true
+        }
+        return if (orionLinks.isNotEmpty()) orionLinks else nonTorrent
     }
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta
 

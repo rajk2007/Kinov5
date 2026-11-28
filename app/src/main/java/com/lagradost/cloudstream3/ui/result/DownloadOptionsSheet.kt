@@ -263,7 +263,10 @@ fun DownloadOptionsSheet(
         // silently grabs another language's audio.
         probedQualities.filterKeys { link -> link in selectedLinks }.flatMap { (link, qualities) ->
             val unknownOnly = qualities.size == 1 && qualities.first().height <= 0
-            val shouldOfferPresets = isMovie && unknownOnly && getActualLinkType(link) == "HLS"
+            // V39: episodes need the presets too — Tonari no Seki-kun (TV) and
+            // movies both stream from single-variant masters, and the isMovie
+            // gate here silently removed 480p/720p/1080p for every series.
+            val shouldOfferPresets = unknownOnly && getActualLinkType(link) == "HLS"
             if (shouldOfferPresets) {
                 listOf(0, 480, 720, 1080).map { height ->
                     QualityOption(

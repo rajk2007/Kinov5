@@ -5,6 +5,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface TMDBApi {
@@ -47,6 +48,15 @@ interface TMDBApi {
         @Query("vote_count.gte") voteCountGte: Int? = null
     ): TMDBResponse
 
+    /** V39: cast + trailer for the details screen (KDesa sends neither). */
+    @GET("{type}/{id}")
+    suspend fun getDetailsEnrichment(
+        @Path(value = "type", encoded = true) type: String,
+        @Path(value = "id", encoded = true) id: Int,
+        @Query("api_key") apiKey: String,
+        @Query("append_to_response") appendToResponse: String = "credits,videos"
+    ): TmdbEnrichResponse
+
     @GET("discover/tv")
     suspend fun discoverTv(
         @Query("api_key") apiKey: String,
@@ -78,6 +88,28 @@ interface TMDBApi {
 }
 
 data class TMDBResponse(val results: List<MovieResult>)
+
+/** V39: only the fields the details enrichment needs (Gson ignores the rest). */
+data class TmdbEnrichResponse(
+    val credits: TmdbEnrichCredits? = null,
+    val videos: TmdbEnrichVideos? = null,
+)
+
+data class TmdbEnrichCredits(val cast: List<TmdbEnrichCast>? = null)
+
+data class TmdbEnrichCast(
+    val name: String? = null,
+    val character: String? = null,
+    val profile_path: String? = null,
+)
+
+data class TmdbEnrichVideos(val results: List<TmdbEnrichVideo>? = null)
+
+data class TmdbEnrichVideo(
+    val key: String? = null,
+    val site: String? = null,
+    val type: String? = null,
+)
 
 data class MovieResult(
     val id: Int,

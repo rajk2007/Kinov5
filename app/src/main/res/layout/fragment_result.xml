@@ -173,6 +173,27 @@
                             android:layout_height="140dp"
                             android:layout_gravity="bottom"
                             android:background="@drawable/result_hero_gradient" />
+
+                        <!-- V39: tap-to-play trailer button centered on the poster -->
+                        <FrameLayout
+                            android:id="@+id/result_trailer_play"
+                            android:layout_width="64dp"
+                            android:layout_height="64dp"
+                            android:layout_gravity="center"
+                            android:background="@drawable/circle_white_border"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:visibility="gone"
+                            tools:visibility="visible">
+
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:contentDescription="@string/trailer_button_description"
+                                android:src="@drawable/netflix_play"
+                                app:tint="@android:color/white" />
+                        </FrameLayout>
                     </FrameLayout>
                 </FrameLayout>
 

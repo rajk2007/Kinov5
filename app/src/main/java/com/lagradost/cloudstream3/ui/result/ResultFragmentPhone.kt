@@ -632,6 +632,8 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                 )
             }
             resultSmallscreenHolder.isVisible = turnVis
+            // V39: the trailer replaced the poster — the play overlay must go
+            resultTrailerPlay.isVisible = !turnVis && currentTrailers.isNotEmpty()
             resultPosterBackgroundHolder.apply {
                 val fadeIn: Animation = AlphaAnimation(alpha, if (turnVis) 1.0f else 0.0f).apply {
                     interpolator = DecelerateInterpolator()
@@ -670,6 +672,10 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
         context?.updateHasTrailers()
         if (!LoadResponse.isTrailersEnabled) return
         currentTrailers = trailers?.sortedBy { -it.first.quality } ?: emptyList()
+        // V39: offer the trailer on the poster as a tap target. The trailer view
+        // itself is only laid out later (loadTrailer flips the holders), so the
+        // button is safe to show here and loadTrailer() hides it once played.
+        resultBinding?.resultTrailerPlay?.isVisible = currentTrailers.isNotEmpty()
         loadTrailer()
     }
 
@@ -826,6 +832,13 @@ open class ResultFragmentPhone : BaseFragment<FragmentResultSwipeBinding>(
                     storedData.dubStatus,
                     storedData.start
                 )
+            }
+
+            // V39: tap the poster button -> load and play the trailer in place
+            resultTrailerPlay.setOnClickListener {
+                if (currentTrailers.isEmpty()) return@setOnClickListener
+                loadTrailer()
+                player.handleEvent(CSPlayerEvent.Play)
             }
 
             resultCastItems.setLinearListLayout(
